@@ -2,6 +2,11 @@
     "name": "virtify.net",
     "version": "0.1.0",
     "private": true,
+    "scripts": {
+        "dev": "next dev --turbopack",
+        "build": "next build --turbopack",
+        "start": "next start"
+    },
     "dependencies": {
         "lucide-react": "0.562.0",
         "next": "16.1.6",
