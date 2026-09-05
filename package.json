@@ -9,6 +9,7 @@
         "build": "next build --turbopack",
         "dev": "next dev --turbopack",
         "lint": "biome lint",
+        "mail:check": "node scripts/mail-check.mjs",
         "start": "next start"
     },
     "dependencies": {

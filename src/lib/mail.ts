@@ -22,7 +22,32 @@ export function createTransport() {
         secure: false,
         auth: undefined,
         tls: { rejectUnauthorized: false },
+        // Without these a relay that swallows connections would hang the
+        // request for roughly two minutes before nodemailer gives up.
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000,
     });
+}
+
+/** Logs an SMTP failure with the relay's own response, which names the cause. */
+export function logMailError(context: string, error: unknown) {
+    const detail = error as {
+        message?: string;
+        code?: string;
+        responseCode?: number;
+        response?: string;
+    };
+
+    console.error(
+        `[mail] ${context} failed:`,
+        JSON.stringify({
+            message: detail?.message,
+            code: detail?.code,
+            responseCode: detail?.responseCode,
+            response: detail?.response,
+        }),
+    );
 }
 
 /** Every outbound mail is sent from, and delivered to, the operator address. */
