@@ -102,6 +102,9 @@ export default function RootLayout({
                                         Datenschutz
                                     </FooterLink>
                                     <FooterLink href="/terms">AGB</FooterLink>
+                                    <FooterLink href="/cancellation">
+                                        Verträge hier kündigen
+                                    </FooterLink>
                                 </ul>
                             </div>
                         </div>

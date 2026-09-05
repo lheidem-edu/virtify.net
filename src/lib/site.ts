@@ -28,6 +28,10 @@ export const policy = {
     logRetentionDays: 14,
     /** Default payment term after invoice date, in days. */
     paymentTermDays: 14,
+    /** Minimum window after contract end during which data stays retrievable. */
+    dataRetrievalDays: 14,
+    /** Minimum notice for urgent security maintenance, in hours. */
+    securityMaintenanceNoticeHours: 24,
 } as const;
 
 /** Commit the running build was produced from — see next.config.ts. */
