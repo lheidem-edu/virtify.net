@@ -172,8 +172,30 @@ export default function Page() {
                         "Der Vertrag wird mit Vertragsschluss wirksam. Er hat die im jeweiligen Angebot ausgewiesene Grundlaufzeit; eine Grundlaufzeit von mehr als zwölf Monaten wird nicht vereinbart. Ist keine Grundlaufzeit ausgewiesen, beträgt sie zwölf Monate ab Service-Readiness und endet zwölf Monate nach dem Ende des Monats, in dem die Service-Readiness erreicht wurde.",
                         "Wird der Vertrag nicht spätestens einen Monat vor Ablauf der Grundlaufzeit von einer der Vertragsparteien gekündigt, verlängert er sich auf unbestimmte Zeit. Das verlängerte Vertragsverhältnis kann von beiden Vertragsparteien jederzeit mit einer Frist von einem Monat gekündigt werden.",
                         "Das Recht zur außerordentlichen Kündigung aus wichtigem Grund bleibt unberührt. Ein wichtiger Grund liegt für den Anbieter insbesondere bei erheblichen oder wiederholten Verstößen gegen die §§ 10 bis 13 sowie bei Zahlungsverzug mit mehr als zwei Abrechnungszeiträumen vor.",
-                        "Kündigungen bedürfen der Textform, etwa per E-Mail oder Ticket. Soweit der Anbieter im Kundenbereich eine Kündigungsschaltfläche bereitstellt, kann die Kündigung auch darüber erklärt werden.",
-                        "Der Kunde ist verpflichtet, seine Daten vor Vertragsende zu sichern. Nach Vertragsende löscht der Anbieter die Instanz einschließlich der darauf gespeicherten Daten und räumt hierfür zuvor eine angemessene Frist zur Datensicherung ein, soweit dem keine rechtlichen Gründe entgegenstehen.",
+                        <>
+                            Kündigungen bedürfen der Textform, etwa per E-Mail
+                            oder Ticket. Verbraucher, die den Vertrag über die
+                            Website geschlossen haben, können die Kündigung
+                            zusätzlich über die{" "}
+                            <Link href="/cancellation" className={linkClass}>
+                                Kündigungsschaltfläche
+                            </Link>{" "}
+                            nach § 312k BGB erklären; diese ist auf jeder Seite
+                            von {site.name} unmittelbar erreichbar.
+                        </>,
+                        <>
+                            Der Kunde ist verpflichtet, seine Daten vor
+                            Vertragsende zu sichern. Der Anbieter hält die Daten
+                            des Kunden nach Vertragsende noch mindestens{" "}
+                            {policy.dataRetrievalDays} Tage zum Abruf bereit und
+                            löscht die Instanz einschließlich der darauf
+                            gespeicherten Daten erst nach Ablauf dieser Frist.
+                            Innerhalb dieser Frist unterstützt der Anbieter den
+                            Kunden im Rahmen seiner betrieblichen Möglichkeiten
+                            beim Datenexport. Eine frühere Löschung erfolgt nur
+                            auf Verlangen des Kunden oder soweit rechtliche
+                            Gründe sie gebieten.
+                        </>,
                     ]}
                 />
             </LegalSection>
@@ -188,7 +210,19 @@ export default function Page() {
                         "Der Anbieter betreibt die Infrastruktur mit der Sorgfalt eines ordentlichen Kaufmanns und beseitigt Störungen im Rahmen seiner betrieblichen Möglichkeiten.",
                         "Eine bestimmte Verfügbarkeit wird nicht allgemein zugesagt. Ein Service Level Agreement kommt nur zustande, soweit es im jeweiligen Angebot ausdrücklich ausgewiesen ist; Zusagewert, Messverfahren und etwaige Gutschriften richten sich dann ausschließlich danach.",
                         "Maßgeblicher Übergabepunkt für eine vereinbarte Verfügbarkeitsmessung ist, soweit nicht anders vereinbart, der Ausgang des vom Anbieter betriebenen Netzes.",
-                        "Geplante Wartungsarbeiten werden dem Kunden mindestens sieben Werktage im Voraus in Textform mitgeteilt und gelten nicht als Ausfallzeit. Unaufschiebbare Maßnahmen zur Abwehr akuter Gefahren für den Betrieb, die Sicherheit oder Dritte kann der Anbieter ohne Vorankündigung durchführen.",
+                        "Geplante Wartungsarbeiten werden dem Kunden mindestens sieben Werktage im Voraus in Textform mitgeteilt und gelten nicht als Ausfallzeit.",
+                        <>
+                            Dringende sicherheitsrelevante Wartungen —
+                            insbesondere das Einspielen von Aktualisierungen zur
+                            Schließung bekannt gewordener Schwachstellen — kann
+                            der Anbieter mit verkürzter Frist ankündigen. Die
+                            Ankündigung erfolgt so früh wie möglich, in der
+                            Regel jedoch mindestens{" "}
+                            {policy.securityMaintenanceNoticeHours} Stunden im
+                            Voraus in Textform. Auch diese Wartungen gelten
+                            nicht als Ausfallzeit.
+                        </>,
+                        "Unaufschiebbare Maßnahmen zur Abwehr akuter Gefahren für den Betrieb, die Sicherheit oder Dritte kann der Anbieter ohne Vorankündigung durchführen. Der Kunde wird unverzüglich nachträglich informiert.",
                         <>
                             Nicht als Ausfallzeit gelten ferner Zeiten, in denen
                             die Instanz aus Gründen außerhalb des
@@ -392,8 +426,9 @@ export default function Page() {
                     variant="paren"
                     items={[
                         "Ist der Kunde Verbraucher im Sinne des § 13 BGB, steht ihm bei Fernabsatzverträgen ein gesetzliches Widerrufsrecht nach § 355 BGB zu. Der Widerruf kann innerhalb von 14 Tagen ab Vertragsschluss ohne Angabe von Gründen in Textform erklärt werden.",
-                        "Im Fall eines wirksamen Widerrufs werden bereits geleistete Zahlungen erstattet. Hat der Verbraucher verlangt, dass die Dienstleistung während der Widerrufsfrist beginnt, hat er für die bis zum Widerruf erbrachten Leistungen einen angemessenen Wertersatz zu zahlen.",
-                        "Das Widerrufsrecht erlischt nach § 356 Abs. 4 BGB, wenn der Anbieter die Dienstleistung vollständig erbracht hat und mit der Ausführung erst begonnen hat, nachdem der Verbraucher dazu seine ausdrückliche Zustimmung gegeben und gleichzeitig seine Kenntnis davon bestätigt hat, dass er sein Widerrufsrecht bei vollständiger Vertragserfüllung verliert. Vollständige Vertragserfüllung liegt vor, sobald die Service-Readiness nach § 5 Absatz (2) erreicht ist.",
+                        "Im Fall eines wirksamen Widerrufs werden bereits geleistete Zahlungen erstattet.",
+                        "Verlangt der Verbraucher ausdrücklich, dass der Anbieter vor Ablauf der Widerrufsfrist mit der Bereitstellung der Leistung beginnt, schuldet der Verbraucher im Fall eines Widerrufs Wertersatz für die bis zum Widerruf erbrachten Leistungen nach Maßgabe der gesetzlichen Vorschriften.",
+                        "Das Widerrufsrecht erlischt nur unter den gesetzlichen Voraussetzungen, insbesondere bei vollständiger Erbringung der Dienstleistung und nach vorheriger ausdrücklicher Zustimmung des Verbrauchers zum Leistungsbeginn vor Ablauf der Widerrufsfrist sowie dessen Bestätigung der Kenntnis vom Verlust des Widerrufsrechts bei vollständiger Vertragserfüllung.",
                         "Unternehmern steht kein Widerrufsrecht zu.",
                     ]}
                 />
