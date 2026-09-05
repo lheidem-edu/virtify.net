@@ -12,7 +12,7 @@ export default function FooterLink({
         <li>
             <Link
                 href={href}
-                className="text-zinc-400 hover:text-zinc-200 text-sm"
+                className="text-sm text-zinc-400 transition-colors hover:text-white"
                 {...props}
             >
                 {children}
