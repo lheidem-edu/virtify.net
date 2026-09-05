@@ -18,6 +18,50 @@ const host = process.env.VIRTIFY_SMTP_HOST;
 const to = process.argv[2] ?? "admin@virtify.net";
 const from = "admin@virtify.net";
 
+/** Turns the responses this setup actually produces into plain advice. */
+function explain(response) {
+    if (response.includes("4.4.62")) {
+        return [
+            "  This endpoint does not serve the recipient's domain.",
+            "",
+            "  A *.mail.protection.outlook.com / *.mx.microsoft host is one",
+            "  tenant's inbound MX. It accepts mail only for recipients in that",
+            "  tenant and will not relay anywhere else — so it cannot be used as",
+            "  a general outbound relay.",
+            "",
+            "  Check the recipient domain's MX and compare:",
+            "    dig +short MX <recipient-domain>",
+            "",
+            "  For outbound mail to arbitrary customers, point VIRTIFY_SMTP_HOST",
+            "  at your own relay instead.",
+            "",
+        ].join("\n");
+    }
+
+    if (response.includes("4.7.25")) {
+        return [
+            "  The sending IP has no reverse DNS (PTR) record.",
+            "",
+            "  Microsoft rejects mail from addresses without one. If the address",
+            "  in the message above is IPv6, the quickest fix is usually to give",
+            "  the relay a PTR record; forcing IPv4 also avoids it.",
+            "",
+        ].join("\n");
+    }
+
+    if (response.includes("5.7.1") || response.includes("550")) {
+        return [
+            "  The relay will not accept this sender or this recipient.",
+            "",
+            "  Allow this server's IP on the relay, and make sure the sending",
+            "  IP is covered by the SPF record of the From domain.",
+            "",
+        ].join("\n");
+    }
+
+    return "  See the response above for the reason the relay gave.\n";
+}
+
 function line(label, value) {
     console.log(`  ${label.padEnd(22)} ${value}`);
 }
@@ -110,10 +154,6 @@ try {
     if (error.code) line("code", error.code);
     if (error.responseCode) line("responseCode", error.responseCode);
     if (error.response) line("response", error.response);
-    console.error(
-        "\n  A 550/554 here usually means the relay will not relay for this\n" +
-            "  sender or to this recipient. Allow this server's IP, or send only\n" +
-            "  to local domains.\n",
-    );
+    console.error(`\n${explain(String(error.response ?? error.message))}`);
     process.exit(1);
 }
