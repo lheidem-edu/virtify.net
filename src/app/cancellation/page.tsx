@@ -1,59 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { operator, site } from "@/lib/site";
+import { type CancellationState, submitCancellation } from "./actions";
 
 /**
  * Kündigungsschaltfläche nach § 312k BGB. The footer link is the
  * "Verträge hier kündigen" button; this page is the Bestätigungsseite, and
  * "Jetzt kündigen" is the Bestätigungsschaltfläche.
  *
- * TODO once online ordering is live: the confirmation button must POST to an
- * endpoint that stores the declaration and sends the § 312k Abs. 5 receipt in
- * text form automatically. Until then it composes the declaration as a mail,
- * which still transmits it but relies on the visitor's mail client.
+ * The declaration is sent server-side and timestamped by the server, so the
+ * time of receipt does not depend on the visitor's clock.
  */
 
 const field =
     "w-full border bg-transparent px-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none";
-const label = "block text-sm text-zinc-400";
+const labelClass = "block text-sm text-zinc-400";
+
+const initialState: CancellationState = { status: "idle" };
+
+const textInputs = [
+    {
+        id: "contract",
+        text: "Bezeichnung des Vertrags",
+        placeholder: "z. B. KVM-Instanz",
+        required: true,
+    },
+    {
+        id: "number",
+        text: "Vertrags- oder Kundennummer",
+        placeholder: "sofern bekannt",
+        required: false,
+    },
+    { id: "name", text: "Name", placeholder: "", required: true },
+    { id: "address", text: "Anschrift", placeholder: "", required: true },
+];
 
 export default function Page() {
     const [kind, setKind] = useState<"ordentlich" | "ausserordentlich">(
         "ordentlich",
     );
-    const [declaration, setDeclaration] = useState<string | null>(null);
-
-    function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-        event.preventDefault();
-        const data = new FormData(event.currentTarget);
-        const value = (name: string) => String(data.get(name) ?? "").trim();
-
-        const stamp = new Date();
-        const text = [
-            `Kündigungserklärung an ${site.name}`,
-            `Erstellt am ${stamp.toLocaleString("de-DE")}`,
-            "",
-            `Art der Kündigung: ${kind === "ordentlich" ? "Ordentliche Kündigung" : "Außerordentliche Kündigung"}`,
-            kind === "ausserordentlich"
-                ? `Kündigungsgrund: ${value("reason") || "—"}`
-                : null,
-            `Bezeichnung des Vertrags: ${value("contract") || "—"}`,
-            `Vertrags- oder Kundennummer: ${value("number") || "—"}`,
-            `Beendigung zum: ${value("date") || "nächstmöglichen Zeitpunkt"}`,
-            "",
-            `Name: ${value("name")}`,
-            `Anschrift: ${value("address")}`,
-            `E-Mail für die Bestätigung: ${value("email")}`,
-        ]
-            .filter(Boolean)
-            .join("\n");
-
-        setDeclaration(text);
-
-        const subject = `Kündigung — ${value("contract") || value("number") || value("name")}`;
-        window.location.href = `mailto:${operator.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
-    }
+    const [state, formAction, pending] = useActionState(
+        submitCancellation,
+        initialState,
+    );
 
     return (
         <>
@@ -73,19 +63,19 @@ export default function Page() {
                 </p>
             </header>
 
-            {declaration ? (
+            {state.status === "sent" ? (
                 <section className="px-6 py-16 md:px-10 md:py-20">
                     <h2 className="text-sm font-medium tracking-tight">
-                        Deine Kündigungserklärung
+                        Kündigung eingegangen
                     </h2>
                     <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-400">
-                        Bewahre diesen Text auf — er ist dein Nachweis mit Datum
-                        und Uhrzeit. Es hat sich ein E-Mail-Entwurf an{" "}
-                        {operator.email} geöffnet; bitte sende ihn ab. Den
-                        Eingang bestätigen wir dir anschließend in Textform.
+                        Wir haben deine Kündigung am {state.receivedAt} erhalten
+                        und dir eine Eingangsbestätigung an die angegebene
+                        Adresse geschickt. Bewahre den folgenden Text als
+                        Nachweis auf.
                     </p>
                     <pre className="mt-8 max-w-2xl overflow-x-auto border p-6 font-mono text-xs leading-6 text-zinc-200">
-                        {declaration}
+                        {state.declaration}
                     </pre>
                     <button
                         type="button"
@@ -97,12 +87,24 @@ export default function Page() {
                 </section>
             ) : (
                 <section className="px-6 py-16 md:px-10 md:py-20">
-                    <form
-                        onSubmit={handleSubmit}
-                        className="max-w-xl space-y-8"
-                    >
+                    {state.status === "error" ? (
+                        <div className="mb-10 max-w-xl border p-6">
+                            <p className="text-sm leading-7 text-zinc-300">
+                                {state.message}
+                            </p>
+                            {state.declaration ? (
+                                <pre className="mt-6 overflow-x-auto border p-4 font-mono text-xs leading-6 text-zinc-400">
+                                    {state.declaration}
+                                </pre>
+                            ) : null}
+                        </div>
+                    ) : null}
+
+                    <form action={formAction} className="max-w-xl space-y-8">
                         <fieldset className="space-y-3">
-                            <legend className={label}>Art der Kündigung</legend>
+                            <legend className={labelClass}>
+                                Art der Kündigung
+                            </legend>
                             {(
                                 [
                                     ["ordentlich", "Ordentliche Kündigung"],
@@ -131,7 +133,7 @@ export default function Page() {
 
                         {kind === "ausserordentlich" ? (
                             <div className="space-y-3">
-                                <label className={label} htmlFor="reason">
+                                <label className={labelClass} htmlFor="reason">
                                     Kündigungsgrund
                                 </label>
                                 <textarea
@@ -144,34 +146,12 @@ export default function Page() {
                             </div>
                         ) : null}
 
-                        {[
-                            {
-                                id: "contract",
-                                text: "Bezeichnung des Vertrags",
-                                placeholder: "z. B. KVM-Instanz",
-                                required: true,
-                            },
-                            {
-                                id: "number",
-                                text: "Vertrags- oder Kundennummer",
-                                placeholder: "sofern bekannt",
-                                required: false,
-                            },
-                            {
-                                id: "name",
-                                text: "Name",
-                                placeholder: "",
-                                required: true,
-                            },
-                            {
-                                id: "address",
-                                text: "Anschrift",
-                                placeholder: "",
-                                required: true,
-                            },
-                        ].map((input) => (
+                        {textInputs.map((input) => (
                             <div key={input.id} className="space-y-3">
-                                <label className={label} htmlFor={input.id}>
+                                <label
+                                    className={labelClass}
+                                    htmlFor={input.id}
+                                >
                                     {input.text}
                                 </label>
                                 <input
@@ -186,7 +166,7 @@ export default function Page() {
                         ))}
 
                         <div className="space-y-3">
-                            <label className={label} htmlFor="date">
+                            <label className={labelClass} htmlFor="date">
                                 Beendigung zum
                             </label>
                             <input
@@ -202,7 +182,7 @@ export default function Page() {
                         </div>
 
                         <div className="space-y-3">
-                            <label className={label} htmlFor="email">
+                            <label className={labelClass} htmlFor="email">
                                 E-Mail-Adresse für die Bestätigung
                             </label>
                             <input
@@ -216,10 +196,17 @@ export default function Page() {
 
                         <button
                             type="submit"
-                            className="w-full border border-white bg-white px-6 py-4 text-sm font-medium text-black transition-colors hover:bg-zinc-300 sm:w-auto"
+                            disabled={pending}
+                            className="w-full border border-white bg-white px-6 py-4 text-sm font-medium text-black transition-colors hover:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                         >
-                            Jetzt kündigen
+                            {pending ? "Wird gesendet …" : "Jetzt kündigen"}
                         </button>
+
+                        <p className="text-xs leading-5 text-zinc-600">
+                            Mit dem Absenden übermittelst du die vorstehenden
+                            Angaben an {site.name}. Sie werden ausschließlich
+                            zur Bearbeitung der Kündigung verarbeitet.
+                        </p>
                     </form>
                 </section>
             )}

@@ -181,7 +181,9 @@ export default function Page() {
                                 Kündigungsschaltfläche
                             </Link>{" "}
                             nach § 312k BGB erklären; diese ist auf jeder Seite
-                            von {site.name} unmittelbar erreichbar.
+                            von {site.name} unmittelbar erreichbar. Den Eingang
+                            der Kündigung bestätigt der Anbieter unverzüglich in
+                            Textform an die dabei angegebene E-Mail-Adresse.
                         </>,
                         <>
                             Der Kunde ist verpflichtet, seine Daten vor
