@@ -1,6 +1,11 @@
 "use server";
 
-import { createTransport, mailFrom } from "@/lib/mail";
+import {
+    createTransport,
+    type EmailRow,
+    mailFrom,
+    renderEmail,
+} from "@/lib/mail";
 import { operator, site } from "@/lib/site";
 
 export type CancellationState = {
@@ -14,27 +19,57 @@ function read(data: FormData, name: string) {
     return String(data.get(name) ?? "").trim();
 }
 
-function buildDeclaration(data: FormData, receivedAt: Date) {
+function formatDate(value: string) {
+    if (!value) {
+        return "nächstmöglichen Zeitpunkt";
+    }
+
+    const parsed = new Date(`${value}T00:00:00Z`);
+
+    return Number.isNaN(parsed.getTime())
+        ? value
+        : parsed.toLocaleDateString("de-DE", { timeZone: "UTC" });
+}
+
+/** One source for both the HTML rows and the plain-text record. */
+function buildRows(data: FormData): EmailRow[] {
     const extraordinary = read(data, "kind") === "ausserordentlich";
 
     return [
+        {
+            label: "Art der Kündigung",
+            value: extraordinary
+                ? "Außerordentliche Kündigung"
+                : "Ordentliche Kündigung",
+        },
+        ...(extraordinary
+            ? [{ label: "Kündigungsgrund", value: read(data, "reason") || "—" }]
+            : []),
+        {
+            label: "Bezeichnung des Vertrags",
+            value: read(data, "contract") || "—",
+        },
+        {
+            label: "Vertrags- oder Kundennummer",
+            value: read(data, "number") || "—",
+        },
+        { label: "Beendigung zum", value: formatDate(read(data, "date")) },
+        { label: "Name", value: read(data, "name") },
+        { label: "Anschrift", value: read(data, "address") },
+        {
+            label: "E-Mail für die Bestätigung",
+            value: read(data, "email"),
+        },
+    ];
+}
+
+function buildText(rows: EmailRow[], stamp: string) {
+    return [
         `Kündigungserklärung an ${site.name}`,
-        `Eingegangen am ${receivedAt.toLocaleString("de-DE", { timeZone: "Europe/Berlin" })} (Europe/Berlin)`,
+        `Eingegangen am ${stamp} (Europe/Berlin)`,
         "",
-        `Art der Kündigung: ${extraordinary ? "Außerordentliche Kündigung" : "Ordentliche Kündigung"}`,
-        extraordinary
-            ? `Kündigungsgrund: ${read(data, "reason") || "—"}`
-            : null,
-        `Bezeichnung des Vertrags: ${read(data, "contract") || "—"}`,
-        `Vertrags- oder Kundennummer: ${read(data, "number") || "—"}`,
-        `Beendigung zum: ${read(data, "date") || "nächstmöglichen Zeitpunkt"}`,
-        "",
-        `Name: ${read(data, "name")}`,
-        `Anschrift: ${read(data, "address")}`,
-        `E-Mail für die Bestätigung: ${read(data, "email")}`,
-    ]
-        .filter(Boolean)
-        .join("\n");
+        ...rows.map((row) => `${row.label}: ${row.value}`),
+    ].join("\n");
 }
 
 export async function submitCancellation(
@@ -51,21 +86,24 @@ export async function submitCancellation(
         };
     }
 
-    const receivedAt = new Date();
-    const declaration = buildDeclaration(data, receivedAt);
-    const stamp = receivedAt.toLocaleString("de-DE", {
+    const stamp = new Date().toLocaleString("de-DE", {
         timeZone: "Europe/Berlin",
     });
+    const rows = buildRows(data);
+    const declaration = buildText(rows, stamp);
+    const subject = read(data, "contract") || read(data, "number") || name;
 
     const transport = createTransport();
 
+    const failure = {
+        status: "error" as const,
+        declaration,
+        message: `Die Erklärung konnte technisch nicht zugestellt werden. Bitte sende den unten stehenden Text an ${operator.email}; er gilt mit Zugang als fristwahrend.`,
+    };
+
     if (!transport) {
         console.error("VIRTIFY_SMTP_HOST is not set — cancellation not sent.");
-        return {
-            status: "error",
-            declaration,
-            message: `Die Erklärung konnte technisch nicht zugestellt werden. Bitte sende den unten stehenden Text an ${operator.email}; er gilt mit Zugang als fristwahrend.`,
-        };
+        return failure;
     }
 
     try {
@@ -74,8 +112,20 @@ export async function submitCancellation(
             from: mailFrom,
             to: operator.email,
             replyTo: email,
-            subject: `Kündigung — ${read(data, "contract") || read(data, "number") || name}`,
+            subject: `Kündigung — ${subject}`,
             text: declaration,
+            html: renderEmail({
+                preheader: `Kündigung von ${name}, eingegangen am ${stamp}.`,
+                heading: "Kündigung eingegangen",
+                intro: [
+                    `Über die Kündigungsschaltfläche auf ${site.name} ist am ${stamp} (Europe/Berlin) eine Kündigung eingegangen.`,
+                ],
+                rowsTitle: "Erklärung",
+                rows,
+                outro: [
+                    "Eine Eingangsbestätigung wurde automatisch an die angegebene Adresse gesendet. Eine Antwort auf diese Nachricht geht direkt an den Kunden.",
+                ],
+            }),
         });
 
         // Confirmation of receipt owed to consumers under § 312k Abs. 5 BGB.
@@ -95,14 +145,23 @@ export async function submitCancellation(
                 "",
                 `${site.name} — ${operator.name}, ${operator.street}, ${operator.city}`,
             ].join("\n"),
+            html: renderEmail({
+                preheader: `Eingegangen am ${stamp}. Wir melden uns mit dem Beendigungsdatum.`,
+                heading: "Eingangsbestätigung deiner Kündigung",
+                intro: [
+                    `Hallo ${name},`,
+                    `wir bestätigen den Eingang deiner Kündigung am ${stamp} (Europe/Berlin). Sie wird zu dem gesetzlich oder vertraglich vorgesehenen Zeitpunkt wirksam — wir melden uns mit dem konkreten Beendigungsdatum.`,
+                ],
+                rowsTitle: "Deine Erklärung im Wortlaut",
+                rows,
+                outro: [
+                    "Bewahre diese Nachricht als Nachweis auf. Wenn etwas nicht stimmt, antworte einfach auf diese E-Mail.",
+                ],
+            }),
         });
     } catch (error) {
         console.error("Cancellation mail failed:", error);
-        return {
-            status: "error",
-            declaration,
-            message: `Die Erklärung konnte technisch nicht zugestellt werden. Bitte sende den unten stehenden Text an ${operator.email}; er gilt mit Zugang als fristwahrend.`,
-        };
+        return failure;
     }
 
     return { status: "sent", declaration, receivedAt: stamp };
