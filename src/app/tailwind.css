@@ -1,1 +1,110 @@
 @import "tailwindcss";
+
+@theme {
+    /* Inter is the only webfont. The mono stack is the platform's own — it
+       only ever carries short technical strings (specs, the build commit). */
+    --font-sans:
+        var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+        sans-serif;
+    --font-mono:
+        ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    /* Hairlines. Everything on this site is separated by these — never by
+       shadows, fills or rounded cards. */
+    --color-line: oklch(1 0 0 / 12%);
+    --color-line-strong: oklch(1 0 0 / 24%);
+
+    /* No rounded corners anywhere: the whole radius scale is removed, so
+       `rounded-*` utilities simply do not exist in this project. */
+    --radius-*: initial;
+}
+
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-line);
+    }
+
+    html {
+        -webkit-text-size-adjust: 100%;
+        scrollbar-color: var(--color-line-strong) transparent;
+    }
+
+    body {
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        /* Long German compounds must never widen the page. */
+        overflow-wrap: break-word;
+    }
+
+    h1,
+    h2,
+    h3 {
+        hyphens: auto;
+    }
+
+    ::selection {
+        background-color: #fff;
+        color: #000;
+    }
+
+    :focus-visible {
+        outline: 1px solid #fff;
+        outline-offset: 2px;
+    }
+}
+
+@layer components {
+    /* Legal documents mirror the typography of the paper contracts:
+       "(1)" for paragraphs, an em dash for enumerations. */
+    .legal-list {
+        padding-left: 2.5rem;
+    }
+
+    .legal-list--paren {
+        list-style: decimal;
+    }
+
+    .legal-list--paren > li::marker {
+        content: "(" counter(list-item) ") ";
+        color: var(--color-zinc-600);
+    }
+
+    .legal-list--dash {
+        list-style: none;
+    }
+
+    .legal-list--dash > li {
+        position: relative;
+    }
+
+    .legal-list--dash > li::before {
+        content: "\2014";
+        position: absolute;
+        left: -1.5rem;
+        color: var(--color-zinc-700);
+    }
+}
+
+@layer components {
+    /* The header's hairline settles in once the page is scrolled, so the top
+       of the page reads as one uninterrupted surface. Where scroll timelines
+       are unavailable the hairline is simply always visible. */
+    @supports (animation-timeline: scroll()) {
+        .site-header {
+            border-bottom-color: transparent;
+            animation: site-header-settle linear both;
+            animation-timeline: scroll(root block);
+            animation-range: 0 96px;
+        }
+
+        @keyframes site-header-settle {
+            to {
+                border-bottom-color: var(--color-line);
+            }
+        }
+    }
+}
