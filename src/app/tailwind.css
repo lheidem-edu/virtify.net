@@ -222,13 +222,11 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 /* The shadcn neutral palette retuned to this site: a pure black ground, the
-   hairline as the only border, white as the primary fill, and no corner
-   radius so every component stays square. Overrides the generated blocks
-   above rather than editing them, so `shadcn` can regenerate them safely. */
-:root {
-    --radius: 0rem;
-}
-
+   hairline as the only border and white as the primary fill. The nova radius
+   is left as generated, so components keep their own corners — the page
+   structure itself (rails, section rules) carries no radius either way.
+   Overrides the generated blocks above rather than editing them, so `shadcn`
+   can regenerate them safely. */
 .dark {
     --background: oklch(0 0 0);
     --foreground: oklch(1 0 0);

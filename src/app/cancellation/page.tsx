@@ -75,7 +75,7 @@ export default function Page() {
                         Adresse geschickt. Bewahre den folgenden Text als
                         Nachweis auf.
                     </p>
-                    <pre className="mt-8 max-w-2xl overflow-x-auto border p-6 font-mono text-xs leading-6 text-zinc-200">
+                    <pre className="mt-8 max-w-2xl overflow-x-auto rounded-lg border p-6 font-mono text-xs leading-6 text-zinc-200">
                         {state.declaration}
                     </pre>
                     <Button
@@ -91,12 +91,12 @@ export default function Page() {
             ) : (
                 <section className="px-6 py-16 md:px-10 md:py-20">
                     {state.status === "error" ? (
-                        <div className="mb-10 max-w-xl border p-6">
+                        <div className="mb-10 max-w-xl rounded-lg border p-6">
                             <p className="text-sm leading-7 text-zinc-300">
                                 {state.message}
                             </p>
                             {state.declaration ? (
-                                <pre className="mt-6 overflow-x-auto border p-4 font-mono text-xs leading-6 text-zinc-400">
+                                <pre className="mt-6 overflow-x-auto rounded-lg border p-4 font-mono text-xs leading-6 text-zinc-400">
                                     {state.declaration}
                                 </pre>
                             ) : null}
@@ -130,7 +130,7 @@ export default function Page() {
                                 ).map(([value, text]) => (
                                     <Label
                                         key={value}
-                                        className="flex cursor-pointer items-center gap-3 border px-4 py-3 text-sm font-normal"
+                                        className="flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-normal"
                                     >
                                         <RadioGroupItem value={value} />
                                         {text}
