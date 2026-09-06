@@ -24,3 +24,40 @@ export const CONTRACT_STATUS_LABEL = {
     terminated: "Gekündigt",
     ended: "Beendet",
 } as const;
+
+export const OFFER_STATUS_LABEL = {
+    draft: "Entwurf",
+    sent: "Versendet",
+    accepted: "Angenommen",
+    declined: "Abgelehnt",
+    expired: "Abgelaufen",
+} as const;
+
+export const INVOICE_STATUS_LABEL = {
+    draft: "Entwurf",
+    issued: "Ausgestellt",
+    paid: "Bezahlt",
+    cancelled: "Storniert",
+} as const;
+
+export const OFFER_STATUS_TONE = {
+    draft: "muted",
+    sent: "warning",
+    accepted: "positive",
+    declined: "neutral",
+    expired: "neutral",
+} as const;
+
+export const INVOICE_STATUS_TONE = {
+    draft: "muted",
+    issued: "warning",
+    paid: "positive",
+    cancelled: "neutral",
+} as const;
+
+export const CONTRACT_STATUS_TONE = {
+    provisioning: "warning",
+    active: "positive",
+    terminated: "neutral",
+    ended: "muted",
+} as const;

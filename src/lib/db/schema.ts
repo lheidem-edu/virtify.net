@@ -33,6 +33,9 @@ export const user = pgTable("user", {
     country: text("country"),
     vatId: text("vat_id"),
     phone: text("phone"),
+    /** EN 16931 BT-10. Public buyers supply a Leitweg-ID; otherwise the
+     *  account id is used so the mandatory field is always populated. */
+    buyerReference: text("buyer_reference"),
 
     // Better Auth admin plugin.
     role: text("role"),
@@ -167,3 +170,148 @@ export const contract = pgTable("contract", {
 
 export type User = typeof user.$inferSelect;
 export type Contract = typeof contract.$inferSelect;
+
+export const offerStatus = pgEnum("offer_status", [
+    "draft",
+    "sent",
+    "accepted",
+    "declined",
+    "expired",
+]);
+
+/**
+ * An offer becomes a contract when the customer accepts it — that acceptance
+ * is the Vertragsschluss under § 3 of the terms, so the accepted state and
+ * its timestamp are the record of it and must not be edited afterwards.
+ */
+export const offer = pgTable("offer", {
+    id: text("id")
+        .primaryKey()
+        .$defaultFn(() => createId("offer")),
+    userId: text("user_id")
+        .notNull()
+        .references(() => user.id, { onDelete: "restrict" }),
+    number: text("number").notNull().unique(),
+    title: text("title").notNull(),
+    status: offerStatus("status").notNull().default("draft"),
+
+    /** Frozen copy of the recipient at send time — a later address change
+     *  must not rewrite a document the customer already received. */
+    recipient: text("recipient"),
+
+    introText: text("intro_text"),
+    /** Terms proposed for the contract that acceptance would create. */
+    minimumTermMonths: integer("minimum_term_months").notNull().default(12),
+    monthlyPriceCents: integer("monthly_price_cents").notNull().default(0),
+
+    validUntil: timestamp("valid_until", { mode: "date" }),
+    sentAt: timestamp("sent_at"),
+    decidedAt: timestamp("decided_at"),
+    /** Set when acceptance produced a contract. */
+    contractId: text("contract_id").references(() => contract.id, {
+        onDelete: "set null",
+    }),
+
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const offerItem = pgTable(
+    "offer_item",
+    {
+        id: text("id")
+            .primaryKey()
+            .$defaultFn(() => createId("offeritem")),
+        offerId: text("offer_id")
+            .notNull()
+            .references(() => offer.id, { onDelete: "cascade" }),
+        position: integer("position").notNull(),
+        description: text("description").notNull(),
+        quantity: integer("quantity").notNull().default(1),
+        /** UN/ECE Recommendation 20 code, e.g. C62 (piece), MON (month). */
+        unitCode: text("unit_code").notNull().default("C62"),
+        unitPriceCents: integer("unit_price_cents").notNull(),
+    },
+    (table) => [index("offer_item_offer_id_idx").on(table.offerId)],
+);
+
+export const invoiceStatus = pgEnum("invoice_status", [
+    "draft",
+    "issued",
+    "paid",
+    "cancelled",
+]);
+
+/**
+ * Invoices are mutable only while `draft`. Issuing assigns the sequential
+ * number required by § 14 Abs. 4 Nr. 4 UStG and freezes the document;
+ * corrections are made by cancelling and issuing anew, never by editing.
+ */
+export const invoice = pgTable("invoice", {
+    id: text("id")
+        .primaryKey()
+        .$defaultFn(() => createId("invoice")),
+    userId: text("user_id")
+        .notNull()
+        .references(() => user.id, { onDelete: "restrict" }),
+    contractId: text("contract_id").references(() => contract.id, {
+        onDelete: "set null",
+    }),
+
+    /** Null until issued; unique so a number can never be handed out twice. */
+    number: text("number").unique(),
+    status: invoiceStatus("status").notNull().default("draft"),
+
+    /** Frozen copies taken at issue time. */
+    recipient: text("recipient"),
+    buyerReference: text("buyer_reference"),
+
+    issuedAt: timestamp("issued_at", { mode: "date" }),
+    /** § 10 of the terms: due within 14 days unless agreed otherwise. */
+    dueAt: timestamp("due_at", { mode: "date" }),
+    servicePeriodStart: timestamp("service_period_start", { mode: "date" }),
+    servicePeriodEnd: timestamp("service_period_end", { mode: "date" }),
+    paidAt: timestamp("paid_at"),
+    cancelledAt: timestamp("cancelled_at"),
+    /** Points at the invoice this one cancels, for the audit trail. */
+    cancelsInvoiceId: text("cancels_invoice_id"),
+
+    introText: text("intro_text"),
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const invoiceItem = pgTable(
+    "invoice_item",
+    {
+        id: text("id")
+            .primaryKey()
+            .$defaultFn(() => createId("invoiceitem")),
+        invoiceId: text("invoice_id")
+            .notNull()
+            .references(() => invoice.id, { onDelete: "cascade" }),
+        position: integer("position").notNull(),
+        description: text("description").notNull(),
+        quantity: integer("quantity").notNull().default(1),
+        unitCode: text("unit_code").notNull().default("C62"),
+        unitPriceCents: integer("unit_price_cents").notNull(),
+    },
+    (table) => [index("invoice_item_invoice_id_idx").on(table.invoiceId)],
+);
+
+/**
+ * One row per number range and year. Incremented inside the same transaction
+ * that issues an invoice, under a row lock, so two concurrent issues cannot
+ * receive the same number.
+ */
+export const documentCounter = pgTable("document_counter", {
+    scope: text("scope").primaryKey(),
+    value: integer("value").notNull().default(0),
+});
+
+export type Offer = typeof offer.$inferSelect;
+export type OfferItem = typeof offerItem.$inferSelect;
+export type Invoice = typeof invoice.$inferSelect;
+export type InvoiceItem = typeof invoiceItem.$inferSelect;

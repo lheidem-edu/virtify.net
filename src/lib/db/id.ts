@@ -12,6 +12,10 @@ export const ID_PREFIX = {
     verification: "verification",
     twoFactor: "twofactor",
     contract: "contract",
+    offer: "offer",
+    offerItem: "offeritem",
+    invoice: "invoice",
+    invoiceItem: "invoiceitem",
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIX)[keyof typeof ID_PREFIX];
