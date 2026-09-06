@@ -1,3 +1,4 @@
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
     bigint,
     boolean,
@@ -180,6 +181,8 @@ export const offerStatus = pgEnum("offer_status", [
     "accepted",
     "declined",
     "expired",
+    /** Pulled back by the provider — distinct from an offer the customer let lapse. */
+    "withdrawn",
 ]);
 
 /**
@@ -279,8 +282,15 @@ export const invoice = pgTable("invoice", {
     servicePeriodEnd: timestamp("service_period_end", { mode: "date" }),
     paidAt: timestamp("paid_at"),
     cancelledAt: timestamp("cancelled_at"),
-    /** Points at the invoice this one cancels, for the audit trail. */
-    cancelsInvoiceId: text("cancels_invoice_id"),
+    /**
+     * Points at the invoice this one cancels, for the audit trail. Restricted
+     * rather than cascading: the cancelled original must outlive its Storno,
+     * or the correction would document nothing.
+     */
+    cancelsInvoiceId: text("cancels_invoice_id").references(
+        (): AnyPgColumn => invoice.id,
+        { onDelete: "restrict" },
+    ),
 
     introText: text("intro_text"),
     note: text("note"),

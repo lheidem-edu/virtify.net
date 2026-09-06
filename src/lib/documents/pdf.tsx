@@ -188,6 +188,11 @@ export type PdfLine = Totals["lines"][number] & { detail?: string | null };
 
 export type DocumentPdfInput = {
     kind: "invoice" | "offer";
+    /**
+     * A draft has no number yet and must not read as a payable document; a
+     * Storno reverses an invoice and carries its lines with negated prices.
+     */
+    variant?: "draft" | "storno" | null;
     number: string;
     /** Optional line beneath the heading, such as an offer's title. */
     title?: string | null;
@@ -211,6 +216,9 @@ const DEFAULT_INTRO = {
     offer: "vielen Dank für Ihr Interesse. Gerne unterbreiten wir Ihnen folgendes Angebot:",
 } as const;
 
+const STORNO_INTRO =
+    "hiermit stornieren wir die nachfolgend genannte Rechnung vollständig. Die ursprünglichen Positionen sind mit umgekehrtem Vorzeichen aufgeführt.";
+
 function FoldMarks() {
     // 87 mm and 192 mm fold the sheet into thirds for a DIN-lang envelope;
     // 148.5 mm is the punch mark at the exact half of the page.
@@ -228,7 +236,18 @@ function FoldMarks() {
 
 function DocumentPdf(input: DocumentPdfInput) {
     const isInvoice = input.kind === "invoice";
-    const heading = `${KIND_LABEL[input.kind]} ${input.number}`;
+    const isDraft = input.variant === "draft";
+    const isStorno = input.variant === "storno";
+
+    const label = isStorno
+        ? "Stornorechnung"
+        : isDraft
+          ? `${KIND_LABEL[input.kind]}entwurf`
+          : KIND_LABEL[input.kind];
+
+    // A draft has nothing to reference yet, so the number is left off entirely
+    // rather than printed as a placeholder that looks like one.
+    const heading = isDraft ? label : `${label} ${input.number}`;
 
     const info: [string, string][] = [
         ...(input.customerNumber
@@ -320,7 +339,10 @@ function DocumentPdf(input: DocumentPdfInput) {
                         Sehr geehrte Damen und Herren,
                     </Text>
                     <Text style={styles.introText}>
-                        {input.introText || DEFAULT_INTRO[input.kind]}
+                        {input.introText ||
+                            (isStorno
+                                ? STORNO_INTRO
+                                : DEFAULT_INTRO[input.kind])}
                     </Text>
 
                     <View style={styles.tableHead}>
@@ -387,7 +409,19 @@ function DocumentPdf(input: DocumentPdfInput) {
                         berechnet.
                     </Text>
 
-                    {isInvoice ? (
+                    {isDraft ? (
+                        <Text style={styles.paragraph}>
+                            Dies ist ein Entwurf und keine Rechnung im Sinne des
+                            § 14 UStG. Bitte leisten Sie hierauf keine Zahlung.
+                        </Text>
+                    ) : isStorno ? (
+                        <Text style={styles.paragraph}>
+                            Diese Stornorechnung hebt die genannte Rechnung
+                            vollständig auf. Eine Zahlung ist hierauf nicht zu
+                            leisten; bereits gezahlte Beträge erstatten wir auf
+                            das uns bekannte Konto.
+                        </Text>
+                    ) : isInvoice ? (
                         <Text style={styles.paragraph}>
                             Bitte überweisen Sie den Gesamtbetrag ohne Abzug
                             {input.dueAt

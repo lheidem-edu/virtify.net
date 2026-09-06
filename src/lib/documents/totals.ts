@@ -3,6 +3,8 @@ export type LineItem = {
     quantity: number;
     unitCode: string;
     unitPriceCents: number;
+    /** Small print under the line: contract reference, billing note. */
+    detail?: string | null;
 };
 
 export type Totals = {

@@ -7,6 +7,7 @@ import { DEFAULT_UNIT_CODE, type LineItem } from "@/lib/documents/totals";
  */
 export function readLineItems(data: FormData): LineItem[] | null {
     const descriptions = data.getAll("itemDescription").map(String);
+    const details = data.getAll("itemDetail").map(String);
     const quantities = data.getAll("itemQuantity").map(String);
     const units = data.getAll("itemUnit").map(String);
     const prices = data.getAll("itemPrice").map(String);
@@ -29,6 +30,7 @@ export function readLineItems(data: FormData): LineItem[] | null {
 
         items.push({
             description,
+            detail: details[index]?.trim() || null,
             quantity,
             unitCode:
                 (units[index] ?? DEFAULT_UNIT_CODE).trim() || DEFAULT_UNIT_CODE,
@@ -39,7 +41,11 @@ export function readLineItems(data: FormData): LineItem[] | null {
     return items.length > 0 ? items : null;
 }
 
-/** Accepts "9,95" as well as "9.95" — German input is the common case. */
+/**
+ * Accepts "9,95" as well as "9.95" — German input is the common case. A
+ * leading minus is allowed because a Storno restates the original's lines
+ * with negated prices; callers that must not see one check for it themselves.
+ */
 export function parsePriceToCents(value: string) {
     const normalised = value.replace(/\s/g, "").replace(",", ".");
 
@@ -50,6 +56,12 @@ export function parsePriceToCents(value: string) {
     return Math.round(Number(normalised) * 100);
 }
 
+/** Like parsePriceToCents, but rejects a negative amount outright. */
+export function parsePositivePriceToCents(value: string) {
+    const cents = parsePriceToCents(value);
+    return cents === null || cents < 0 ? null : cents;
+}
+
 export function parseDate(value: string) {
     if (!value) {
         return null;
@@ -57,4 +69,16 @@ export function parseDate(value: string) {
 
     const parsed = new Date(`${value}T00:00:00Z`);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** A Date as the `yyyy-mm-dd` an <input type="date"> expects, or "". */
+export function dateInputValue(value: Date | null | undefined) {
+    return value ? value.toISOString().slice(0, 10) : "";
+}
+
+/** Cents as the plain German decimal an amount input expects, or "". */
+export function priceInputValue(cents: number | null | undefined) {
+    return cents === null || cents === undefined
+        ? ""
+        : (cents / 100).toFixed(2).replace(".", ",");
 }
