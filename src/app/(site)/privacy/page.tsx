@@ -120,12 +120,20 @@ export default function Page() {
 
             <LegalSection label="05" title="Kundenkonto und Vertragsabwicklung">
                 <p>
-                    Soweit du ein Kundenkonto anlegst oder einen Vertrag mit uns
-                    schließt, verarbeiten wir die dafür erforderlichen Bestands-
-                    und Vertragsdaten — insbesondere Name, Anschrift,
-                    E-Mail-Adresse, Zugangsdaten in gehashter Form,
-                    Vertragsgegenstand, Laufzeit sowie Zahlungs- und
-                    Rechnungsdaten.
+                    Für den Kundenbereich verarbeiten wir die dafür
+                    erforderlichen Bestands- und Vertragsdaten: Name, optional
+                    Firma, Anschrift, E-Mail-Adresse, optional
+                    Umsatzsteuer-Identifikationsnummer und Telefonnummer, das
+                    Passwort ausschließlich als kryptografischen Hash, sowie
+                    Vertragsgegenstand, Laufzeit, Angebote und Rechnungen.
+                </p>
+                <p>
+                    Aktivierst du die Zwei-Faktor-Authentifizierung, speichern
+                    wir zusätzlich das dafür nötige Geheimnis und deine
+                    Wiederherstellungscodes. Zur Abwehr automatisierter
+                    Anmeldeversuche halten wir außerdem kurzzeitig Zähler vor,
+                    die an die anfragende IP-Adresse gebunden sind (Art. 6 Abs.
+                    1 lit. f DSGVO).
                 </p>
                 <p>
                     Zweck ist die Begründung, Durchführung und Beendigung des
@@ -141,8 +149,29 @@ export default function Page() {
                 </p>
             </LegalSection>
 
+            <LegalSection label="06" title="Angebote und Rechnungen">
+                <p>
+                    Angebote und Rechnungen erstellen wir aus deinen Stammdaten
+                    und stellen sie dir im Kundenbereich sowie per E-Mail
+                    bereit. Rechnungen versenden wir zusätzlich im Format
+                    XRechnung, damit du sie maschinell weiterverarbeiten kannst.
+                    Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO
+                    (Vertragsdurchführung) sowie Art. 6 Abs. 1 lit. c DSGVO
+                    (Rechnungsstellung nach § 14 UStG).
+                </p>
+
+                <p>
+                    Eine ausgestellte Rechnung ist unveränderlich; Korrekturen
+                    erfolgen durch Stornierung und Neuausstellung. Name und
+                    Anschrift werden zum Zeitpunkt der Ausstellung in das
+                    Dokument übernommen und bleiben dort erhalten, auch wenn du
+                    deine Stammdaten später änderst — andernfalls würde ein
+                    bereits erteilter Beleg nachträglich verändert.
+                </p>
+            </LegalSection>
+
             <LegalSection
-                label="06"
+                label="07"
                 title="Cookies und vergleichbare Techniken"
             >
                 <p>
@@ -166,7 +195,7 @@ export default function Page() {
             </LegalSection>
 
             <LegalSection
-                label="07"
+                label="08"
                 title="Keine Analyse, keine Einbindung Dritter"
             >
                 <p>
@@ -179,7 +208,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="08" title="Externe Verlinkungen">
+            <LegalSection label="09" title="Externe Verlinkungen">
                 <p>
                     Unsere Seiten können Verweise auf Websites Dritter
                     enthalten. Solche Verweise werden ausschließlich als reine
@@ -193,7 +222,7 @@ export default function Page() {
             </LegalSection>
 
             <LegalSection
-                label="09"
+                label="10"
                 title="Daten auf den von dir genutzten Instanzen"
             >
                 <p>
@@ -214,7 +243,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="10" title="Empfänger">
+            <LegalSection label="11" title="Empfänger">
                 <p>
                     Personenbezogene Daten werden nicht verkauft, nicht
                     vermietet und nicht zu Werbezwecken an Dritte weitergegeben.
@@ -231,7 +260,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="11" title="Drittlandübermittlung">
+            <LegalSection label="12" title="Drittlandübermittlung">
                 <p>
                     Eine Übermittlung personenbezogener Daten in Länder
                     außerhalb der Europäischen Union oder des Europäischen
@@ -242,7 +271,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="12" title="Speicherdauer">
+            <LegalSection label="13" title="Speicherdauer">
                 <p>
                     Wir speichern personenbezogene Daten nur so lange, wie es
                     für die jeweiligen Zwecke erforderlich ist. Danach werden
@@ -256,7 +285,7 @@ export default function Page() {
             </LegalSection>
 
             <LegalSection
-                label="13"
+                label="14"
                 title="Automatisierte Entscheidungsfindung"
             >
                 <p>
@@ -265,7 +294,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="14" title="Deine Rechte">
+            <LegalSection label="15" title="Deine Rechte">
                 <p>Dir stehen uns gegenüber folgende Rechte zu:</p>
                 <LegalList
                     items={[
@@ -287,7 +316,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="15" title="Beschwerderecht">
+            <LegalSection label="16" title="Beschwerderecht">
                 <p>
                     Unbeschadet anderweitiger Rechtsbehelfe steht dir ein
                     Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde zu
@@ -307,7 +336,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="16" title="Änderungen dieser Erklärung">
+            <LegalSection label="17" title="Änderungen dieser Erklärung">
                 <p>
                     Wir passen diese Datenschutzerklärung an, sobald sich die
                     beschriebenen Verarbeitungen ändern — insbesondere mit dem

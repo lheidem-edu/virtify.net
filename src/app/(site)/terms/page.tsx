@@ -96,6 +96,7 @@ export default function Page() {
                     items={[
                         "Die Darstellung der Leistungen stellt kein bindendes Angebot dar, sondern eine Aufforderung an den Kunden, ein Angebot abzugeben.",
                         "Mit dem Absenden einer Bestellung gibt der Kunde ein verbindliches Angebot ab. Der Anbieter kann dieses innerhalb von fünf Tagen durch eine Bestätigung in Textform oder durch die Bereitstellung der Leistung annehmen.",
+                        "Unterbreitet der Anbieter dem Kunden ein Angebot im Kundenbereich, kommt der Vertrag mit dessen Annahme durch den Kunden zustande. Die Annahme erfolgt durch die entsprechende Schaltfläche im Kundenbereich; der Zeitpunkt wird dort festgehalten. Ein abgelaufenes Angebot kann nicht mehr angenommen werden.",
                         "Vor dem Absenden der Bestellung kann der Kunde sämtliche Angaben prüfen, ändern oder die Bestellung abbrechen.",
                         "Anfragen des Kunden zur Erstellung eines individuellen Angebots sind unverbindlich. Der Anbieter unterbreitet hierzu ein Angebot in Textform, das der Kunde innerhalb von fünf Tagen annehmen kann, soweit im Angebot keine andere Frist ausgewiesen ist.",
                         "Vertragssprache ist Deutsch.",
@@ -108,7 +109,18 @@ export default function Page() {
                 <LegalList
                     variant="paren"
                     items={[
-                        "Für die Buchung und Verwaltung der Leistungen kann ein Kundenkonto erforderlich sein. Die Einrichtung ist unentgeltlich und begründet für sich genommen keine Zahlungspflicht.",
+                        <>
+                            Für die Verwaltung der Leistungen stellt der
+                            Anbieter unter{" "}
+                            <Link href="/account" className={linkClass}>
+                                {site.name}/account
+                            </Link>{" "}
+                            einen Kundenbereich bereit. Dort kann der Kunde
+                            seine Stammdaten pflegen sowie Verträge, Angebote
+                            und Rechnungen einsehen. Die Einrichtung eines
+                            Kontos ist unentgeltlich und begründet für sich
+                            genommen keine Zahlungspflicht.
+                        </>,
                         "Der Kunde hält die bei der Registrierung angegebenen Daten zutreffend und aktuell und informiert den Anbieter unverzüglich über Änderungen der für die Vertragsdurchführung erforderlichen Daten.",
                         "Die Abwicklung und die Übermittlung der im Zusammenhang mit dem Vertragsschluss erforderlichen Informationen erfolgen ganz oder teilweise automatisiert per E-Mail. Der Kunde stellt sicher, dass die hinterlegte E-Mail-Adresse zutreffend ist und der Empfang technisch möglich ist, insbesondere nicht durch Spam-Filter verhindert wird.",
                         "Der Kunde kann die Löschung des Kundenkontos jederzeit verlangen, soweit keine laufenden Verträge oder offenen Forderungen entgegenstehen und keine gesetzlichen Aufbewahrungspflichten bestehen.",
@@ -161,6 +173,8 @@ export default function Page() {
                         "Sind im Einzelvertrag Transfervolumina oder vergleichbare Kontingente inkludiert, informiert der Anbieter den Kunden rechtzeitig vor deren Ausschöpfung. Überschreitungen werden zu den im Einzelvertrag vereinbarten Sätzen abgerechnet.",
                         "Bei Zahlungsverzug ist der Anbieter berechtigt, den Zugang zur Instanz nach erfolgloser Mahnung mit einer Frist von sieben Werktagen vorübergehend zu sperren. Während der Sperrung kann der Anbieter die vertraglichen Leistungen nicht erbringen. Gesetzliche Ansprüche auf Verzugszinsen und Ersatz von Mahnkosten bleiben unberührt.",
                         "Soweit nicht anders vereinbart, erfolgt die Zahlung bargeldlos auf das dem Kunden mitgeteilte Konto. Kosten der Geldübermittlung trägt der Kunde, soweit die Zahlung außerhalb der Europäischen Union veranlasst wurde.",
+                        "Rechnungen werden elektronisch erteilt: als PDF und zusätzlich im strukturierten Format XRechnung. Sie werden an die im Kundenkonto hinterlegte E-Mail-Adresse versandt und stehen dort dauerhaft zum Abruf bereit. Mit Vertragsschluss stimmt der Kunde dem elektronischen Rechnungsversand zu; eine Rechnung in Papierform wird nicht erteilt.",
+                        "Eine ausgestellte Rechnung wird nicht verändert. Korrekturen erfolgen durch Stornierung und Neuausstellung.",
                         "Der Kunde kann nur mit unbestrittenen oder rechtskräftig festgestellten Forderungen aufrechnen. Ein Zurückbehaltungsrecht steht ihm nur wegen Ansprüchen aus demselben Vertragsverhältnis zu.",
                     ]}
                 />

@@ -27,7 +27,8 @@
     "overrides": [
         {
             "includes": [
-                "src/components/ui/**"
+                "src/components/ui/**",
+                "src/hooks/use-mobile.ts"
             ],
             "linter": {
                 "enabled": false
