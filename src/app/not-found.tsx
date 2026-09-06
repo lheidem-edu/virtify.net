@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 export default function NotFound() {
     return (
@@ -12,12 +13,14 @@ export default function NotFound() {
             <p className="mt-6 max-w-md text-zinc-500">
                 Die angeforderte Seite existiert nicht oder wurde verschoben.
             </p>
-            <Link
-                href="/"
-                className="mt-10 inline-block border px-4 py-2 text-sm text-zinc-300 transition-colors hover:border-white hover:bg-white hover:text-black"
+            <Button
+                render={<Link href="/" />}
+                variant="outline"
+                size="lg"
+                className="mt-10"
             >
                 Zur Startseite
-            </Link>
+            </Button>
         </section>
     );
 }

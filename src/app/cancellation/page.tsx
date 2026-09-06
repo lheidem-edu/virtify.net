@@ -1,6 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
 import { operator, site } from "@/lib/site";
 import { type CancellationState, submitCancellation } from "./actions";
 
@@ -12,10 +17,6 @@ import { type CancellationState, submitCancellation } from "./actions";
  * The declaration is sent server-side and timestamped by the server, so the
  * time of receipt does not depend on the visitor's clock.
  */
-
-const field =
-    "w-full border bg-transparent px-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none";
-const labelClass = "block text-sm text-zinc-400";
 
 const initialState: CancellationState = { status: "idle" };
 
@@ -77,13 +78,15 @@ export default function Page() {
                     <pre className="mt-8 max-w-2xl overflow-x-auto border p-6 font-mono text-xs leading-6 text-zinc-200">
                         {state.declaration}
                     </pre>
-                    <button
+                    <Button
                         type="button"
+                        variant="outline"
+                        size="lg"
                         onClick={() => window.print()}
-                        className="mt-8 border px-5 py-3 text-sm transition-colors hover:border-white hover:bg-white hover:text-black"
+                        className="mt-8"
                     >
                         Erklärung drucken oder als PDF sichern
-                    </button>
+                    </Button>
                 </section>
             ) : (
                 <section className="px-6 py-16 md:px-10 md:py-20">
@@ -102,105 +105,94 @@ export default function Page() {
 
                     <form action={formAction} className="max-w-xl space-y-8">
                         <fieldset className="space-y-3">
-                            <legend className={labelClass}>
+                            <legend className="mb-3 text-sm text-muted-foreground">
                                 Art der Kündigung
                             </legend>
-                            {(
-                                [
-                                    ["ordentlich", "Ordentliche Kündigung"],
+                            <RadioGroup
+                                name="kind"
+                                value={kind}
+                                onValueChange={(value) =>
+                                    setKind(
+                                        value as
+                                            | "ordentlich"
+                                            | "ausserordentlich",
+                                    )
+                                }
+                            >
+                                {(
                                     [
-                                        "ausserordentlich",
-                                        "Außerordentliche Kündigung",
-                                    ],
-                                ] as const
-                            ).map(([value, text]) => (
-                                <label
-                                    key={value}
-                                    className="flex cursor-pointer items-center gap-3 border px-4 py-3 text-sm"
-                                >
-                                    <input
-                                        type="radio"
-                                        name="kind"
-                                        value={value}
-                                        checked={kind === value}
-                                        onChange={() => setKind(value)}
-                                        className="accent-white"
-                                    />
-                                    {text}
-                                </label>
-                            ))}
+                                        ["ordentlich", "Ordentliche Kündigung"],
+                                        [
+                                            "ausserordentlich",
+                                            "Außerordentliche Kündigung",
+                                        ],
+                                    ] as const
+                                ).map(([value, text]) => (
+                                    <Label
+                                        key={value}
+                                        className="flex cursor-pointer items-center gap-3 border px-4 py-3 text-sm font-normal"
+                                    >
+                                        <RadioGroupItem value={value} />
+                                        {text}
+                                    </Label>
+                                ))}
+                            </RadioGroup>
                         </fieldset>
 
                         {kind === "ausserordentlich" ? (
                             <div className="space-y-3">
-                                <label className={labelClass} htmlFor="reason">
-                                    Kündigungsgrund
-                                </label>
-                                <textarea
+                                <Label htmlFor="reason">Kündigungsgrund</Label>
+                                <Textarea
                                     id="reason"
                                     name="reason"
                                     required
                                     rows={3}
-                                    className={field}
                                 />
                             </div>
                         ) : null}
 
                         {textInputs.map((input) => (
                             <div key={input.id} className="space-y-3">
-                                <label
-                                    className={labelClass}
-                                    htmlFor={input.id}
-                                >
-                                    {input.text}
-                                </label>
-                                <input
+                                <Label htmlFor={input.id}>{input.text}</Label>
+                                <Input
                                     id={input.id}
                                     name={input.id}
                                     type="text"
                                     required={input.required}
                                     placeholder={input.placeholder}
-                                    className={field}
                                 />
                             </div>
                         ))}
 
                         <div className="space-y-3">
-                            <label className={labelClass} htmlFor="date">
-                                Beendigung zum
-                            </label>
-                            <input
-                                id="date"
-                                name="date"
-                                type="date"
-                                className={field}
-                            />
-                            <p className="text-xs text-zinc-600">
+                            <Label htmlFor="date">Beendigung zum</Label>
+                            <Input id="date" name="date" type="date" />
+                            <p className="text-xs text-muted-foreground">
                                 Ohne Angabe kündigen wir zum nächstmöglichen
                                 Zeitpunkt.
                             </p>
                         </div>
 
                         <div className="space-y-3">
-                            <label className={labelClass} htmlFor="email">
+                            <Label htmlFor="email">
                                 E-Mail-Adresse für die Bestätigung
-                            </label>
-                            <input
+                            </Label>
+                            <Input
                                 id="email"
                                 name="email"
                                 type="email"
                                 required
-                                className={field}
                             />
                         </div>
 
-                        <button
+                        <Button
                             type="submit"
+                            size="lg"
                             disabled={pending}
-                            className="w-full border border-white bg-white px-6 py-4 text-sm font-medium text-black transition-colors hover:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                            className="w-full sm:w-auto"
                         >
                             {pending ? "Wird gesendet …" : "Jetzt kündigen"}
-                        </button>
+                        </Button>
 
                         <p className="text-xs leading-5 text-zinc-600">
                             Mit dem Absenden übermittelst du die vorstehenden

@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { Button } from "@/components/ui/button";
 import netmountainsLogo from "@/lib/assets/netmountains-logo.png";
 import { operator } from "@/lib/site";
 
@@ -94,12 +95,14 @@ export default function Page() {
                         welche Konfiguration du brauchst — vCPU,
                         Arbeitsspeicher, Speicher und Anbindung.
                     </p>
-                    <a
-                        href={`mailto:${operator.email}`}
-                        className="mt-8 inline-block border px-5 py-3 text-sm transition-colors hover:border-white hover:bg-white hover:text-black"
+                    <Button
+                        render={<a href={`mailto:${operator.email}`} />}
+                        variant="outline"
+                        size="lg"
+                        className="mt-8"
                     >
                         {operator.email}
-                    </a>
+                    </Button>
                 </div>
             </section>
         </>
