@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import LegalList from "@/lib/components/legal/legal-list";
 import LegalPage from "@/lib/components/legal/legal-page";
 import LegalSection from "@/lib/components/legal/legal-section";
@@ -508,14 +509,19 @@ export default function Page() {
                     auch formlos in Textform erklärt werden.
                 </p>
                 <p>
-                    <a
-                        href="/withdrawal-form"
-                        target="_blank"
-                        rel="noopener"
-                        className="inline-block border px-5 py-3 text-sm text-white transition-colors hover:border-white hover:bg-white hover:text-black"
+                    <Button
+                        render={
+                            <a
+                                href="/withdrawal-form"
+                                target="_blank"
+                                rel="noopener"
+                            />
+                        }
+                        variant="outline"
+                        size="lg"
                     >
                         Muster-Widerrufsformular (PDF)
-                    </a>
+                    </Button>
                 </p>
             </LegalSection>
 

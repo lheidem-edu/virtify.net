@@ -3,6 +3,7 @@
 import {
     createTransport,
     type EmailRow,
+    logMailError,
     mailFrom,
     renderEmail,
 } from "@/lib/mail";
@@ -106,8 +107,8 @@ export async function submitCancellation(
         return failure;
     }
 
+    // The declaration itself. This one is what legally has to arrive.
     try {
-        // The declaration itself.
         await transport.sendMail({
             from: mailFrom,
             to: operator.email,
@@ -123,12 +124,20 @@ export async function submitCancellation(
                 rowsTitle: "Erklärung",
                 rows,
                 outro: [
-                    "Eine Eingangsbestätigung wurde automatisch an die angegebene Adresse gesendet. Eine Antwort auf diese Nachricht geht direkt an den Kunden.",
+                    "Eine Eingangsbestätigung wurde an die angegebene Adresse gesendet. Eine Antwort auf diese Nachricht geht direkt an den Kunden.",
                 ],
             }),
         });
+    } catch (error) {
+        logMailError("cancellation notice", error);
+        return failure;
+    }
 
-        // Confirmation of receipt owed to consumers under § 312k Abs. 5 BGB.
+    // Confirmation of receipt owed to consumers under § 312k Abs. 5 BGB. Sent
+    // separately: an internal relay may accept mail for the operator domain
+    // but refuse to relay to an external recipient, and that must not make the
+    // customer think the cancellation itself did not go through.
+    try {
         await transport.sendMail({
             from: mailFrom,
             to: email,
@@ -160,8 +169,8 @@ export async function submitCancellation(
             }),
         });
     } catch (error) {
-        console.error("Cancellation mail failed:", error);
-        return failure;
+        // The cancellation is recorded; only the receipt did not go out.
+        logMailError("receipt confirmation", error);
     }
 
     return { status: "sent", declaration, receivedAt: stamp };

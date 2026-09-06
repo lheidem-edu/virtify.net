@@ -33,8 +33,8 @@ export default function RootLayout({
     children: React.ReactNode;
 }) {
     return (
-        <html lang="de" className={inter.variable}>
-            <body className="flex min-h-dvh flex-col bg-black font-sans text-white">
+        <html lang="de" className={`dark ${inter.variable}`}>
+            <body className="flex min-h-dvh flex-col">
                 <a
                     href="#content"
                     className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-6 focus:z-[100] focus:border focus:bg-black focus:px-4 focus:py-2 focus:text-sm"
