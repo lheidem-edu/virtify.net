@@ -33,9 +33,12 @@ export function calculateTotals(items: LineItem[]): Totals {
 
 /** Unit codes offered in the UI, per UN/ECE Recommendation 20. */
 export const UNIT_CODES = [
-    { code: "C62", label: "Stück" },
     { code: "MON", label: "Monat" },
     { code: "ANN", label: "Jahr" },
+    { code: "C62", label: "Stück" },
     { code: "HUR", label: "Stunde" },
     { code: "DAY", label: "Tag" },
 ] as const;
+
+/** Recurring service is the common case here, so the month leads. */
+export const DEFAULT_UNIT_CODE = "MON";
