@@ -12,14 +12,14 @@
         "db:down": "node scripts/db.mjs down",
         "db:generate": "drizzle-kit generate",
         "db:logs": "node scripts/db.mjs logs",
-        "db:migrate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate",
+        "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
         "db:reset": "node scripts/db.mjs reset",
         "db:studio": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs studio",
         "db:up": "node scripts/db.mjs up",
         "dev": "next dev --turbopack",
         "lint": "biome lint",
         "mail:check": "node --env-file-if-exists=.env.local scripts/mail-check.mjs",
-        "start": "next start"
+        "start": "node scripts/migrate.mjs && next start"
     },
     "dependencies": {
         "@base-ui/react": "1.8.0",
