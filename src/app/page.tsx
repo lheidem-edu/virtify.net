@@ -1,7 +1,5 @@
 import Image from "next/image";
-import { Button } from "@/components/ui/button";
 import netmountainsLogo from "@/lib/assets/netmountains-logo.png";
-import { operator } from "@/lib/site";
 
 const properties = [
     {
@@ -57,7 +55,7 @@ export default function Page() {
                 ))}
             </section>
 
-            <section className="grid gap-x-12 gap-y-8 border-b px-6 py-16 md:grid-cols-[13rem_minmax(0,1fr)] md:px-10 md:py-20">
+            <section className="grid gap-x-12 gap-y-8 px-6 py-16 md:grid-cols-[13rem_minmax(0,1fr)] md:px-10 md:py-20">
                 <h2 className="self-start text-sm font-medium tracking-tight">
                     Rechenzentrum
                 </h2>
@@ -82,27 +80,6 @@ export default function Page() {
                     >
                         netmountains.de
                     </a>
-                </div>
-            </section>
-
-            <section className="grid gap-x-12 gap-y-8 px-6 py-16 md:grid-cols-[13rem_minmax(0,1fr)] md:px-10 md:py-20">
-                <h2 className="self-start text-sm font-medium tracking-tight">
-                    Anfrage
-                </h2>
-                <div className="max-w-xl">
-                    <p className="text-sm leading-7 text-zinc-400">
-                        Konkrete Projekte besprechen wir direkt. Schreib uns,
-                        welche Konfiguration du brauchst — vCPU,
-                        Arbeitsspeicher, Speicher und Anbindung.
-                    </p>
-                    <Button
-                        render={<a href={`mailto:${operator.email}`} />}
-                        variant="outline"
-                        size="lg"
-                        className="mt-8"
-                    >
-                        {operator.email}
-                    </Button>
                 </div>
             </section>
         </>

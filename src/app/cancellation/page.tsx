@@ -56,10 +56,16 @@ export default function Page() {
                     Vertrag kündigen
                 </h1>
                 <p className="mt-8 max-w-2xl text-sm leading-7 text-zinc-400">
-                    Über dieses Formular kannst du einen bestehenden Vertrag
-                    kündigen. Es ist die Bestätigungsseite der
-                    Kündigungsschaltfläche nach § 312k BGB. Eine Kündigung ist
-                    daneben jederzeit formlos in Textform möglich, etwa per
+                    Hier kündigst du einen bestehenden Vertrag mit {site.name}.
+                    Trage die Angaben zu deinem Vertrag ein und schließe den
+                    Vorgang mit „Jetzt kündigen“ ab. Den Eingang bestätigen wir
+                    dir unverzüglich per E-Mail an die von dir angegebene
+                    Adresse.
+                </p>
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
+                    Diese Seite ist die Bestätigungsseite der
+                    Kündigungsschaltfläche nach § 312k BGB. Unabhängig davon
+                    kannst du jederzeit formlos in Textform kündigen, etwa per
                     E-Mail an {operator.email}.
                 </p>
             </header>
