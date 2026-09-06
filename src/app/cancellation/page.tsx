@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { operator, site } from "@/lib/site";
+import { site } from "@/lib/site";
 import { type CancellationState, submitCancellation } from "./actions";
 
 /**
@@ -61,12 +61,6 @@ export default function Page() {
                     Vorgang mit „Jetzt kündigen“ ab. Den Eingang bestätigen wir
                     dir unverzüglich per E-Mail an die von dir angegebene
                     Adresse.
-                </p>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-                    Diese Seite ist die Bestätigungsseite der
-                    Kündigungsschaltfläche nach § 312k BGB. Unabhängig davon
-                    kannst du jederzeit formlos in Textform kündigen, etwa per
-                    E-Mail an {operator.email}.
                 </p>
             </header>
 
