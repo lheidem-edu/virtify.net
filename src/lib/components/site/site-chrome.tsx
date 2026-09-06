@@ -1,4 +1,6 @@
+import { ArrowRight, CircleUser } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import FooterLink from "@/lib/components/ui/footer-link";
 import Wordmark from "@/lib/components/ui/wordmark";
 import { commit, operator, site } from "@/lib/site";
@@ -14,12 +16,16 @@ function SiteHeader() {
                     <Wordmark />
                 </Link>
 
-                <Link
-                    href="/account"
-                    className="border px-4 py-2 text-xs tracking-wide text-zinc-400 transition-colors hover:border-white hover:bg-white hover:text-black"
+                <Button
+                    render={<Link href="/account" />}
+                    variant="outline"
+                    size="sm"
+                    className="group/link gap-2"
                 >
+                    <CircleUser className="size-4 text-muted-foreground transition-colors group-hover/link:text-current" />
                     Kundenbereich
-                </Link>
+                    <ArrowRight className="size-3.5 -translate-x-0.5 opacity-0 transition-all group-hover/link:translate-x-0 group-hover/link:opacity-100" />
+                </Button>
             </div>
         </header>
     );

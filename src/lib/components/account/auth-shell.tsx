@@ -1,3 +1,12 @@
+import Link from "next/link";
+import Wordmark from "@/lib/components/ui/wordmark";
+
+const LEGAL = [
+    { href: "/legal", label: "Impressum" },
+    { href: "/privacy", label: "Datenschutz" },
+    { href: "/terms", label: "AGB" },
+];
+
 export default function AuthShell({
     title,
     intro,
@@ -10,21 +19,50 @@ export default function AuthShell({
     footer?: React.ReactNode;
 }) {
     return (
-        <section className="grow px-6 py-20 md:px-10 md:py-28">
-            <div className="max-w-sm">
-                <h1 className="text-3xl font-semibold tracking-tight text-balance">
+        <div className="flex min-h-dvh flex-col items-center justify-center px-6 py-12">
+            <div className="w-full max-w-sm">
+                <Link
+                    href="/"
+                    className="group inline-block text-lg font-semibold tracking-tight"
+                >
+                    <Wordmark />
+                </Link>
+
+                <h1 className="mt-10 text-2xl font-semibold tracking-tight text-balance">
                     {title}
                 </h1>
                 {intro ? (
-                    <p className="mt-4 text-sm leading-7 text-zinc-400">
+                    <p className="mt-3 text-sm leading-6 text-muted-foreground">
                         {intro}
                     </p>
                 ) : null}
-                <div className="mt-10">{children}</div>
+
+                <div className="mt-8 rounded-lg border p-6">{children}</div>
+
                 {footer ? (
-                    <div className="mt-8 text-sm text-zinc-500">{footer}</div>
+                    <div className="mt-6 text-sm text-muted-foreground">
+                        {footer}
+                    </div>
                 ) : null}
+
+                <div className="mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-6 text-xs text-zinc-600">
+                    <Link
+                        href="/"
+                        className="transition-colors hover:text-zinc-400"
+                    >
+                        Zur Website
+                    </Link>
+                    {LEGAL.map((entry) => (
+                        <Link
+                            key={entry.href}
+                            href={entry.href}
+                            className="transition-colors hover:text-zinc-400"
+                        >
+                            {entry.label}
+                        </Link>
+                    ))}
+                </div>
             </div>
-        </section>
+        </div>
     );
 }
