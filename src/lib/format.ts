@@ -63,13 +63,37 @@ export const CONTRACT_STATUS_TONE = {
 } as const;
 
 /** UN/ECE Recommendation 20 codes as they should print on a document. */
-export const UNIT_LABEL: Record<string, string> = {
+const UNIT_LABEL: Record<string, string> = {
     C62: "Stk.",
     MON: "Monat",
     ANN: "Jahr",
     HUR: "Std.",
     DAY: "Tag",
 };
+
+const UNIT_LABEL_PLURAL: Record<string, string> = {
+    C62: "Stk.",
+    MON: "Monate",
+    ANN: "Jahre",
+    HUR: "Std.",
+    DAY: "Tage",
+};
+
+/**
+ * Quantity and unit as one phrase — "12 Monate", "1 Monat", "2,5 Std." Whole
+ * numbers print without decimals; a line for one month should not read "1,00".
+ */
+export function formatQuantity(quantity: number, unitCode: string) {
+    const amount = quantity.toLocaleString("de-DE", {
+        maximumFractionDigits: 2,
+    });
+    const unit =
+        quantity === 1
+            ? UNIT_LABEL[unitCode]
+            : (UNIT_LABEL_PLURAL[unitCode] ?? UNIT_LABEL[unitCode]);
+
+    return unit ? `${amount} ${unit}` : `${amount} ${unitCode}`;
+}
 
 /**
  * A date range in the German short form: the year is only repeated when the

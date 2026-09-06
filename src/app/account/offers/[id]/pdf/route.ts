@@ -22,7 +22,7 @@ export async function GET(
     const pdf = await renderDocumentPdf({
         kind: "offer",
         number: offer.number,
-        subject: offer.title,
+        title: offer.title,
         customerNumber: buyer.customerNumber,
         recipient: offer.recipient ?? formatRecipient(buyer),
         issuedAt: offer.sentAt ?? offer.createdAt,

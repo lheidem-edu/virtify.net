@@ -8,41 +8,50 @@ import {
 } from "@react-pdf/renderer";
 import type { Totals } from "@/lib/documents/totals";
 import {
+    documentFont,
+    FAINT,
+    HAIRLINE,
+    INK,
+    MUTED,
+    mm,
+    RULE,
+} from "@/lib/documents/typography";
+import {
     formatDate,
     formatDateRange,
     formatPrice,
-    UNIT_LABEL,
+    formatQuantity,
 } from "@/lib/format";
-import { bank, operator, site } from "@/lib/site";
+import { bank, operator, policy, site } from "@/lib/site";
 
 /**
  * Business letter per DIN 5008 Form B. The measurements below are the
  * standard's, not taste: the address field sits at 45 mm so it shows through
  * a DIN-lang window envelope, the subject line at 98.46 mm, and the fold and
  * hole marks at 87 / 148.5 / 192 mm so the sheet folds and files correctly.
+ *
+ * Everything the standard leaves open — type, rules, weight, spacing — follows
+ * the website instead: Inter, hairlines, and whitespace doing the work that
+ * boxes and bold rules usually do on an invoice.
  */
-
-/** DIN measurements are in millimetres; PDF units are points. */
-const mm = (value: number) => value * 2.8346;
 
 const MARGIN_LEFT = 24.1;
 const MARGIN_RIGHT = 20;
 const ADDRESS_TOP = 45;
 const ADDRESS_WIDTH = 85;
-/** Zusatz- und Vermerkzone: five lines above the address itself. */
+/** Zusatz- und Vermerkzone: the lines above the address itself. */
 const ADDRESS_ZONE_TOP = 17.7;
 const INFO_BLOCK_LEFT = 125;
 const SUBJECT_TOP = 98.46;
 
-const INK = "#18181b";
-const MUTED = "#52525b";
-const FAINT = "#8a8a94";
-const RULE = "#c8c8ce";
-
 const styles = StyleSheet.create({
     page: {
+        fontFamily: documentFont,
+        // Lining, equal-width figures: without this Inter's proportional
+        // digits make the amount column look ragged from row to row.
+        fontFeatureSettings: ["tnum"],
         paddingBottom: mm(38),
-        fontSize: 9.5,
+        fontSize: 9,
         lineHeight: 1.45,
         color: INK,
     },
@@ -58,83 +67,98 @@ const styles = StyleSheet.create({
         borderColor: RULE,
     },
 
+    /** Small, wide-tracked, upper-case: the site's section eyebrows. */
+    label: {
+        fontSize: 6.5,
+        fontWeight: 500,
+        letterSpacing: 0.7,
+        textTransform: "uppercase",
+        color: FAINT,
+    },
+
     letterhead: {
         height: mm(ADDRESS_TOP),
         justifyContent: "flex-end",
         paddingBottom: mm(6),
     },
-    brand: { fontSize: 15 },
-    brandMuted: { color: FAINT },
+    letterheadRule: {
+        borderBottomWidth: 0.5,
+        borderColor: RULE,
+        paddingBottom: 5,
+    },
+    brand: { fontSize: 14, fontWeight: 600, letterSpacing: -0.2 },
+    brandMuted: { color: FAINT, fontWeight: 400 },
 
     addressRow: { flexDirection: "row", height: mm(45) },
     addressField: { width: mm(ADDRESS_WIDTH) },
     returnZone: {
         height: mm(ADDRESS_ZONE_TOP),
         justifyContent: "flex-end",
-        paddingBottom: 3,
+        paddingBottom: 4,
     },
     returnLine: { fontSize: 6.5, color: MUTED },
-    addressLine: { fontSize: 11, lineHeight: 1.35 },
+    addressLine: { fontSize: 10.5, lineHeight: 1.4 },
 
     infoBlock: {
-        // Fills the rest of the line so space-between actually has space;
+        // Fills the rest of the line so the block aligns on the right margin;
         // without it the block shrink-wraps its widest row.
         flexGrow: 1,
+        alignItems: "flex-end",
         marginLeft: mm(INFO_BLOCK_LEFT - MARGIN_LEFT - ADDRESS_WIDTH),
     },
-    infoRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        marginBottom: 1.5,
-    },
-    infoLabel: { color: MUTED },
-    infoValue: { textAlign: "right" },
+    infoEntry: { alignItems: "flex-end", marginBottom: 5 },
+    infoValue: { fontSize: 9, fontWeight: 500, lineHeight: 1.3 },
 
     subjectGap: { height: mm(SUBJECT_TOP - ADDRESS_TOP - 45) },
-    subject: { fontSize: 14, marginBottom: mm(8) },
+    subject: {
+        fontSize: 16,
+        fontWeight: 600,
+        letterSpacing: -0.3,
+        lineHeight: 1.25,
+    },
+    subjectNote: { fontSize: 10, color: MUTED, marginTop: 4 },
 
-    intro: { marginBottom: mm(6) },
+    intro: { marginTop: mm(7) },
+    introText: { marginTop: mm(3) },
 
     tableHead: {
         flexDirection: "row",
-        borderBottomWidth: 0.75,
-        borderColor: INK,
-        paddingBottom: 4,
-        fontSize: 8.5,
+        marginTop: mm(7),
+        paddingBottom: 5,
+        borderBottomWidth: 0.5,
+        borderColor: RULE,
     },
-    tableRow: { flexDirection: "row", paddingTop: 7 },
-    rowRule: { borderBottomWidth: 0.5, borderColor: RULE, marginTop: 7 },
-    detail: { fontSize: 8, color: MUTED, marginTop: 2 },
-
-    colPos: { width: "7%" },
-    colDesc: { width: "39%" },
-    colQty: { width: "12%", textAlign: "right" },
-    colUnit: { width: "12%", textAlign: "right" },
-    colPrice: { width: "15%", textAlign: "right" },
-    colSum: { width: "15%", textAlign: "right" },
-
-    totalsWrap: { alignItems: "flex-end", marginTop: mm(4) },
-    totalsRow: {
+    tableRow: {
         flexDirection: "row",
-        width: "46%",
-        justifyContent: "space-between",
-        paddingVertical: 2,
+        paddingTop: 6.5,
+        paddingBottom: 6.5,
+        borderBottomWidth: 0.5,
+        borderColor: HAIRLINE,
     },
-    totalsStrong: {
-        flexDirection: "row",
-        width: "46%",
-        justifyContent: "space-between",
-        borderTopWidth: 0.75,
-        borderBottomWidth: 0.75,
-        borderColor: INK,
-        paddingVertical: 5,
-        marginTop: 3,
-        fontSize: 11,
-    },
+    itemName: { fontWeight: 500 },
+    itemDetail: { fontSize: 8, color: MUTED, marginTop: 1.5 },
 
-    paragraph: { marginTop: mm(5) },
-    closing: { marginTop: mm(7) },
-    signature: { marginTop: mm(5) },
+    colPos: { width: "6%", color: FAINT },
+    colDesc: { width: "48%", paddingRight: 12 },
+    colQty: { width: "15%", textAlign: "right", color: MUTED },
+    colPrice: { width: "15%", textAlign: "right", color: MUTED },
+    colSum: { width: "16%", textAlign: "right" },
+
+    totals: { alignItems: "flex-end", marginTop: mm(4) },
+    totalsBlock: { width: "48%" },
+    grandRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "baseline",
+        borderTopWidth: 0.5,
+        borderColor: RULE,
+        paddingTop: 8,
+    },
+    grandValue: { fontSize: 14, fontWeight: 600, letterSpacing: -0.3 },
+
+    exempt: { fontSize: 8, color: MUTED, marginTop: mm(3.5) },
+    paragraph: { marginTop: mm(4.5) },
+    signature: { marginTop: mm(7), fontWeight: 500 },
 
     footer: {
         position: "absolute",
@@ -142,17 +166,20 @@ const styles = StyleSheet.create({
         left: mm(MARGIN_LEFT),
         right: mm(MARGIN_RIGHT),
         flexDirection: "row",
-        fontSize: 7,
-        lineHeight: 1.5,
+        borderTopWidth: 0.5,
+        borderColor: HAIRLINE,
+        paddingTop: 7,
+        fontSize: 6.8,
+        lineHeight: 1.55,
         color: FAINT,
     },
-    footerColumn: { width: "33.33%", paddingRight: 10 },
-    footerHeading: { marginBottom: 4 },
+    footerColumn: { width: "33.33%", paddingRight: 12 },
+    footerHeading: { marginBottom: 3 },
     pageNumber: {
         position: "absolute",
         bottom: mm(8),
         right: mm(MARGIN_RIGHT),
-        fontSize: 7,
+        fontSize: 6.8,
         color: FAINT,
     },
 });
@@ -162,7 +189,8 @@ export type PdfLine = Totals["lines"][number] & { detail?: string | null };
 export type DocumentPdfInput = {
     kind: "invoice" | "offer";
     number: string;
-    subject: string;
+    /** Optional line beneath the heading, such as an offer's title. */
+    title?: string | null;
     recipient: string;
     customerNumber: number | null;
     issuedAt: Date;
@@ -175,9 +203,11 @@ export type DocumentPdfInput = {
     details?: (string | null)[];
 };
 
+const KIND_LABEL = { invoice: "Rechnung", offer: "Angebot" } as const;
+
 const DEFAULT_INTRO = {
     invoice:
-        "vielen Dank für Ihr entgegengebrachtes Vertrauen. Wir erlauben uns, Ihnen nachfolgende Leistungen in Rechnung zu stellen:",
+        "vielen Dank für Ihr Vertrauen. Wir stellen Ihnen die folgenden Leistungen in Rechnung:",
     offer: "vielen Dank für Ihr Interesse. Gerne unterbreiten wir Ihnen folgendes Angebot:",
 } as const;
 
@@ -198,11 +228,11 @@ function FoldMarks() {
 
 function DocumentPdf(input: DocumentPdfInput) {
     const isInvoice = input.kind === "invoice";
+    const heading = `${KIND_LABEL[input.kind]} ${input.number}`;
 
     const info: [string, string][] = [
-        [isInvoice ? "Rechnungs-Nr." : "Angebots-Nr.", input.number],
         ...(input.customerNumber
-            ? ([["Kunden-Nr.", String(input.customerNumber)]] as [
+            ? ([["Kundennummer", String(input.customerNumber)]] as [
                   string,
                   string,
               ][])
@@ -235,9 +265,9 @@ function DocumentPdf(input: DocumentPdfInput) {
 
     return (
         <Document
-            title={`${input.subject} ${input.number}`}
+            title={heading}
             author={operator.name}
-            subject={input.subject}
+            subject={input.title ?? heading}
             creator={site.name}
         >
             <Page size="A4" style={styles.page}>
@@ -245,9 +275,12 @@ function DocumentPdf(input: DocumentPdfInput) {
 
                 <View style={styles.content}>
                     <View style={styles.letterhead}>
-                        <Text style={styles.brand}>
-                            virtify<Text style={styles.brandMuted}>.net</Text>
-                        </Text>
+                        <View style={styles.letterheadRule}>
+                            <Text style={styles.brand}>
+                                virtify
+                                <Text style={styles.brandMuted}>.net</Text>
+                            </Text>
+                        </View>
                     </View>
 
                     <View style={styles.addressRow}>
@@ -267,10 +300,8 @@ function DocumentPdf(input: DocumentPdfInput) {
 
                         <View style={styles.infoBlock}>
                             {info.map(([label, value]) => (
-                                <View key={label} style={styles.infoRow}>
-                                    <Text style={styles.infoLabel}>
-                                        {label}
-                                    </Text>
+                                <View key={label} style={styles.infoEntry}>
+                                    <Text style={styles.label}>{label}</Text>
                                     <Text style={styles.infoValue}>
                                         {value}
                                     </Text>
@@ -280,101 +311,102 @@ function DocumentPdf(input: DocumentPdfInput) {
                     </View>
 
                     <View style={styles.subjectGap} />
-                    <Text style={styles.subject}>{input.subject}</Text>
+                    <Text style={styles.subject}>{heading}</Text>
+                    {input.title ? (
+                        <Text style={styles.subjectNote}>{input.title}</Text>
+                    ) : null}
 
                     <Text style={styles.intro}>
                         Sehr geehrte Damen und Herren,
                     </Text>
-                    <Text style={styles.intro}>
+                    <Text style={styles.introText}>
                         {input.introText || DEFAULT_INTRO[input.kind]}
                     </Text>
 
                     <View style={styles.tableHead}>
-                        <Text style={styles.colPos}>Pos.</Text>
-                        <Text style={styles.colDesc}>Artikel / Leistung</Text>
-                        <Text style={styles.colQty}>Menge</Text>
-                        <Text style={styles.colUnit}>Einheit</Text>
-                        <Text style={styles.colPrice}>Preis</Text>
-                        <Text style={styles.colSum}>Gesamt</Text>
+                        <Text style={[styles.label, styles.colPos]}>Pos.</Text>
+                        <Text style={[styles.label, styles.colDesc]}>
+                            Leistung
+                        </Text>
+                        <Text style={[styles.label, styles.colQty]}>Menge</Text>
+                        <Text style={[styles.label, styles.colPrice]}>
+                            Einzelpreis
+                        </Text>
+                        <Text style={[styles.label, styles.colSum]}>
+                            Betrag
+                        </Text>
                     </View>
 
                     {input.totals.lines.map((item, index) => (
-                        <View key={item.position} wrap={false}>
-                            <View style={styles.tableRow}>
-                                <Text style={styles.colPos}>
-                                    {item.position}.
+                        <View
+                            key={item.position}
+                            style={styles.tableRow}
+                            wrap={false}
+                        >
+                            <Text style={styles.colPos}>{item.position}</Text>
+                            <View style={styles.colDesc}>
+                                <Text style={styles.itemName}>
+                                    {item.description}
                                 </Text>
-                                <View style={styles.colDesc}>
-                                    <Text>{item.description}</Text>
-                                    {input.details?.[index] ? (
-                                        <Text style={styles.detail}>
-                                            {input.details[index]}
-                                        </Text>
-                                    ) : null}
-                                </View>
-                                <Text style={styles.colQty}>
-                                    {item.quantity.toLocaleString("de-DE", {
-                                        minimumFractionDigits: 2,
-                                    })}
-                                </Text>
-                                <Text style={styles.colUnit}>
-                                    {UNIT_LABEL[item.unitCode] ?? item.unitCode}
-                                </Text>
-                                <Text style={styles.colPrice}>
-                                    {formatPrice(item.unitPriceCents)}
-                                </Text>
-                                <Text style={styles.colSum}>
-                                    {formatPrice(item.lineTotalCents)}
-                                </Text>
+                                {input.details?.[index] ? (
+                                    <Text style={styles.itemDetail}>
+                                        {input.details[index]}
+                                    </Text>
+                                ) : null}
                             </View>
-                            <View style={styles.rowRule} />
+                            <Text style={styles.colQty}>
+                                {formatQuantity(item.quantity, item.unitCode)}
+                            </Text>
+                            <Text style={styles.colPrice}>
+                                {formatPrice(item.unitPriceCents)}
+                            </Text>
+                            <Text style={styles.colSum}>
+                                {formatPrice(item.lineTotalCents)}
+                            </Text>
                         </View>
                     ))}
 
-                    <View style={styles.totalsWrap}>
-                        <View style={styles.totalsRow}>
-                            <Text style={styles.infoLabel}>Nettobetrag</Text>
-                            <Text>{formatPrice(input.totals.netCents)}</Text>
-                        </View>
-                        <View style={styles.totalsRow}>
-                            <Text style={styles.infoLabel}>
-                                Umsatzsteuer (0 %)
-                            </Text>
-                            <Text>{formatPrice(input.totals.taxCents)}</Text>
-                        </View>
-                        <View style={styles.totalsStrong}>
-                            <Text>Gesamtbetrag</Text>
-                            <Text>{formatPrice(input.totals.grossCents)}</Text>
+                    <View style={styles.totals}>
+                        <View style={styles.totalsBlock}>
+                            <View style={styles.grandRow}>
+                                <Text style={styles.label}>Gesamtbetrag</Text>
+                                <Text style={styles.grandValue}>
+                                    {formatPrice(input.totals.grossCents)}
+                                </Text>
+                            </View>
                         </View>
                     </View>
 
-                    {isInvoice ? (
-                        <Text style={styles.paragraph}>
-                            Zahlbar innerhalb von 14 Tagen nach Erhalt der
-                            Rechnung ohne Abzug auf das unten genannte Konto.
-                        </Text>
-                    ) : (
-                        <Text style={styles.paragraph}>
-                            Dieses Angebot können Sie in Ihrem Kundenbereich
-                            unter {site.url}/account/offers annehmen. Mit der
-                            Annahme kommt der Vertrag zustande.
-                        </Text>
-                    )}
-
-                    <Text style={styles.paragraph}>
+                    {/*
+                     * § 19 UStG: no VAT is shown anywhere on the document — not
+                     * even as a zero line — and the reason stands next to the
+                     * total, where a tax breakdown would otherwise be.
+                     */}
+                    <Text style={styles.exempt}>
                         Gemäß § 19 Abs. 1 UStG wird keine Umsatzsteuer
                         berechnet.
                     </Text>
 
+                    {isInvoice ? (
+                        <Text style={styles.paragraph}>
+                            Bitte überweisen Sie den Gesamtbetrag ohne Abzug
+                            {input.dueAt
+                                ? ` bis zum ${formatDate(input.dueAt)}`
+                                : ` innerhalb von ${policy.paymentTermDays} Tagen nach Erhalt dieser Rechnung`}{" "}
+                            auf das unten genannte Konto und geben Sie dabei{" "}
+                            {input.number} als Verwendungszweck an.
+                        </Text>
+                    ) : (
+                        <Text style={styles.paragraph}>
+                            Annehmen können Sie dieses Angebot in Ihrem
+                            Kundenbereich unter {site.url}/account/offers; mit
+                            der Annahme kommt der Vertrag zustande.
+                        </Text>
+                    )}
+
                     {input.note ? (
                         <Text style={styles.paragraph}>{input.note}</Text>
                     ) : null}
-
-                    <Text style={styles.closing}>
-                        Für Rückfragen stehen wir Ihnen selbstverständlich gerne
-                        zur Verfügung und danken Ihnen für die angenehme
-                        Zusammenarbeit.
-                    </Text>
 
                     <Text style={styles.signature}>
                         Mit freundlichen Grüßen
@@ -384,26 +416,30 @@ function DocumentPdf(input: DocumentPdfInput) {
 
                 <View style={styles.footer} fixed>
                     <View style={styles.footerColumn}>
-                        <Text style={styles.footerHeading}>Anschrift</Text>
+                        <Text style={[styles.label, styles.footerHeading]}>
+                            Anschrift
+                        </Text>
                         <Text>{operator.name}</Text>
                         <Text>{operator.street}</Text>
                         <Text>{operator.city}</Text>
                         <Text>{operator.country}</Text>
                     </View>
                     <View style={styles.footerColumn}>
-                        <Text style={styles.footerHeading}>Bankverbindung</Text>
+                        <Text style={[styles.label, styles.footerHeading]}>
+                            Bankverbindung
+                        </Text>
                         <Text>{bank.name}</Text>
                         <Text>IBAN: {bank.iban}</Text>
                         <Text>BIC: {bank.bic}</Text>
                     </View>
                     <View style={styles.footerColumn}>
-                        <Text style={styles.footerHeading}>
-                            Weitere Informationen
+                        <Text style={[styles.label, styles.footerHeading]}>
+                            Kontakt
                         </Text>
                         <Text>{site.url}</Text>
-                        <Text>Telefon: {operator.phone}</Text>
-                        <Text>E-Mail: {operator.email}</Text>
-                        <Text>USt-IdNr.: {operator.vatId}</Text>
+                        <Text>{operator.phone}</Text>
+                        <Text>{operator.email}</Text>
+                        <Text>USt-IdNr. {operator.vatId}</Text>
                     </View>
                 </View>
 

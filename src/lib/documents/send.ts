@@ -43,7 +43,7 @@ export async function sendOfferMail(
     const pdf = await renderDocumentPdf({
         kind: "offer",
         number: offer.number,
-        subject: offer.title,
+        title: offer.title,
         customerNumber: buyer.customerNumber,
         recipient: offer.recipient ?? formatRecipient(buyer),
         issuedAt: offer.sentAt ?? new Date(),
@@ -140,7 +140,6 @@ export async function sendInvoiceMail(
     const pdf = await renderDocumentPdf({
         kind: "invoice",
         number,
-        subject: "Ihre Rechnung",
         customerNumber: buyer.customerNumber,
         recipient: invoice.recipient ?? formatRecipient(buyer),
         issuedAt: invoice.issuedAt ?? new Date(),
