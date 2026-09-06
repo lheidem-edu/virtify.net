@@ -23,7 +23,6 @@ export async function GET(
     const pdf = await renderDocumentPdf({
         kind: "invoice",
         number: invoice.number ?? "ENTWURF",
-        subject: "Ihre Rechnung",
         customerNumber: buyer.customerNumber,
         recipient: invoice.recipient ?? formatRecipient(buyer),
         issuedAt: invoice.issuedAt ?? new Date(),
