@@ -3,6 +3,15 @@ import nodemailer from "nodemailer";
 import { operator, site } from "@/lib/site";
 
 /**
+ * `family` is forwarded to net.connect at runtime but is absent from
+ * @types/nodemailer, so it is declared here rather than casting the whole
+ * options object and losing checking on the rest.
+ */
+type SmtpOptions = Parameters<typeof nodemailer.createTransport>[0] & {
+    family?: 4 | 6;
+};
+
+/**
  * Mail relay used for outbound notifications. The relay is reached on port 25
  * without authentication, so it is expected to be an internal host that
  * accepts mail from this server by address. Certificate validation is relaxed
@@ -16,18 +25,26 @@ export function createTransport() {
         return null;
     }
 
-    return nodemailer.createTransport({
+    const options: SmtpOptions = {
         host,
         port: 25,
         secure: false,
         auth: undefined,
         tls: { rejectUnauthorized: false },
+        // TEMPORARY: force IPv4. Recipients such as Microsoft 365 reject mail
+        // from an IPv6 address without a PTR record ("450 4.7.25 ... must have
+        // reverse DNS record"), and nodemailer offers IPv4 and IPv6 addresses
+        // together. Remove this once the sending host's IPv6 address has
+        // reverse DNS — dual-stack delivery is the better end state.
+        family: 4,
         // Without these a relay that swallows connections would hang the
         // request for roughly two minutes before nodemailer gives up.
         connectionTimeout: 10_000,
         greetingTimeout: 10_000,
         socketTimeout: 20_000,
-    });
+    };
+
+    return nodemailer.createTransport(options);
 }
 
 /** Logs an SMTP failure with the relay's own response, which names the cause. */

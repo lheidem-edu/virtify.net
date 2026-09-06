@@ -82,6 +82,7 @@ if (!host) {
 
 line("VIRTIFY_SMTP_HOST", host);
 line("port", "25 (fixed)");
+line("address family", "IPv4 (forced)");
 line("auth", "none (fixed)");
 line("from / envelope", from);
 line("test recipient", to);
@@ -103,6 +104,8 @@ const transport = nodemailer.createTransport({
     secure: false,
     auth: undefined,
     tls: { rejectUnauthorized: false },
+    // Mirrors the app's transport — see the note in src/lib/mail.ts.
+    family: 4,
     connectionTimeout: 10_000,
     greetingTimeout: 10_000,
     socketTimeout: 20_000,
