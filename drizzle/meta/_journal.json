@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788687671615,
+      "tag": "0000_wandering_rumiko_fujikawa",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788687715737,
+      "tag": "0001_curvy_payback",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788688113435,
+      "tag": "0002_deep_vin_gonzales",
+      "breakpoints": true
+    }
+  ]
+}

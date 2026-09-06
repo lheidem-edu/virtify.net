@@ -87,6 +87,8 @@ export function renderEmail(options: {
     preheader: string;
     heading: string;
     intro: string[];
+    /** Primary call to action, rendered between the intro and the rows. */
+    action?: { label: string; url: string };
     rowsTitle?: string;
     rows?: EmailRow[];
     outro?: string[];
@@ -100,6 +102,19 @@ export function renderEmail(options: {
             <td style="${cell}width:38%;padding-right:20px;font:400 13px/1.5 ${FONT};color:${FAINT};">${escapeHtml(entry.label)}</td>
             <td style="${cell}font:400 13px/1.5 ${MONO};color:${INK};">${escapeMultiline(entry.value)}</td>
         </tr>`;
+
+    // A table-wrapped anchor rather than a styled <a>: Outlook ignores
+    // padding on inline elements, which would collapse the button to text.
+    const actionBlock = options.action
+        ? `
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0;">
+            <tr>
+                <td style="background:${INK};border-radius:10px;">
+                    <a href="${escapeHtml(options.action.url)}" style="display:inline-block;padding:13px 22px;font:500 14px/1 ${FONT};color:#ffffff;text-decoration:none;">${escapeHtml(options.action.label)}</a>
+                </td>
+            </tr>
+        </table>`
+        : "";
 
     const rowsBlock = options.rows?.length
         ? `
@@ -130,6 +145,7 @@ export function renderEmail(options: {
 <td style="padding:32px;">
 <h1 style="margin:0 0 18px;font:600 21px/1.3 ${FONT};color:${INK};letter-spacing:-0.01em;">${escapeHtml(options.heading)}</h1>
 ${options.intro.map(paragraph).join("")}
+${actionBlock}
 ${rowsBlock}
 ${options.outro?.length ? `<div style="margin-top:26px;">${options.outro.map(paragraph).join("")}</div>` : ""}
 </td>
