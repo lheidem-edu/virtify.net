@@ -233,7 +233,7 @@ export const offerItem = pgTable(
         description: text("description").notNull(),
         quantity: integer("quantity").notNull().default(1),
         /** UN/ECE Recommendation 20 code, e.g. C62 (piece), MON (month). */
-        unitCode: text("unit_code").notNull().default("C62"),
+        unitCode: text("unit_code").notNull().default("MON"),
         unitPriceCents: integer("unit_price_cents").notNull(),
         /** Small print under the line: contract reference, billing note. */
         detail: text("detail"),
@@ -300,7 +300,7 @@ export const invoiceItem = pgTable(
         position: integer("position").notNull(),
         description: text("description").notNull(),
         quantity: integer("quantity").notNull().default(1),
-        unitCode: text("unit_code").notNull().default("C62"),
+        unitCode: text("unit_code").notNull().default("MON"),
         unitPriceCents: integer("unit_price_cents").notNull(),
         /** Small print under the line: contract reference, billing note. */
         detail: text("detail"),

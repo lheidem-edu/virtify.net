@@ -1,4 +1,4 @@
-import type { LineItem } from "@/lib/documents/totals";
+import { DEFAULT_UNIT_CODE, type LineItem } from "@/lib/documents/totals";
 
 /**
  * Line items arrive from the form as parallel arrays. Rows without a
@@ -30,7 +30,8 @@ export function readLineItems(data: FormData): LineItem[] | null {
         items.push({
             description,
             quantity,
-            unitCode: (units[index] ?? "C62").trim() || "C62",
+            unitCode:
+                (units[index] ?? DEFAULT_UNIT_CODE).trim() || DEFAULT_UNIT_CODE,
             unitPriceCents: cents,
         });
     }
