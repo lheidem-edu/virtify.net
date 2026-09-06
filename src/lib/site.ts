@@ -20,6 +20,16 @@ export const operator = {
     email: "admin@virtify.net",
     /** Held for intra-EU transactions; the § 19 UStG scheme still applies. */
     vatId: "DE457809315",
+    /** Printed on invoices and offers. Deliberately absent from the
+     *  Impressum, where only the email address is given. */
+    phone: "+49 (0) 171 4100695",
+} as const;
+
+/** Payment details, printed in the document footer. */
+export const bank = {
+    name: "C24 Bank GmbH",
+    iban: "DE64 5002 4024 8341 7339 30",
+    bic: "DEFFDEFFXXX",
 } as const;
 
 /** Operational values referenced by the legal texts. */

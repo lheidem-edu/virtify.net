@@ -1,14 +1,17 @@
 "use client";
 
+import type { ColumnDef } from "@tanstack/react-table";
 import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import DataTable from "@/lib/components/account/data-table";
 import StatusBadge from "@/lib/components/account/status-badge";
 import { type CustomerState, updateCustomer } from "./actions";
 
 export type Customer = {
     id: string;
+    customerNumber: number | null;
     email: string;
     emailVerified: boolean;
     role: string | null;
@@ -86,64 +89,100 @@ function CustomerForm({ customer }: { customer: Customer }) {
     );
 }
 
-export default function CustomerList({ customers }: { customers: Customer[] }) {
-    const [open, setOpen] = useState<string | null>(null);
+const columns: ColumnDef<Customer, unknown>[] = [
+    {
+        accessorKey: "customerNumber",
+        header: "Kunden-Nr.",
+        cell: ({ row }) => (
+            <span className="font-mono">
+                {row.original.customerNumber ?? "—"}
+            </span>
+        ),
+    },
+    {
+        accessorKey: "email",
+        header: "E-Mail",
+        cell: ({ row }) => (
+            <span className="font-mono text-xs">{row.original.email}</span>
+        ),
+    },
+    {
+        accessorKey: "company",
+        header: "Firma",
+        cell: ({ row }) => row.original.company || "—",
+    },
+    { accessorKey: "name", header: "Name" },
+    {
+        accessorKey: "city",
+        header: "Ort",
+        cell: ({ row }) => row.original.city || "—",
+    },
+    {
+        id: "state",
+        header: "Status",
+        enableSorting: false,
+        cell: ({ row }) => (
+            <div className="flex gap-2">
+                {row.original.role === "admin" ? (
+                    <StatusBadge label="Admin" tone="positive" />
+                ) : null}
+                {row.original.emailVerified ? null : (
+                    <StatusBadge label="Nicht bestätigt" tone="warning" />
+                )}
+            </div>
+        ),
+    },
+];
 
-    if (customers.length === 0) {
-        return (
-            <p className="text-sm text-muted-foreground">
-                Es gibt noch keine Konten.
-            </p>
-        );
-    }
+export default function CustomerList({ customers }: { customers: Customer[] }) {
+    const [open, setOpen] = useState<Customer | null>(null);
+
+    const withActions: ColumnDef<Customer, unknown>[] = [
+        ...columns,
+        {
+            id: "actions",
+            header: "",
+            enableSorting: false,
+            cell: ({ row }) => (
+                <div className="flex justify-end">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                            setOpen(
+                                open?.id === row.original.id
+                                    ? null
+                                    : row.original,
+                            )
+                        }
+                    >
+                        {open?.id === row.original.id
+                            ? "Schließen"
+                            : "Bearbeiten"}
+                    </Button>
+                </div>
+            ),
+        },
+    ];
 
     return (
-        <ul className="max-w-3xl border-t">
-            {customers.map((customer) => (
-                <li key={customer.id} className="border-b py-5">
-                    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-                        <div>
-                            <p className="font-mono text-sm">
-                                {customer.email}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                                {customer.company || customer.name || "—"}
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            {customer.role === "admin" ? (
-                                <StatusBadge label="Admin" tone="positive" />
-                            ) : null}
-                            {customer.emailVerified ? null : (
-                                <StatusBadge
-                                    label="Nicht bestätigt"
-                                    tone="warning"
-                                />
-                            )}
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                    setOpen(
-                                        open === customer.id
-                                            ? null
-                                            : customer.id,
-                                    )
-                                }
-                            >
-                                {open === customer.id
-                                    ? "Schließen"
-                                    : "Bearbeiten"}
-                            </Button>
-                        </div>
-                    </div>
+        <div className="space-y-8">
+            <DataTable
+                columns={withActions}
+                data={customers}
+                searchPlaceholder="Nummer, E-Mail, Firma oder Ort suchen …"
+                emptyMessage="Es gibt noch keine Konten."
+            />
 
-                    {open === customer.id ? (
-                        <CustomerForm customer={customer} />
-                    ) : null}
-                </li>
-            ))}
-        </ul>
+            {open ? (
+                <div className="rounded-lg border p-6">
+                    <h3 className="text-sm font-medium tracking-tight">
+                        {open.company || open.name || open.email} bearbeiten
+                    </h3>
+                    <CustomerForm key={open.id} customer={open} />
+                </div>
+            ) : null}
+        </div>
     );
 }

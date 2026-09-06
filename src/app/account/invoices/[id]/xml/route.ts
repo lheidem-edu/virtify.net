@@ -31,7 +31,9 @@ export async function GET(
         issuedAt: invoice.issuedAt ?? new Date(),
         dueAt: invoice.dueAt,
         buyerReference:
-            invoice.buyerReference ?? buyer.buyerReference ?? buyer.id,
+            invoice.buyerReference ??
+            buyer.buyerReference ??
+            String(buyer.customerNumber ?? buyer.id),
         servicePeriod: {
             start: invoice.servicePeriodStart,
             end: invoice.servicePeriodEnd,

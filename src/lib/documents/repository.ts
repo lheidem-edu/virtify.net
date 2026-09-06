@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { db, schema } from "@/lib/db";
 import { calculateTotals } from "@/lib/documents/totals";
@@ -14,7 +14,7 @@ function ownership(column: PgColumn, userId: string, isAdmin: boolean) {
 }
 
 export async function listInvoices(userId: string, isAdmin: boolean) {
-    return db
+    const rows = await db
         .select({
             id: schema.invoice.id,
             number: schema.invoice.number,
@@ -29,6 +29,45 @@ export async function listInvoices(userId: string, isAdmin: boolean) {
         .innerJoin(schema.user, eq(schema.invoice.userId, schema.user.id))
         .where(ownership(schema.invoice.userId, userId, isAdmin))
         .orderBy(desc(schema.invoice.createdAt));
+
+    return withTotals(rows, schema.invoiceItem.invoiceId, schema.invoiceItem);
+}
+
+/**
+ * Adds each document's total in one extra query rather than one per row —
+ * the alternative is an N+1 that grows with the list.
+ */
+async function withTotals<T extends { id: string }>(
+    rows: T[],
+    _key: unknown,
+    table: typeof schema.invoiceItem | typeof schema.offerItem,
+) {
+    if (rows.length === 0) {
+        return rows.map((row) => ({ ...row, amount: 0 }));
+    }
+
+    const parent =
+        table === schema.invoiceItem
+            ? schema.invoiceItem.invoiceId
+            : schema.offerItem.offerId;
+
+    const sums = await db
+        .select({
+            parentId: parent,
+            amount: sql<number>`coalesce(sum(${table.quantity} * ${table.unitPriceCents}), 0)::int`,
+        })
+        .from(table)
+        .where(
+            inArray(
+                parent,
+                rows.map((row) => row.id),
+            ),
+        )
+        .groupBy(parent);
+
+    const byId = new Map(sums.map((entry) => [entry.parentId, entry.amount]));
+
+    return rows.map((row) => ({ ...row, amount: byId.get(row.id) ?? 0 }));
 }
 
 export async function loadInvoice(
@@ -65,7 +104,7 @@ export async function loadInvoice(
 }
 
 export async function listOffers(userId: string, isAdmin: boolean) {
-    return db
+    const rows = await db
         .select({
             id: schema.offer.id,
             number: schema.offer.number,
@@ -80,6 +119,8 @@ export async function listOffers(userId: string, isAdmin: boolean) {
         .innerJoin(schema.user, eq(schema.offer.userId, schema.user.id))
         .where(ownership(schema.offer.userId, userId, isAdmin))
         .orderBy(desc(schema.offer.createdAt));
+
+    return withTotals(rows, schema.offerItem.offerId, schema.offerItem);
 }
 
 export async function loadOffer(id: string, userId: string, isAdmin: boolean) {

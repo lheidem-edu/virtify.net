@@ -13,7 +13,7 @@ import {
     mailFrom,
     renderEmail,
 } from "@/lib/mail";
-import { site } from "@/lib/site";
+import { operator, site } from "@/lib/site";
 
 function transportOrThrow() {
     const transport = createTransport();
@@ -25,7 +25,11 @@ function transportOrThrow() {
     return transport;
 }
 
-export async function sendOfferMail(offerId: string, to: string, name: string) {
+export async function sendOfferMail(
+    offerId: string,
+    to: string,
+    _name: string,
+) {
     // Loaded as admin: the recipient is the owner, and the caller has already
     // established that this send is authorised.
     const loaded = await loadOffer(offerId, "", true);
@@ -39,13 +43,15 @@ export async function sendOfferMail(offerId: string, to: string, name: string) {
     const pdf = await renderDocumentPdf({
         kind: "offer",
         number: offer.number,
-        title: offer.title,
+        subject: offer.title,
+        customerNumber: buyer.customerNumber,
         recipient: offer.recipient ?? formatRecipient(buyer),
         issuedAt: offer.sentAt ?? new Date(),
         validUntil: offer.validUntil,
         introText: offer.introText,
         note: offer.note,
         totals,
+        details: loaded.items.map((item) => item.detail),
     });
 
     const transport = transportOrThrow();
@@ -56,14 +62,19 @@ export async function sendOfferMail(offerId: string, to: string, name: string) {
             to,
             subject: `Angebot ${offer.number} — ${site.name}`,
             text: [
-                `Hallo ${name},`,
+                "Sehr geehrte Damen und Herren,",
                 "",
-                `anbei unser Angebot ${offer.number} über ${formatPrice(totals.grossCents)}.`,
+                `im Anhang finden Sie unser Angebot ${offer.number} über ${formatPrice(totals.grossCents)}.`,
                 offer.validUntil
                     ? `Es ist gültig bis ${formatDate(offer.validUntil)}.`
                     : "",
                 "",
-                `Annehmen oder ablehnen kannst du es in deinem Konto: ${site.url}/account/offers`,
+                `Annehmen oder ablehnen können Sie es in Ihrem Kundenbereich: ${site.url}/account/offers`,
+                "",
+                "Für Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung und danken Ihnen für die angenehme Zusammenarbeit.",
+                "",
+                "Mit freundlichen Grüßen",
+                operator.name,
             ]
                 .filter(Boolean)
                 .join("\n"),
@@ -71,8 +82,8 @@ export async function sendOfferMail(offerId: string, to: string, name: string) {
                 preheader: `Angebot ${offer.number} über ${formatPrice(totals.grossCents)}.`,
                 heading: `Angebot ${offer.number}`,
                 intro: [
-                    `Hallo ${name},`,
-                    `anbei unser Angebot über ${formatPrice(totals.grossCents)}. Das PDF hängt dieser Nachricht an.`,
+                    "Sehr geehrte Damen und Herren,",
+                    `im Anhang finden Sie unser Angebot über ${formatPrice(totals.grossCents)}.`,
                 ],
                 action: {
                     label: "Angebot ansehen",
@@ -93,6 +104,8 @@ export async function sendOfferMail(offerId: string, to: string, name: string) {
                 ],
                 outro: [
                     "Mit der Annahme im Kundenbereich kommt der Vertrag zustande.",
+                    "Für Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung und danken Ihnen für die angenehme Zusammenarbeit.",
+                    `Mit freundlichen Grüßen\n${operator.name}`,
                 ],
             }),
             attachments: [
@@ -112,7 +125,7 @@ export async function sendOfferMail(offerId: string, to: string, name: string) {
 export async function sendInvoiceMail(
     invoiceId: string,
     to: string,
-    name: string,
+    _name: string,
 ) {
     const loaded = await loadInvoice(invoiceId, "", true);
 
@@ -127,7 +140,8 @@ export async function sendInvoiceMail(
     const pdf = await renderDocumentPdf({
         kind: "invoice",
         number,
-        title: "Rechnung",
+        subject: "Ihre Rechnung",
+        customerNumber: buyer.customerNumber,
         recipient: invoice.recipient ?? formatRecipient(buyer),
         issuedAt: invoice.issuedAt ?? new Date(),
         dueAt: invoice.dueAt,
@@ -138,6 +152,7 @@ export async function sendInvoiceMail(
         introText: invoice.introText,
         note: invoice.note,
         totals,
+        details: loaded.items.map((item) => item.detail),
     });
 
     const xml = renderXRechnung({
@@ -145,7 +160,9 @@ export async function sendInvoiceMail(
         issuedAt: invoice.issuedAt ?? new Date(),
         dueAt: invoice.dueAt,
         buyerReference:
-            invoice.buyerReference ?? buyer.buyerReference ?? buyer.id,
+            invoice.buyerReference ??
+            buyer.buyerReference ??
+            String(buyer.customerNumber ?? buyer.id),
         servicePeriod: {
             start: invoice.servicePeriodStart,
             end: invoice.servicePeriodEnd,
@@ -171,25 +188,23 @@ export async function sendInvoiceMail(
             to,
             subject: `Rechnung ${number} — ${site.name}`,
             text: [
-                `Hallo ${name},`,
+                "Sehr geehrte Damen und Herren,",
                 "",
-                `anbei die Rechnung ${number} über ${formatPrice(totals.grossCents)}.`,
-                invoice.dueAt
-                    ? `Sie ist zahlbar bis ${formatDate(invoice.dueAt)}.`
-                    : "",
+                "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
                 "",
-                "Gemäß § 19 Abs. 1 UStG wird keine Umsatzsteuer berechnet.",
+                "Für Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung und danken Ihnen für die angenehme Zusammenarbeit.",
                 "",
-                `Alle Rechnungen findest du in deinem Konto: ${site.url}/account/invoices`,
-            ]
-                .filter(Boolean)
-                .join("\n"),
+                "Mit freundlichen Grüßen",
+                operator.name,
+                "",
+                `Alle Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/account/invoices`,
+            ].join("\n"),
             html: renderEmail({
                 preheader: `Rechnung ${number} über ${formatPrice(totals.grossCents)}.`,
                 heading: `Rechnung ${number}`,
                 intro: [
-                    `Hallo ${name},`,
-                    "anbei die Rechnung als PDF und zusätzlich als XRechnung im XML-Format.",
+                    "Sehr geehrte Damen und Herren,",
+                    "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
                 ],
                 action: {
                     label: "Rechnungen ansehen",
@@ -209,7 +224,8 @@ export async function sendInvoiceMail(
                         : []),
                 ],
                 outro: [
-                    "Gemäß § 19 Abs. 1 UStG wird keine Umsatzsteuer berechnet.",
+                    "Für Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung und danken Ihnen für die angenehme Zusammenarbeit.",
+                    `Mit freundlichen Grüßen\n${operator.name}`,
                 ],
             }),
             attachments: [

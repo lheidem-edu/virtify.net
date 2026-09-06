@@ -126,7 +126,9 @@ export async function issueInvoice(
                     issuedAt,
                     dueAt,
                     recipient: formatRecipient(buyer),
-                    buyerReference: buyer.buyerReference ?? buyer.id,
+                    buyerReference:
+                        buyer.buyerReference ??
+                        String(buyer.customerNumber ?? buyer.id),
                     updatedAt: issuedAt,
                 })
                 .where(eq(schema.invoice.id, invoiceId));

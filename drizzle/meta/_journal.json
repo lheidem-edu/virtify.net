@@ -29,6 +29,13 @@
       "when": 1788689350833,
       "tag": "0003_hard_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788690662437,
+      "tag": "0004_married_warstar",
+      "breakpoints": true
     }
   ]
 }

@@ -1,16 +1,10 @@
 import { asc } from "drizzle-orm";
-import Link from "next/link";
 import { requireAdmin } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
-import StatusBadge from "@/lib/components/account/status-badge";
 import { db, schema } from "@/lib/db";
 import { listInvoices } from "@/lib/documents/repository";
-import {
-    formatDate,
-    INVOICE_STATUS_LABEL,
-    INVOICE_STATUS_TONE,
-} from "@/lib/format";
-import { IssueForm, StateForm } from "./invoice-actions";
+import type { INVOICE_STATUS_LABEL } from "@/lib/format";
+import AdminInvoicesTable from "./admin-invoices-table";
 import InvoiceForm from "./invoice-form";
 
 export default async function Page() {
@@ -45,71 +39,17 @@ export default async function Page() {
                 <h2 className="mb-6 text-sm font-medium tracking-tight">
                     Alle Rechnungen
                 </h2>
-                {invoices.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                        Noch keine Rechnungen.
-                    </p>
-                ) : (
-                    <ul className="max-w-3xl border-t">
-                        {invoices.map((entry) => (
-                            <li
-                                key={entry.id}
-                                className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b py-5"
-                            >
-                                <div>
-                                    <p className="font-mono text-sm">
-                                        {entry.number ?? "Entwurf"}
-                                    </p>
-                                    <p className="mt-1 text-xs text-muted-foreground">
-                                        {entry.email}
-                                        {entry.issuedAt
-                                            ? ` · ausgestellt ${formatDate(entry.issuedAt)}`
-                                            : ""}
-                                        {entry.dueAt
-                                            ? ` · fällig ${formatDate(entry.dueAt)}`
-                                            : ""}
-                                    </p>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-3">
-                                    <StatusBadge
-                                        label={
-                                            INVOICE_STATUS_LABEL[entry.status]
-                                        }
-                                        tone={INVOICE_STATUS_TONE[entry.status]}
-                                    />
-                                    <Link
-                                        href={`/account/invoices/${entry.id}/pdf`}
-                                        className="text-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-white"
-                                    >
-                                        PDF
-                                    </Link>
-                                    {entry.status === "draft" ? (
-                                        <IssueForm invoiceId={entry.id} />
-                                    ) : (
-                                        <>
-                                            <Link
-                                                href={`/account/invoices/${entry.id}/xml`}
-                                                className="text-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-white"
-                                            >
-                                                XML
-                                            </Link>
-                                            {entry.status ===
-                                            "cancelled" ? null : (
-                                                <StateForm
-                                                    invoiceId={entry.id}
-                                                    canMarkPaid={
-                                                        entry.status ===
-                                                        "issued"
-                                                    }
-                                                />
-                                            )}
-                                        </>
-                                    )}
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
+                <AdminInvoicesTable
+                    rows={invoices.map((entry) => ({
+                        id: entry.id,
+                        number: entry.number,
+                        status: entry.status as keyof typeof INVOICE_STATUS_LABEL,
+                        issuedAt: entry.issuedAt,
+                        dueAt: entry.dueAt,
+                        email: entry.email,
+                        amount: entry.amount,
+                    }))}
+                />
             </div>
         </>
     );

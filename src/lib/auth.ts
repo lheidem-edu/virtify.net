@@ -4,6 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, twoFactor } from "better-auth/plugins";
 import { db, schema } from "@/lib/db";
 import { createId } from "@/lib/db/id";
+import { nextCustomerNumber } from "@/lib/documents/numbering";
 import { sendPasswordResetMail, sendVerificationMail } from "@/lib/mail-auth";
 import { site } from "@/lib/site";
 
@@ -65,6 +66,7 @@ export const auth = betterAuth({
 
     user: {
         additionalFields: {
+            customerNumber: { type: "number", required: false, input: false },
             company: { type: "string", required: false, input: true },
             street: { type: "string", required: false, input: true },
             postalCode: { type: "string", required: false, input: true },
@@ -92,6 +94,21 @@ export const auth = betterAuth({
                     url,
                     heading: "Neue E-Mail-Adresse bestätigen",
                 });
+            },
+        },
+    },
+
+    databaseHooks: {
+        user: {
+            create: {
+                // Assigned here rather than lazily, so every account has a
+                // number the moment it exists — including in the customer list.
+                before: async (user: Record<string, unknown>) => ({
+                    data: {
+                        ...user,
+                        customerNumber: await nextCustomerNumber(),
+                    },
+                }),
             },
         },
     },

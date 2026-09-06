@@ -22,13 +22,15 @@ export async function GET(
     const pdf = await renderDocumentPdf({
         kind: "offer",
         number: offer.number,
-        title: offer.title,
+        subject: offer.title,
+        customerNumber: buyer.customerNumber,
         recipient: offer.recipient ?? formatRecipient(buyer),
         issuedAt: offer.sentAt ?? offer.createdAt,
         validUntil: offer.validUntil,
         introText: offer.introText,
         note: offer.note,
         totals,
+        details: loaded.items.map((item) => item.detail),
     });
 
     return new Response(new Uint8Array(pdf), {

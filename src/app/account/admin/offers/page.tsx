@@ -1,18 +1,11 @@
 import { asc } from "drizzle-orm";
-import Link from "next/link";
 import { requireAdmin } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
-import StatusBadge from "@/lib/components/account/status-badge";
 import { db, schema } from "@/lib/db";
 import { listOffers } from "@/lib/documents/repository";
-import {
-    formatDate,
-    formatPrice,
-    OFFER_STATUS_LABEL,
-    OFFER_STATUS_TONE,
-} from "@/lib/format";
+import type { OFFER_STATUS_LABEL } from "@/lib/format";
+import AdminOffersTable from "./admin-offers-table";
 import OfferForm from "./offer-form";
-import SendForm from "./send-form";
 
 export default async function Page() {
     const session = await requireAdmin();
@@ -46,49 +39,18 @@ export default async function Page() {
                 <h2 className="mb-6 text-sm font-medium tracking-tight">
                     Alle Angebote
                 </h2>
-                {offers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                        Noch keine Angebote.
-                    </p>
-                ) : (
-                    <ul className="max-w-3xl border-t">
-                        {offers.map((entry) => (
-                            <li
-                                key={entry.id}
-                                className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b py-5"
-                            >
-                                <div>
-                                    <p className="font-mono text-sm">
-                                        {entry.number}
-                                    </p>
-                                    <p className="mt-1 text-xs text-muted-foreground">
-                                        {entry.title} · {entry.email} ·{" "}
-                                        {formatPrice(entry.monthlyPriceCents)}
-                                        /Monat
-                                        {entry.validUntil
-                                            ? ` · gültig bis ${formatDate(entry.validUntil)}`
-                                            : ""}
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <StatusBadge
-                                        label={OFFER_STATUS_LABEL[entry.status]}
-                                        tone={OFFER_STATUS_TONE[entry.status]}
-                                    />
-                                    <Link
-                                        href={`/account/offers/${entry.id}/pdf`}
-                                        className="text-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-white"
-                                    >
-                                        PDF
-                                    </Link>
-                                    {entry.status === "draft" ? (
-                                        <SendForm offerId={entry.id} />
-                                    ) : null}
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
+                <AdminOffersTable
+                    rows={offers.map((entry) => ({
+                        id: entry.id,
+                        number: entry.number,
+                        title: entry.title,
+                        status: entry.status as keyof typeof OFFER_STATUS_LABEL,
+                        validUntil: entry.validUntil,
+                        monthlyPriceCents: entry.monthlyPriceCents,
+                        amount: entry.amount,
+                        email: entry.email,
+                    }))}
+                />
             </div>
         </>
     );

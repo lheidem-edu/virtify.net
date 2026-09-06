@@ -22,6 +22,7 @@ export default async function Page() {
                 <CustomerList
                     customers={customers.map((entry) => ({
                         id: entry.id,
+                        customerNumber: entry.customerNumber,
                         email: entry.email,
                         emailVerified: entry.emailVerified,
                         role: entry.role,

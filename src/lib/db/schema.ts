@@ -34,8 +34,11 @@ export const user = pgTable("user", {
     vatId: text("vat_id"),
     phone: text("phone"),
     /** EN 16931 BT-10. Public buyers supply a Leitweg-ID; otherwise the
-     *  account id is used so the mandatory field is always populated. */
+     *  customer number is used so the mandatory field is always populated. */
     buyerReference: text("buyer_reference"),
+    /** Short, human-facing number for documents and support. Assigned on
+     *  sign-up; the ULID stays the technical key. */
+    customerNumber: integer("customer_number").unique(),
 
     // Better Auth admin plugin.
     role: text("role"),
@@ -232,6 +235,8 @@ export const offerItem = pgTable(
         /** UN/ECE Recommendation 20 code, e.g. C62 (piece), MON (month). */
         unitCode: text("unit_code").notNull().default("C62"),
         unitPriceCents: integer("unit_price_cents").notNull(),
+        /** Small print under the line: contract reference, billing note. */
+        detail: text("detail"),
     },
     (table) => [index("offer_item_offer_id_idx").on(table.offerId)],
 );
@@ -297,6 +302,8 @@ export const invoiceItem = pgTable(
         quantity: integer("quantity").notNull().default(1),
         unitCode: text("unit_code").notNull().default("C62"),
         unitPriceCents: integer("unit_price_cents").notNull(),
+        /** Small print under the line: contract reference, billing note. */
+        detail: text("detail"),
     },
     (table) => [index("invoice_item_invoice_id_idx").on(table.invoiceId)],
 );

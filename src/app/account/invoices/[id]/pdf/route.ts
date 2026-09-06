@@ -23,7 +23,8 @@ export async function GET(
     const pdf = await renderDocumentPdf({
         kind: "invoice",
         number: invoice.number ?? "ENTWURF",
-        title: "Rechnung",
+        subject: "Ihre Rechnung",
+        customerNumber: buyer.customerNumber,
         recipient: invoice.recipient ?? formatRecipient(buyer),
         issuedAt: invoice.issuedAt ?? new Date(),
         dueAt: invoice.dueAt,
@@ -34,6 +35,7 @@ export async function GET(
         introText: invoice.introText,
         note: invoice.note,
         totals,
+        details: loaded.items.map((item) => item.detail),
     });
 
     return new Response(new Uint8Array(pdf), {
