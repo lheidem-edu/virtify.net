@@ -1,0 +1,2 @@
+ALTER TYPE "public"."offer_status" ADD VALUE 'withdrawn';--> statement-breakpoint
+ALTER TABLE "invoice" ADD CONSTRAINT "invoice_cancels_invoice_id_invoice_id_fk" FOREIGN KEY ("cancels_invoice_id") REFERENCES "public"."invoice"("id") ON DELETE restrict ON UPDATE no action;

@@ -43,6 +43,13 @@
       "when": 1788692897865,
       "tag": "0005_careful_khan",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788711120583,
+      "tag": "0006_adorable_senator_kelly",
+      "breakpoints": true
     }
   ]
 }

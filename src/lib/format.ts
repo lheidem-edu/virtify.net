@@ -31,6 +31,7 @@ export const OFFER_STATUS_LABEL = {
     accepted: "Angenommen",
     declined: "Abgelehnt",
     expired: "Abgelaufen",
+    withdrawn: "Zurückgezogen",
 } as const;
 
 export const INVOICE_STATUS_LABEL = {
@@ -46,6 +47,7 @@ export const OFFER_STATUS_TONE = {
     accepted: "positive",
     declined: "neutral",
     expired: "neutral",
+    withdrawn: "neutral",
 } as const;
 
 export const INVOICE_STATUS_TONE = {

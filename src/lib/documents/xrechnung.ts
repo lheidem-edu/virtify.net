@@ -16,6 +16,12 @@ import { operator, site } from "@/lib/site";
 
 export type XRechnungInput = {
     number: string;
+    /**
+     * UNTDID 1001: 380 is a commercial invoice, 384 a corrected one. A Storno
+     * restates the original's lines with negated amounts, which is a
+     * correction — a validator reading 380 would reject the negative total.
+     */
+    typeCode?: "380" | "384";
     issuedAt: Date;
     dueAt: Date | null;
     buyerReference: string;
@@ -120,7 +126,7 @@ export function renderXRechnung(input: XRechnungInput) {
   </rsm:ExchangedDocumentContext>
   <rsm:ExchangedDocument>
     <ram:ID>${escapeXml(input.number)}</ram:ID>
-    <ram:TypeCode>380</ram:TypeCode>
+    <ram:TypeCode>${input.typeCode ?? "380"}</ram:TypeCode>
     <ram:IssueDateTime>
       <udt:DateTimeString format="102">${formatDate(input.issuedAt)}</udt:DateTimeString>
     </ram:IssueDateTime>${

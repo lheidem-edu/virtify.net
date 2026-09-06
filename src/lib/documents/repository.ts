@@ -23,6 +23,8 @@ export async function listInvoices(userId: string, isAdmin: boolean) {
             dueAt: schema.invoice.dueAt,
             paidAt: schema.invoice.paidAt,
             recipient: schema.invoice.recipient,
+            contractId: schema.invoice.contractId,
+            cancelsInvoiceId: schema.invoice.cancelsInvoiceId,
             email: schema.user.email,
         })
         .from(schema.invoice)
@@ -113,6 +115,7 @@ export async function listOffers(userId: string, isAdmin: boolean) {
             validUntil: schema.offer.validUntil,
             sentAt: schema.offer.sentAt,
             monthlyPriceCents: schema.offer.monthlyPriceCents,
+            contractId: schema.offer.contractId,
             email: schema.user.email,
         })
         .from(schema.offer)
@@ -169,6 +172,71 @@ export async function listContracts(userId: string, isAdmin: boolean) {
         .innerJoin(schema.user, eq(schema.contract.userId, schema.user.id))
         .where(ownership(schema.contract.userId, userId, isAdmin))
         .orderBy(desc(schema.contract.createdAt));
+}
+
+/**
+ * Everything a contract's detail page shows: the contract itself, its account,
+ * every invoice that references it, and the offer whose acceptance created it.
+ * The invoices come back so the page can tell whether the contract may still
+ * be edited or deleted — both are barred once it has been billed.
+ */
+export async function loadContract(
+    id: string,
+    userId: string,
+    isAdmin: boolean,
+) {
+    const [row] = await db
+        .select()
+        .from(schema.contract)
+        .where(
+            and(
+                eq(schema.contract.id, id),
+                ownership(schema.contract.userId, userId, isAdmin),
+            ),
+        );
+
+    if (!row) {
+        return null;
+    }
+
+    const [buyer] = await db
+        .select()
+        .from(schema.user)
+        .where(eq(schema.user.id, row.userId));
+
+    const invoices = await db
+        .select({
+            id: schema.invoice.id,
+            number: schema.invoice.number,
+            status: schema.invoice.status,
+            issuedAt: schema.invoice.issuedAt,
+            dueAt: schema.invoice.dueAt,
+        })
+        .from(schema.invoice)
+        .where(eq(schema.invoice.contractId, id))
+        .orderBy(desc(schema.invoice.createdAt));
+
+    const [offer] = await db
+        .select({
+            id: schema.offer.id,
+            number: schema.offer.number,
+            title: schema.offer.title,
+            status: schema.offer.status,
+            decidedAt: schema.offer.decidedAt,
+        })
+        .from(schema.offer)
+        .where(eq(schema.offer.contractId, id));
+
+    return {
+        contract: row,
+        buyer,
+        invoices: await withTotals(
+            invoices,
+            schema.invoiceItem.invoiceId,
+            schema.invoiceItem,
+        ),
+        offer: offer ?? null,
+    };
 }
 
 /** Postal address as it belongs on a document, one line per element. */
