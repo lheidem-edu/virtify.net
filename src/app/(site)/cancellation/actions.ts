@@ -7,7 +7,7 @@ import {
     mailFrom,
     renderEmail,
 } from "@/lib/mail";
-import { operator, site } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
 
 export type CancellationState = {
     status: "idle" | "sent" | "error";
@@ -64,9 +64,9 @@ function buildRows(data: FormData): EmailRow[] {
     ];
 }
 
-function buildText(rows: EmailRow[], stamp: string) {
+function buildText(rows: EmailRow[], stamp: string, siteName: string) {
     return [
-        `Kündigungserklärung an ${site.name}`,
+        `Kündigungserklärung an ${siteName}`,
         `Eingegangen am ${stamp} (Europe/Berlin)`,
         "",
         ...rows.map((row) => `${row.label}: ${row.value}`),
@@ -77,6 +77,7 @@ export async function submitCancellation(
     _previous: CancellationState,
     data: FormData,
 ): Promise<CancellationState> {
+    const { operator, site } = await loadSettings();
     const email = read(data, "email");
     const name = read(data, "name");
 
@@ -91,7 +92,7 @@ export async function submitCancellation(
         timeZone: "Europe/Berlin",
     });
     const rows = buildRows(data);
-    const declaration = buildText(rows, stamp);
+    const declaration = buildText(rows, stamp, site.name);
     const subject = read(data, "contract") || read(data, "number") || name;
 
     const transport = createTransport();
@@ -110,12 +111,12 @@ export async function submitCancellation(
     // The declaration itself. This one is what legally has to arrive.
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to: operator.email,
             replyTo: email,
             subject: `Kündigung — ${subject}`,
             text: declaration,
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Kündigung von ${name}, eingegangen am ${stamp}.`,
                 heading: "Kündigung eingegangen",
                 intro: [
@@ -139,7 +140,7 @@ export async function submitCancellation(
     // customer think the cancellation itself did not go through.
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to: email,
             subject: `Eingangsbestätigung deiner Kündigung — ${site.name}`,
             text: [
@@ -154,7 +155,7 @@ export async function submitCancellation(
                 "",
                 `${site.name} — ${operator.name}, ${operator.street}, ${operator.city}`,
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Eingegangen am ${stamp}. Wir melden uns mit dem Beendigungsdatum.`,
                 heading: "Eingangsbestätigung deiner Kündigung",
                 intro: [

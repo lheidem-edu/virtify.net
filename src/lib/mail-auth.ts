@@ -5,7 +5,7 @@ import {
     mailFrom,
     renderEmail,
 } from "@/lib/mail";
-import { site } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
 
 /**
  * Account mails reuse the transactional layout from `mail.ts`, so the
@@ -30,7 +30,7 @@ async function send(options: {
         );
     }
 
-    const html = renderEmail({
+    const html = await renderEmail({
         preheader: options.intro[options.intro.length - 1] ?? options.heading,
         heading: options.heading,
         intro: options.intro,
@@ -38,9 +38,11 @@ async function send(options: {
         outro: options.outro,
     });
 
+    const { site } = await loadSettings();
+
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to: options.to,
             subject: options.subject,
             text: [
@@ -71,6 +73,7 @@ export async function sendVerificationMail({
     url: string;
     heading?: string;
 }) {
+    const { site } = await loadSettings();
     await send({
         to,
         context: "verification mail",
@@ -96,6 +99,7 @@ export async function sendPasswordResetMail({
     name?: string | null;
     url: string;
 }) {
+    const { site } = await loadSettings();
     await send({
         to,
         context: "password reset mail",

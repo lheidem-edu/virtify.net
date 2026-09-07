@@ -1,6 +1,6 @@
 import "server-only";
 import nodemailer from "nodemailer";
-import { operator, site } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
 
 /**
  * `family` is forwarded to net.connect at runtime but is absent from
@@ -67,8 +67,15 @@ export function logMailError(context: string, error: unknown) {
     );
 }
 
-/** Every outbound mail is sent from, and delivered to, the operator address. */
-export const mailFrom = operator.email;
+/**
+ * Every outbound mail is sent from, and delivered to, the operator address.
+ * A function rather than a constant because the address is editable now: a
+ * module-level copy would keep the old one until the next deployment.
+ */
+export async function mailFrom() {
+    const { operator } = await loadSettings();
+    return operator.email;
+}
 
 export type EmailRow = { label: string; value: string };
 
@@ -100,7 +107,7 @@ const LINE = "#e4e4e7";
  * a dark background either prints as a black page or gets inverted by the
  * client. Tables and inline styles only — no external CSS, no flexbox.
  */
-export function renderEmail(options: {
+export async function renderEmail(options: {
     preheader: string;
     heading: string;
     intro: string[];
@@ -110,6 +117,8 @@ export function renderEmail(options: {
     rows?: EmailRow[];
     outro?: string[];
 }) {
+    const { operator, site } = await loadSettings();
+
     const paragraph = (text: string) =>
         `<p style="margin:0 0 14px;font:400 15px/1.65 ${FONT};color:${MUTED};">${escapeMultiline(text)}</p>`;
 

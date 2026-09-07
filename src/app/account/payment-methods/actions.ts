@@ -18,7 +18,7 @@ import {
     detachStoredMethod,
     ensureStripeCustomer,
 } from "@/lib/payments/stripe";
-import { operator } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
 
 export type PaymentMethodState = {
     status: "idle" | "removed" | "changed" | "error";
@@ -254,6 +254,7 @@ async function notifyDetachFailed(input: {
     provider: string;
     token: string;
 }) {
+    const { operator } = await loadSettings();
     const transport = createTransport();
 
     if (!transport) {
@@ -263,7 +264,7 @@ async function notifyDetachFailed(input: {
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to: operator.email,
             subject: `Zahlungsmittel nicht gelöscht — ${input.provider}`,
             text: [
@@ -273,7 +274,7 @@ async function notifyDetachFailed(input: {
                 "",
                 "Bitte im Konto des Anbieters nachziehen.",
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Löschung bei ${input.provider} nicht bestätigt.`,
                 heading: "Zahlungsmittel nicht gelöscht",
                 intro: [

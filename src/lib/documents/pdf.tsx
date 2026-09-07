@@ -22,7 +22,7 @@ import {
     formatPrice,
     formatQuantity,
 } from "@/lib/format";
-import { bank, operator, policy, site } from "@/lib/site";
+import { loadSettings, type Settings } from "@/lib/settings";
 
 /**
  * Business letter per DIN 5008 Form B. The measurements below are the
@@ -235,7 +235,9 @@ function FoldMarks() {
     );
 }
 
-function DocumentPdf(input: DocumentPdfInput) {
+function DocumentPdf(input: DocumentPdfInput & { settings: Settings }) {
+    const { bank, operator, policy, site } = input.settings;
+
     const isInvoice = input.kind === "invoice";
     const isDraft = input.variant === "draft";
     const isCorrection = input.variant === "correction";
@@ -493,5 +495,9 @@ function DocumentPdf(input: DocumentPdfInput) {
 }
 
 export async function renderDocumentPdf(input: DocumentPdfInput) {
-    return renderToBuffer(<DocumentPdf {...input} />);
+    // Loaded here rather than imported, so an address changed in the admin
+    // area appears on the next document instead of the next deployment.
+    const settings = await loadSettings();
+
+    return renderToBuffer(<DocumentPdf {...input} settings={settings} />);
 }

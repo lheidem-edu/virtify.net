@@ -15,7 +15,7 @@ import {
     mailFrom,
     renderEmail,
 } from "@/lib/mail";
-import { operator, policy, site } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
 
 function transportOrThrow() {
     const transport = createTransport();
@@ -32,6 +32,7 @@ export async function sendOfferMail(
     to: string,
     _name: string,
 ) {
+    const { operator, site } = await loadSettings();
     // Loaded as admin: the recipient is the owner, and the caller has already
     // established that this send is authorised.
     const loaded = await loadOffer(offerId, "", true);
@@ -60,7 +61,7 @@ export async function sendOfferMail(
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to,
             subject: `Angebot ${offer.number} — ${site.name}`,
             text: [
@@ -80,7 +81,7 @@ export async function sendOfferMail(
             ]
                 .filter(Boolean)
                 .join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Angebot ${offer.number} über ${formatPrice(totals.grossCents)}.`,
                 heading: `Angebot ${offer.number}`,
                 intro: [
@@ -129,6 +130,7 @@ export async function sendInvoiceMail(
     to: string,
     _name: string,
 ) {
+    const { operator, site } = await loadSettings();
     const loaded = await loadInvoice(invoiceId, "", true);
 
     if (!loaded?.invoice.number) {
@@ -171,6 +173,8 @@ export async function sendInvoiceMail(
     });
 
     const xml = renderXRechnung({
+        seller: operator,
+        siteName: site.name,
         number,
         typeCode: original ? "384" : "380",
         issuedAt: invoice.issuedAt ?? new Date(),
@@ -192,7 +196,7 @@ export async function sendInvoiceMail(
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to,
             subject: `${label} ${number} — ${site.name}`,
             text: [
@@ -209,7 +213,7 @@ export async function sendInvoiceMail(
                 "",
                 `Alle Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/account/invoices`,
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `${label} ${number} über ${formatPrice(totals.grossCents)}.`,
                 heading: `${label} ${number}`,
                 intro: [
@@ -276,6 +280,7 @@ export async function sendInvoiceMail(
  * customer can still see in the portal needs the same courtesy.
  */
 export async function sendOfferWithdrawnMail(offerId: string, to: string) {
+    const { operator, site } = await loadSettings();
     const loaded = await loadOffer(offerId, "", true);
 
     if (!loaded) {
@@ -287,7 +292,7 @@ export async function sendOfferWithdrawnMail(offerId: string, to: string) {
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to,
             subject: `Angebot ${offer.number} zurückgezogen — ${site.name}`,
             text: [
@@ -300,7 +305,7 @@ export async function sendOfferWithdrawnMail(offerId: string, to: string) {
                 "Mit freundlichen Grüßen",
                 operator.name,
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Angebot ${offer.number} wurde zurückgezogen.`,
                 heading: `Angebot ${offer.number} zurückgezogen`,
                 intro: [
@@ -332,6 +337,7 @@ export async function sendOfferWithdrawnMail(offerId: string, to: string) {
  * against something they can point at.
  */
 export async function sendOfferAcceptedMail(offerId: string, to: string) {
+    const { operator, site } = await loadSettings();
     const loaded = await loadOffer(offerId, "", true);
 
     if (!loaded) {
@@ -343,7 +349,7 @@ export async function sendOfferAcceptedMail(offerId: string, to: string) {
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to,
             subject: `Auftragsbestätigung zu Angebot ${offer.number} — ${site.name}`,
             text: [
@@ -358,7 +364,7 @@ export async function sendOfferAcceptedMail(offerId: string, to: string) {
                 "Mit freundlichen Grüßen",
                 operator.name,
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Angebot ${offer.number} angenommen — der Vertrag ist zustande gekommen.`,
                 heading: `Auftragsbestätigung ${offer.number}`,
                 intro: [
@@ -406,6 +412,7 @@ export async function sendContractTerminationMail(
     contractId: string,
     to: string,
 ) {
+    const { operator, policy, site } = await loadSettings();
     const loaded = await loadContract(contractId, "", true);
 
     if (!loaded) {
@@ -418,7 +425,7 @@ export async function sendContractTerminationMail(
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to,
             subject: `Kündigungsbestätigung ${contract.title} — ${site.name}`,
             text: [
@@ -431,7 +438,7 @@ export async function sendContractTerminationMail(
                 "Mit freundlichen Grüßen",
                 operator.name,
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Kündigung bestätigt — der Vertrag endet am ${endsOn}.`,
                 heading: "Kündigungsbestätigung",
                 intro: [
@@ -472,6 +479,7 @@ export async function sendPaymentReceivedMail(input: {
     amountCents: number;
     paidAt: Date;
 }) {
+    const { operator, site } = await loadSettings();
     const loaded = await loadInvoice(input.invoiceId, "", true);
 
     if (!loaded?.invoice.number) {
@@ -483,7 +491,7 @@ export async function sendPaymentReceivedMail(input: {
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to: input.to,
             subject: `Zahlungseingang zu Rechnung ${number} — ${site.name}`,
             text: [
@@ -496,7 +504,7 @@ export async function sendPaymentReceivedMail(input: {
                 "Mit freundlichen Grüßen",
                 operator.name,
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Zahlung über ${formatPrice(input.amountCents)} erhalten.`,
                 heading: "Zahlungseingang",
                 intro: [

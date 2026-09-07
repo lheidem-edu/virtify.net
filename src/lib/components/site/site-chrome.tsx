@@ -3,9 +3,12 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import FooterLink from "@/lib/components/ui/footer-link";
 import Wordmark from "@/lib/components/ui/wordmark";
-import { commit, operator, site } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
+import { commit } from "@/lib/site";
 
-function SiteHeader() {
+async function SiteHeader() {
+    const { site } = await loadSettings();
+
     return (
         <header className="site-header sticky top-0 z-50 border-b bg-black/80 backdrop-blur-md">
             <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between border-x px-6 md:px-10">
@@ -13,7 +16,7 @@ function SiteHeader() {
                     href="/"
                     className="group text-base font-semibold tracking-tight"
                 >
-                    <Wordmark />
+                    <Wordmark name={site.name} />
                 </Link>
 
                 <Button
@@ -32,14 +35,16 @@ function SiteHeader() {
     );
 }
 
-function SiteFooter() {
+async function SiteFooter() {
+    const { operator, site } = await loadSettings();
+
     return (
         <footer className="border-t select-none">
             <div className="mx-auto w-full max-w-6xl border-x">
                 <div className="grid md:grid-cols-2 lg:grid-cols-4">
                     <div className="space-y-4 p-6 md:p-10">
                         <h2 className="text-sm font-medium tracking-tight">
-                            <Wordmark />
+                            <Wordmark name={site.name} />
                         </h2>
                         <p className="max-w-xs text-sm text-zinc-500">
                             {site.tagline}
