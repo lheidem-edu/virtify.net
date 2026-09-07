@@ -18,33 +18,3 @@ export async function requireSession() {
 
     return session;
 }
-
-/** Guard for the admin area. Unauthenticated users are sent to the login;
- *  authenticated non-admins get a 404 rather than a 403, so the existence of
- *  the area is not confirmed to them. */
-export async function requireAdmin() {
-    const session = await requireSession();
-
-    if (session.user.role !== "admin") {
-        const { notFound } = await import("next/navigation");
-        notFound();
-    }
-
-    return session;
-}
-
-/**
- * Guard for the pages that only mean something to a customer — contracts,
- * offers, invoices, payment methods, master data. An employee has none of
- * that by construction, so the page is not empty for them, it does not exist.
- */
-export async function requireCustomer() {
-    const session = await requireSession();
-
-    if (session.user.role === "admin") {
-        const { notFound } = await import("next/navigation");
-        notFound();
-    }
-
-    return session;
-}

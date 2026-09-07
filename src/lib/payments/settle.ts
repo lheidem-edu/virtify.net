@@ -293,7 +293,7 @@ export async function markReversed(input: {
                 `Eine Zahlung über ${formatPrice(row.amountCents)} ist zurückgegangen (${input.event}).`,
                 "",
                 "Die Rechnung steht weiterhin auf „Bezahlt“ — ob sie wieder zu öffnen oder zu korrigieren ist, entscheidest du.",
-                `${site.url}/account/admin/invoices/${row.invoiceId}`,
+                `${site.url}/admin/invoices/${row.invoiceId}`,
             ].join("\n"),
             html: await renderEmail({
                 preheader: `Zahlung über ${formatPrice(row.amountCents)} zurückgegangen.`,
@@ -303,7 +303,7 @@ export async function markReversed(input: {
                 ],
                 action: {
                     label: "Rechnung öffnen",
-                    url: `${site.url}/account/admin/invoices/${row.invoiceId}`,
+                    url: `${site.url}/admin/invoices/${row.invoiceId}`,
                 },
                 rowsTitle: "Eckdaten",
                 rows: [
@@ -372,11 +372,11 @@ export async function notifyUnmatchedPayment(input: {
  */
 export function revalidateAfterPayment(invoiceId: string | null) {
     revalidatePath("/account/invoices");
-    revalidatePath("/account/admin/invoices");
+    revalidatePath("/admin/invoices");
     revalidatePath("/account");
 
     if (invoiceId) {
-        revalidatePath(`/account/admin/invoices/${invoiceId}`);
+        revalidatePath(`/admin/invoices/${invoiceId}`);
     }
 }
 
@@ -406,7 +406,7 @@ async function notifyUnexpectedPayment(input: {
                 `Für ${input.invoiceNumber} ist eine Zahlung über ${formatPrice(input.amountCents)} eingegangen, obwohl die Rechnung den Status „${input.status}" hat.`,
                 "",
                 "Die Zahlung ist erfasst, der Rechnungsstatus wurde nicht verändert. Bitte prüfen, ob der Betrag zu erstatten ist.",
-                `${site.url}/account/admin/invoices`,
+                `${site.url}/admin/invoices`,
             ].join("\n"),
             html: await renderEmail({
                 preheader: `Zahlung zu ${input.invoiceNumber}, die nicht erwartet war.`,
@@ -416,7 +416,7 @@ async function notifyUnexpectedPayment(input: {
                 ],
                 action: {
                     label: "Rechnungen öffnen",
-                    url: `${site.url}/account/admin/invoices`,
+                    url: `${site.url}/admin/invoices`,
                 },
                 rowsTitle: "Eckdaten",
                 rows: [
@@ -519,7 +519,7 @@ export async function notifyCollectionFailed(input: {
                 `Grund: ${input.reason}`,
                 "",
                 "Die Rechnung bleibt offen. Es wird nichts automatisch erneut versucht.",
-                `${site.url}/account/admin/invoices`,
+                `${site.url}/admin/invoices`,
             ].join("\n"),
             html: await renderEmail({
                 preheader: `Einzug für ${input.invoiceNumber} fehlgeschlagen.`,
@@ -529,7 +529,7 @@ export async function notifyCollectionFailed(input: {
                 ],
                 action: {
                     label: "Rechnungen öffnen",
-                    url: `${site.url}/account/admin/invoices`,
+                    url: `${site.url}/admin/invoices`,
                 },
                 rowsTitle: "Eckdaten",
                 rows: [

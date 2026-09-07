@@ -1,4 +1,4 @@
-import { requireCustomer } from "@/lib/auth-session";
+import { requireSession } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
 import { listInvoices } from "@/lib/documents/repository";
 import type { INVOICE_STATUS_LABEL } from "@/lib/format";
@@ -6,7 +6,7 @@ import { paypalEnabled, stripeEnabled } from "@/lib/payments/config";
 import InvoicesTable from "./invoices-table";
 
 export default async function Page() {
-    const session = await requireCustomer();
+    const session = await requireSession();
 
     // Which providers exist is a server-side question; the table only ever
     // sees the two booleans.

@@ -27,10 +27,7 @@ export default async function AccountLayout({
 
     return (
         <SidebarProvider>
-            <AccountSidebar
-                email={session.user.email}
-                isAdmin={session.user.role === "admin"}
-            />
+            <AccountSidebar email={session.user.email} />
             <SidebarInset>
                 <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
                     <SidebarTrigger />

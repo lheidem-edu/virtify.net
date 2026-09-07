@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireSession } from "@/lib/auth-session";
+import { documentViewer } from "@/lib/document-access";
 import { renderDocumentPdf } from "@/lib/documents/pdf";
 import { formatRecipient, loadInvoice } from "@/lib/documents/repository";
 import { formatDate } from "@/lib/format";
@@ -8,11 +8,10 @@ export async function GET(
     _request: Request,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const session = await requireSession();
+    const { userId, isAdmin } = await documentViewer();
     const { id } = await params;
-    const isAdmin = session.user.role === "admin";
 
-    const loaded = await loadInvoice(id, session.user.id, isAdmin);
+    const loaded = await loadInvoice(id, userId, isAdmin);
 
     // A draft has no number yet and is not a document the customer may see.
     if (!loaded || (!isAdmin && loaded.invoice.status === "draft")) {
@@ -24,13 +23,8 @@ export async function GET(
     // A correction is recognised by what it points at, as the mail does —
     // it is an invoice of the same series, only with reversed signs.
     const original = invoice.cancelsInvoiceId
-        ? ((
-              await loadInvoice(
-                  invoice.cancelsInvoiceId,
-                  session.user.id,
-                  isAdmin,
-              )
-          )?.invoice ?? null)
+        ? ((await loadInvoice(invoice.cancelsInvoiceId, userId, isAdmin))
+              ?.invoice ?? null)
         : null;
 
     const pdf = await renderDocumentPdf({

@@ -1,5 +1,5 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { requireCustomer } from "@/lib/auth-session";
+import { requireSession } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
 import { db, schema } from "@/lib/db";
 import { listContracts } from "@/lib/documents/repository";
@@ -7,7 +7,7 @@ import type { CONTRACT_STATUS_LABEL } from "@/lib/format";
 import ContractsTable from "./contracts-table";
 
 export default async function Page() {
-    const session = await requireCustomer();
+    const session = await requireSession();
 
     const [contracts, methods, collection] = await Promise.all([
         listContracts(session.user.id, false),

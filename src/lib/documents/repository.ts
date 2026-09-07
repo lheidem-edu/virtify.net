@@ -14,11 +14,12 @@ function ownership(column: PgColumn, userId: string, isAdmin: boolean) {
 }
 
 /**
- * Employees are not customers: they hold no documents and none can be made
- * out to them. IS DISTINCT FROM rather than <>, because a row whose role was
- * never set is a customer too and <> would silently drop it.
+ * Passed where a loader wants a customer id it will not use. An employee has
+ * no row in `user` at all — they are a separate account on the staff tables —
+ * so there is no id to pass, and the admin flag has already lifted the
+ * ownership filter.
  */
-export const isCustomerAccount = sql`${schema.user.role} is distinct from 'admin'`;
+export const ANY_CUSTOMER = "";
 
 /** The accounts a contract, offer or invoice can be addressed to. */
 export async function listCustomerAccounts() {
@@ -29,7 +30,6 @@ export async function listCustomerAccounts() {
             email: schema.user.email,
         })
         .from(schema.user)
-        .where(isCustomerAccount)
         .orderBy(asc(schema.user.email));
 }
 

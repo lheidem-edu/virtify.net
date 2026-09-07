@@ -3,7 +3,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireCustomer } from "@/lib/auth-session";
+import { requireSession } from "@/lib/auth-session";
 import { db, schema } from "@/lib/db";
 import {
     createTransport,
@@ -34,7 +34,7 @@ export async function startPaymentMethodSetup(
     _previous: PaymentMethodState,
     data: FormData,
 ): Promise<PaymentMethodState> {
-    const session = await requireCustomer();
+    const session = await requireSession();
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -157,7 +157,7 @@ export async function removePaymentMethod(
     _previous: PaymentMethodState,
     data: FormData,
 ): Promise<PaymentMethodState> {
-    const session = await requireCustomer();
+    const session = await requireSession();
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -303,7 +303,7 @@ export async function setContractCollection(
     _previous: PaymentMethodState,
     data: FormData,
 ): Promise<PaymentMethodState> {
-    const session = await requireCustomer();
+    const session = await requireSession();
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
