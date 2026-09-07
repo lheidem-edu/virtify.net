@@ -1,29 +1,43 @@
 import "server-only";
+import fs from "node:fs";
+import path from "node:path";
 import { and, asc, desc, eq, lte } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import imprintDefault from "@/lib/legal/defaults/imprint";
-import privacyDefault from "@/lib/legal/defaults/privacy";
-import termsDefault from "@/lib/legal/defaults/terms";
-import type {
-    LegalDocumentData,
-    LegalItem,
-    LegalKind,
-    LegalVariant,
+import { parseLegalDocument } from "@/lib/legal/parse";
+import {
+    LEGAL_KINDS,
+    type LegalDocumentData,
+    type LegalItem,
+    type LegalKind,
+    type LegalVariant,
 } from "@/lib/legal/types";
 import { legalUpdated } from "@/lib/site";
 
 /**
  * The text a visitor sees: the newest published version whose effective date
- * has arrived, and the built-in wording until one exists. Keeping the file as
- * the fallback is what makes a fresh database serve a complete document — and
- * it is the wording the first version is copied from.
+ * has arrived, and the built-in wording until one exists. Keeping a fallback
+ * is what makes a fresh database serve a complete document — and it is the
+ * wording the first version is copied from.
+ *
+ * That wording lives in defaults/*.txt beside this file, in the format
+ * @/lib/legal/parse describes. Text rather than code, because it is text: it
+ * can be read, diffed and corrected without a build step, and the person who
+ * has to answer for its content does not have to write TypeScript to change
+ * it. The files are read once, at import — an installation missing them has a
+ * packaging fault, and finding that out at startup beats finding it out from
+ * an empty Impressum.
  */
 
-const DEFAULTS: Record<LegalKind, LegalDocumentData> = {
-    terms: termsDefault,
-    privacy: privacyDefault,
-    imprint: imprintDefault,
-};
+const directory = path.join(process.cwd(), "src", "lib", "legal", "defaults");
+
+const DEFAULTS = Object.fromEntries(
+    LEGAL_KINDS.map((kind) => [
+        kind,
+        parseLegalDocument(
+            fs.readFileSync(path.join(directory, `${kind}.txt`), "utf8"),
+        ),
+    ]),
+) as Record<LegalKind, LegalDocumentData>;
 
 const dateLabel = new Intl.DateTimeFormat("de-DE", {
     day: "numeric",
