@@ -1,11 +1,11 @@
-import { requireSession } from "@/lib/auth-session";
+import { requireCustomer } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
 import { listOffers } from "@/lib/documents/repository";
 import type { OFFER_STATUS_LABEL } from "@/lib/format";
 import OffersTable from "./offers-table";
 
 export default async function Page() {
-    const session = await requireSession();
+    const session = await requireCustomer();
 
     const offers = (await listOffers(session.user.id, false))
         .filter((entry) => entry.status !== "draft")

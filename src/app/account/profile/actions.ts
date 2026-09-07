@@ -2,7 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { requireSession } from "@/lib/auth-session";
+import { requireCustomer } from "@/lib/auth-session";
 import { db, schema } from "@/lib/db";
 
 export type ProfileState = {
@@ -27,7 +27,7 @@ export async function updateProfile(
     _previous: ProfileState,
     data: FormData,
 ): Promise<ProfileState> {
-    const session = await requireSession();
+    const session = await requireCustomer();
 
     const values: Record<string, string | null> = {};
 

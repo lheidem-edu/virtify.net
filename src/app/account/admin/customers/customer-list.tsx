@@ -15,7 +15,6 @@ export type Customer = {
     customerNumber: number | null;
     email: string;
     emailVerified: boolean;
-    role: string | null;
     name: string;
     company: string;
     street: string;
@@ -147,16 +146,10 @@ const columns: ColumnDef<Customer, unknown>[] = [
         id: "state",
         header: "Status",
         enableSorting: false,
-        cell: ({ row }) => (
-            <div className="flex gap-2">
-                {row.original.role === "admin" ? (
-                    <StatusBadge label="Admin" tone="positive" />
-                ) : null}
-                {row.original.emailVerified ? null : (
-                    <StatusBadge label="Nicht bestätigt" tone="warning" />
-                )}
-            </div>
-        ),
+        cell: ({ row }) =>
+            row.original.emailVerified ? null : (
+                <StatusBadge label="Nicht bestätigt" tone="warning" />
+            ),
     },
 ];
 

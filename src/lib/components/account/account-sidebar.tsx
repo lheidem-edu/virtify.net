@@ -11,6 +11,7 @@ import {
     Settings,
     Shield,
     User,
+    UserCog,
     Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -34,6 +35,8 @@ import {
     ACCOUNT_NAV,
     ACCOUNT_SETTINGS_NAV,
     ADMIN_NAV,
+    EMPLOYEE_NAV,
+    EMPLOYEE_SETTINGS_NAV,
     type NavEntry,
 } from "@/lib/components/account/nav";
 import Wordmark from "@/lib/components/ui/wordmark";
@@ -47,6 +50,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     scale: Scale,
     settings: Settings,
     user: User,
+    "user-cog": UserCog,
     shield: Shield,
     users: Users,
 };
@@ -123,12 +127,14 @@ export default function AccountSidebar({
             <SidebarContent>
                 <NavGroup
                     label="Konto"
-                    entries={ACCOUNT_NAV}
+                    entries={isAdmin ? EMPLOYEE_NAV : ACCOUNT_NAV}
                     pathname={pathname}
                 />
                 <NavGroup
                     label="Einstellungen"
-                    entries={ACCOUNT_SETTINGS_NAV}
+                    entries={
+                        isAdmin ? EMPLOYEE_SETTINGS_NAV : ACCOUNT_SETTINGS_NAV
+                    }
                     pathname={pathname}
                 />
                 {isAdmin ? (

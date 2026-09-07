@@ -1,7 +1,9 @@
+import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
     bigint,
     boolean,
+    check,
     index,
     integer,
     jsonb,
@@ -17,47 +19,71 @@ import { createId } from "./id";
  * Drizzle adapter expects. The customer's own master data lives on `user`
  * because one account is one customer — if several logins per customer are
  * ever needed, this is what moves into its own table.
+ *
+ * An employee is the same table with role = 'admin' and none of that data: no
+ * customer number, no address, nothing to invoice. The check constraint below
+ * is what makes that a fact rather than a convention, so no report has to ask
+ * whether the row it is looking at is a person we bill.
  */
-export const user = pgTable("user", {
-    id: text("id")
-        .primaryKey()
-        .$defaultFn(() => createId("user")),
-    name: text("name").notNull(),
-    email: text("email").notNull().unique(),
-    emailVerified: boolean("email_verified").notNull().default(false),
-    image: text("image"),
+export const user = pgTable(
+    "user",
+    {
+        id: text("id")
+            .primaryKey()
+            .$defaultFn(() => createId("user")),
+        name: text("name").notNull(),
+        email: text("email").notNull().unique(),
+        emailVerified: boolean("email_verified").notNull().default(false),
+        image: text("image"),
 
-    // Master data. Empty until the customer fills it in after registering.
-    company: text("company"),
-    street: text("street"),
-    postalCode: text("postal_code"),
-    city: text("city"),
-    country: text("country"),
-    vatId: text("vat_id"),
-    phone: text("phone"),
-    /** EN 16931 BT-10. Public buyers supply a Leitweg-ID; otherwise the
-     *  customer number is used so the mandatory field is always populated. */
-    buyerReference: text("buyer_reference"),
-    /** Short, human-facing number for documents and support. Assigned on
-     *  sign-up; the ULID stays the technical key. */
-    customerNumber: integer("customer_number").unique(),
+        // Master data. Empty until the customer fills it in after registering.
+        company: text("company"),
+        street: text("street"),
+        postalCode: text("postal_code"),
+        city: text("city"),
+        country: text("country"),
+        vatId: text("vat_id"),
+        phone: text("phone"),
+        /** EN 16931 BT-10. Public buyers supply a Leitweg-ID; otherwise the
+         *  customer number is used so the mandatory field is always populated. */
+        buyerReference: text("buyer_reference"),
+        /** Short, human-facing number for documents and support. Assigned on
+         *  sign-up; the ULID stays the technical key. */
+        customerNumber: integer("customer_number").unique(),
 
-    // Better Auth admin plugin.
-    role: text("role"),
-    banned: boolean("banned").default(false),
-    banReason: text("ban_reason"),
-    banExpires: timestamp("ban_expires"),
+        // Better Auth admin plugin.
+        role: text("role"),
+        banned: boolean("banned").default(false),
+        banReason: text("ban_reason"),
+        banExpires: timestamp("ban_expires"),
 
-    // Better Auth two-factor plugin.
-    twoFactorEnabled: boolean("two_factor_enabled").default(false),
+        // Better Auth two-factor plugin.
+        twoFactorEnabled: boolean("two_factor_enabled").default(false),
 
-    /** Provider-side identity, created the first time a method is stored. */
-    stripeCustomerId: text("stripe_customer_id").unique(),
-    paypalCustomerId: text("paypal_customer_id").unique(),
+        /** Provider-side identity, created the first time a method is stored. */
+        stripeCustomerId: text("stripe_customer_id").unique(),
+        paypalCustomerId: text("paypal_customer_id").unique(),
 
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+        createdAt: timestamp("created_at").notNull().defaultNow(),
+        updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    },
+    (table) => [
+        check(
+            "user_admin_has_no_customer_data",
+            sql`${table.role} is distinct from 'admin' or (
+            ${table.customerNumber} is null
+            and ${table.company} is null
+            and ${table.street} is null
+            and ${table.postalCode} is null
+            and ${table.city} is null
+            and ${table.country} is null
+            and ${table.vatId} is null
+            and ${table.phone} is null
+            and ${table.buyerReference} is null
+        )`,
+        ),
+    ],
+);
 
 export const session = pgTable("session", {
     id: text("id")

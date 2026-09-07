@@ -115,3 +115,30 @@ export async function sendPasswordResetMail({
         ],
     });
 }
+
+export async function sendStaffInviteMail({
+    to,
+    name,
+    url,
+}: {
+    to: string;
+    name?: string | null;
+    url: string;
+}) {
+    const { site } = await loadSettings();
+    await send({
+        to,
+        context: "staff invite mail",
+        subject: `Zugang zur Verwaltung — ${site.name}`,
+        heading: "Zugang einrichten",
+        intro: [
+            name ? `Hallo ${name},` : "Hallo,",
+            `für dich wurde ein Mitarbeiterzugang zur Verwaltung von ${site.name} angelegt. Vergib über den folgenden Link dein Passwort, danach kannst du dich anmelden.`,
+        ],
+        action: { label: "Passwort festlegen", url },
+        outro: [
+            "Der Link ist aus Sicherheitsgründen nur begrenzt gültig; ist er abgelaufen, fordere über „Passwort vergessen“ einen neuen an.",
+            "Der Zugang hat Zugriff auf Kundendaten. Richte im Kundenbereich unter Sicherheit bitte die Zwei-Faktor-Anmeldung ein.",
+        ],
+    });
+}

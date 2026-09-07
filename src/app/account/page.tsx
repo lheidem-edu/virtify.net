@@ -1,4 +1,4 @@
-import { FileSignature, FileText, Receipt } from "lucide-react";
+import { FileSignature, FileText, Receipt, Scale, Users } from "lucide-react";
 import Link from "next/link";
 import { requireSession } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
@@ -11,9 +11,99 @@ import {
 const CARD =
     "flex flex-col gap-3 rounded-lg border p-6 transition-colors hover:border-ring";
 
+/**
+ * An employee's own page. There is nothing of theirs to show — no contracts,
+ * no invoices, no Stammdaten — so it says who they are signed in as, whether
+ * the account is protected, and points at the work.
+ */
+function EmployeeOverview({
+    name,
+    email,
+    twoFactorEnabled,
+}: {
+    name: string;
+    email: string;
+    twoFactorEnabled: boolean;
+}) {
+    const cards = [
+        {
+            href: "/account/admin/customers",
+            icon: Users,
+            label: "Kunden",
+            value: "Konten und Stammdaten",
+            hint: "Anschriften korrigieren, Zahlungsmittel einsehen",
+        },
+        {
+            href: "/account/admin/invoices",
+            icon: Receipt,
+            label: "Rechnungen",
+            value: "Stellen und einziehen",
+            hint: "Angebote und Verträge daneben",
+        },
+        {
+            href: "/account/admin/legal",
+            icon: Scale,
+            label: "Rechtstexte",
+            value: "AGB, Datenschutz, Impressum",
+            hint: "Fassungen bearbeiten und veröffentlichen",
+        },
+    ];
+
+    return (
+        <>
+            <PageHeader
+                title="Übersicht"
+                intro={`Willkommen zurück${name ? `, ${name}` : ""}. Du bist als Mitarbeiter angemeldet — dieses Konto hat keine Stammdaten und keine Kundennummer.`}
+            />
+
+            <div className="px-6 py-10 md:px-10 md:py-12">
+                {twoFactorEnabled ? null : (
+                    <p className="mb-8 max-w-3xl rounded-lg border p-4 text-sm leading-6 text-muted-foreground">
+                        Für {email} ist keine Zwei-Faktor-Anmeldung
+                        eingerichtet. Der Zugang sieht die Daten aller Kunden.{" "}
+                        <Link
+                            href="/account/security"
+                            className="text-foreground underline decoration-zinc-600 underline-offset-4 transition-colors hover:decoration-white"
+                        >
+                            Jetzt einrichten
+                        </Link>
+                    </p>
+                )}
+
+                <div className="grid max-w-4xl gap-4 sm:grid-cols-3">
+                    {cards.map((card) => (
+                        <Link key={card.href} href={card.href} className={CARD}>
+                            <card.icon className="size-4 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">
+                                {card.label}
+                            </span>
+                            <span className="text-lg font-medium tracking-tight">
+                                {card.value}
+                            </span>
+                            <span className="text-xs text-zinc-600">
+                                {card.hint}
+                            </span>
+                        </Link>
+                    ))}
+                </div>
+            </div>
+        </>
+    );
+}
+
 export default async function Page() {
     const session = await requireSession();
     const userId = session.user.id;
+
+    if (session.user.role === "admin") {
+        return (
+            <EmployeeOverview
+                name={session.user.name ?? ""}
+                email={session.user.email}
+                twoFactorEnabled={session.user.twoFactorEnabled ?? false}
+            />
+        );
+    }
 
     const [contracts, offers, invoices] = await Promise.all([
         listContracts(userId, false),

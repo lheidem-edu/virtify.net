@@ -1,8 +1,8 @@
-import { requireSession } from "@/lib/auth-session";
+import { requireCustomer } from "@/lib/auth-session";
 import ProfileForm from "./profile-form";
 
 export default async function Page() {
-    const session = await requireSession();
+    const session = await requireCustomer();
 
     return (
         <>

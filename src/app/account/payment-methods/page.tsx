@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/auth-session";
+import { requireCustomer } from "@/lib/auth-session";
 import FormStatus from "@/lib/components/account/form-status";
 import PageHeader from "@/lib/components/account/page-header";
 import { db, schema } from "@/lib/db";
@@ -164,7 +164,7 @@ export default async function Page({
 }: {
     searchParams: Promise<Query>;
 }) {
-    const session = await requireSession();
+    const session = await requireCustomer();
     const query = await searchParams;
 
     const outcome = await consumeReturn(session.user.id, query);

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/auth-session";
+import { requireCustomer } from "@/lib/auth-session";
 import { loadInvoice } from "@/lib/documents/repository";
 import { closeOpenAttempts } from "@/lib/payments/collect";
 import { paypalEnabled, stripeEnabled } from "@/lib/payments/config";
@@ -20,7 +20,7 @@ export async function startInvoicePayment(
     _previous: PayState,
     data: FormData,
 ): Promise<PayState> {
-    const session = await requireSession();
+    const session = await requireCustomer();
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 

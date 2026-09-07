@@ -1,11 +1,10 @@
-import { asc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
-import { db, schema } from "@/lib/db";
 import { billingPeriod } from "@/lib/documents/contract-term";
 import { dateInputValue } from "@/lib/documents/line-items";
 import {
     listContracts,
+    listCustomerAccounts,
     listInvoices,
     loadContract,
 } from "@/lib/documents/repository";
@@ -22,14 +21,7 @@ export default async function Page({
     const session = await requireAdmin();
     const { contract: contractId } = await searchParams;
 
-    const accounts = await db
-        .select({
-            id: schema.user.id,
-            name: schema.user.name,
-            email: schema.user.email,
-        })
-        .from(schema.user)
-        .orderBy(asc(schema.user.email));
+    const accounts = await listCustomerAccounts();
 
     const [invoices, contracts] = await Promise.all([
         listInvoices(session.user.id, true),

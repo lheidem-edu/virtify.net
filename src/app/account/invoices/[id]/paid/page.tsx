@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { requireSession } from "@/lib/auth-session";
+import { requireCustomer } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
 import { db, schema } from "@/lib/db";
 import { loadInvoice } from "@/lib/documents/repository";
@@ -75,7 +75,7 @@ export default async function Page({
     params: Promise<{ id: string }>;
     searchParams: Promise<Query>;
 }) {
-    const session = await requireSession();
+    const session = await requireCustomer();
     const { id } = await params;
     const query = await searchParams;
 

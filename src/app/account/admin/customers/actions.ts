@@ -39,6 +39,25 @@ export async function updateCustomer(
         return { status: "error", message: "Kein Konto angegeben." };
     }
 
+    const [target] = await db
+        .select({ role: schema.user.role })
+        .from(schema.user)
+        .where(eq(schema.user.id, userId))
+        .limit(1);
+
+    if (!target) {
+        return { status: "error", message: "Konto nicht gefunden." };
+    }
+
+    // An employee has no master data to correct, and the database would
+    // refuse the write anyway — better a sentence than a stack trace.
+    if (target.role === "admin") {
+        return {
+            status: "error",
+            message: "Mitarbeiterkonten haben keine Stammdaten.",
+        };
+    }
+
     const values: Record<string, string | null> = {};
 
     for (const field of FIELDS) {

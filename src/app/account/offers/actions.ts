@@ -2,7 +2,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { requireSession } from "@/lib/auth-session";
+import { requireCustomer } from "@/lib/auth-session";
 import { db, schema } from "@/lib/db";
 import { createId } from "@/lib/db/id";
 
@@ -22,7 +22,7 @@ export async function decideOffer(
     _previous: DecisionState,
     data: FormData,
 ): Promise<DecisionState> {
-    const session = await requireSession();
+    const session = await requireCustomer();
 
     const offerId = String(data.get("offerId") ?? "");
     const decision = String(data.get("decision") ?? "");

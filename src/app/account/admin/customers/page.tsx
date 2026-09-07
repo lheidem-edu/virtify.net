@@ -2,15 +2,21 @@ import { asc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
 import { db, schema } from "@/lib/db";
-import { listStoredMethods } from "@/lib/documents/repository";
+import {
+    isCustomerAccount,
+    listStoredMethods,
+} from "@/lib/documents/repository";
 import CustomerList from "./customer-list";
 
 export default async function Page() {
     await requireAdmin();
 
+    // Employees are not customers and do not belong in this list; they are
+    // managed under Mitarbeiter.
     const customers = await db
         .select()
         .from(schema.user)
+        .where(isCustomerAccount)
         .orderBy(asc(schema.user.email));
 
     // One query for every account rather than one per row.
@@ -20,7 +26,7 @@ export default async function Page() {
         <>
             <PageHeader
                 title="Kunden"
-                intro="Konten ansehen und Stammdaten korrigieren. E-Mail-Adresse und Rolle ändern sich hier nicht."
+                intro="Kundenkonten ansehen und Stammdaten korrigieren. Die E-Mail-Adresse ändert nur der Kunde selbst; Zugänge zur Verwaltung stehen unter Mitarbeiter."
             />
             <div className="px-6 py-10 md:px-10 md:py-12">
                 <CustomerList
@@ -39,7 +45,6 @@ export default async function Page() {
                             customerNumber: entry.customerNumber,
                             email: entry.email,
                             emailVerified: entry.emailVerified,
-                            role: entry.role,
                             name: entry.name ?? "",
                             company: entry.company ?? "",
                             street: entry.street ?? "",

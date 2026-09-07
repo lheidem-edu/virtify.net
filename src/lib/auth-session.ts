@@ -32,3 +32,19 @@ export async function requireAdmin() {
 
     return session;
 }
+
+/**
+ * Guard for the pages that only mean something to a customer — contracts,
+ * offers, invoices, payment methods, master data. An employee has none of
+ * that by construction, so the page is not empty for them, it does not exist.
+ */
+export async function requireCustomer() {
+    const session = await requireSession();
+
+    if (session.user.role === "admin") {
+        const { notFound } = await import("next/navigation");
+        notFound();
+    }
+
+    return session;
+}

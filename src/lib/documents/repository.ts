@@ -13,6 +13,26 @@ function ownership(column: PgColumn, userId: string, isAdmin: boolean) {
     return isAdmin ? undefined : eq(column, userId);
 }
 
+/**
+ * Employees are not customers: they hold no documents and none can be made
+ * out to them. IS DISTINCT FROM rather than <>, because a row whose role was
+ * never set is a customer too and <> would silently drop it.
+ */
+export const isCustomerAccount = sql`${schema.user.role} is distinct from 'admin'`;
+
+/** The accounts a contract, offer or invoice can be addressed to. */
+export async function listCustomerAccounts() {
+    return db
+        .select({
+            id: schema.user.id,
+            name: schema.user.name,
+            email: schema.user.email,
+        })
+        .from(schema.user)
+        .where(isCustomerAccount)
+        .orderBy(asc(schema.user.email));
+}
+
 export async function listInvoices(userId: string, isAdmin: boolean) {
     const rows = await db
         .select({

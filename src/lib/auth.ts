@@ -5,8 +5,13 @@ import { admin, twoFactor } from "better-auth/plugins";
 import { db, schema } from "@/lib/db";
 import { createId } from "@/lib/db/id";
 import { nextCustomerNumber } from "@/lib/documents/numbering";
-import { sendPasswordResetMail, sendVerificationMail } from "@/lib/mail-auth";
+import {
+    sendPasswordResetMail,
+    sendStaffInviteMail,
+    sendVerificationMail,
+} from "@/lib/mail-auth";
 import { site } from "@/lib/site";
+import { isInvite, recordInvite } from "@/lib/staff-invite";
 
 function secret() {
     const value = process.env.BETTER_AUTH_SECRET;
@@ -44,6 +49,24 @@ export const auth = betterAuth({
         minPasswordLength: 12,
         requireEmailVerification: true,
         sendResetPassword: async ({ user, url }) => {
+            // An invited employee reaches this through the same flow — the
+            // link is identical, only the wording differs. The outcome is
+            // recorded because Better Auth swallows what this throws.
+            if (isInvite(user.email)) {
+                try {
+                    await sendStaffInviteMail({
+                        to: user.email,
+                        name: user.name,
+                        url,
+                    });
+                    recordInvite(user.email);
+                } catch (error) {
+                    recordInvite(user.email, error);
+                    throw error;
+                }
+                return;
+            }
+
             await sendPasswordResetMail({
                 to: user.email,
                 name: user.name,
@@ -101,12 +124,18 @@ export const auth = betterAuth({
     databaseHooks: {
         user: {
             create: {
-                // Assigned here rather than lazily, so every account has a
-                // number the moment it exists — including in the customer list.
+                // Assigned here rather than lazily, so every customer has a
+                // number the moment the account exists — including in the
+                // customer list. Employees get none: they are never invoiced,
+                // and a number spent on one would be a gap in a sequence that
+                // is supposed to count customers.
                 before: async (user: Record<string, unknown>) => ({
                     data: {
                         ...user,
-                        customerNumber: await nextCustomerNumber(),
+                        customerNumber:
+                            user.role === "admin"
+                                ? null
+                                : await nextCustomerNumber(),
                     },
                 }),
             },
