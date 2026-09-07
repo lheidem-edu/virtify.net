@@ -5,6 +5,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth-session";
 import { db, schema } from "@/lib/db";
+import {
+    createTransport,
+    logMailError,
+    mailFrom,
+    renderEmail,
+} from "@/lib/mail";
 import { paypalConfig, stripeEnabled } from "@/lib/payments/config";
 import { createVaultSetupToken, deleteVaultToken } from "@/lib/payments/paypal";
 import {
@@ -12,6 +18,7 @@ import {
     detachStoredMethod,
     ensureStripeCustomer,
 } from "@/lib/payments/stripe";
+import { operator } from "@/lib/site";
 
 export type PaymentMethodState = {
     status: "idle" | "removed" | "changed" | "error";
@@ -99,12 +106,14 @@ export async function startPaymentMethodSetup(
                 contractId: contractId || undefined,
             });
 
+            await recordSetup(setup.id, session.user.id, "stripe", contractId);
             url = setup.url;
         } else {
             const setup = await createVaultSetupToken({
                 userId: session.user.id,
             });
 
+            await recordSetup(setup.id, session.user.id, "paypal", contractId);
             url = setup.url;
         }
     } catch (error) {
@@ -119,6 +128,23 @@ export async function startPaymentMethodSetup(
 
     // redirect() works by throwing, so it must sit outside the try above.
     redirect(url);
+}
+
+/**
+ * Written before the customer leaves, so the identifier they come back with
+ * means something. Both providers return to a URL anyone could type, carrying
+ * an id anyone could present — this row is what makes it this account's.
+ */
+async function recordSetup(
+    id: string,
+    userId: string,
+    provider: "stripe" | "paypal",
+    contractId: string,
+) {
+    await db
+        .insert(schema.paymentSetup)
+        .values({ id, userId, provider, contractId: contractId || null })
+        .onConflictDoNothing();
 }
 
 /**
@@ -155,7 +181,12 @@ export async function removePaymentMethod(
         };
     }
 
-    // Fallible, so it runs on its own before the transaction below.
+    // Fallible, so it runs on its own before the transaction below. Whether
+    // it worked is remembered rather than assumed: withdrawing the
+    // authorisation here always succeeds and is what stops us collecting, but
+    // the deletion at the provider is what the customer was promised.
+    let detachedAt: Date | null = new Date();
+
     try {
         if (method.provider === "stripe") {
             await detachStoredMethod(method.token);
@@ -164,13 +195,14 @@ export async function removePaymentMethod(
         }
     } catch (error) {
         console.error("[payment] detaching stored method failed:", error);
+        detachedAt = null;
     }
 
     try {
         await db.transaction(async (tx) => {
             await tx
                 .update(schema.paymentMethod)
-                .set({ revokedAt: new Date() })
+                .set({ revokedAt: new Date(), detachedAt })
                 .where(eq(schema.paymentMethod.id, methodId));
 
             await tx
@@ -193,10 +225,71 @@ export async function removePaymentMethod(
         };
     }
 
+    if (!detachedAt) {
+        await notifyDetachFailed({
+            label: method.label,
+            provider: method.provider,
+            token: method.token,
+        });
+    }
+
     revalidatePath("/account/payment-methods");
     revalidatePath("/account/contracts");
 
-    return { status: "removed" };
+    return {
+        status: "removed",
+        message: detachedAt
+            ? "Das Zahlungsmittel ist entfernt und beim Zahlungsdienstleister gelöscht."
+            : "Das Zahlungsmittel ist entfernt und wird nicht mehr verwendet. Die Löschung beim Zahlungsdienstleister konnte gerade nicht bestätigt werden; wir holen sie nach.",
+    };
+}
+
+/**
+ * The customer is told the withdrawal worked, because it did — we will never
+ * collect from it again. The half that did not work is the operator's to
+ * finish at the provider, so it goes to them.
+ */
+async function notifyDetachFailed(input: {
+    label: string;
+    provider: string;
+    token: string;
+}) {
+    const transport = createTransport();
+
+    if (!transport) {
+        console.error("[payment] detach failed and no transport:", input);
+        return;
+    }
+
+    try {
+        await transport.sendMail({
+            from: mailFrom,
+            to: operator.email,
+            subject: `Zahlungsmittel nicht gelöscht — ${input.provider}`,
+            text: [
+                `Ein Kunde hat „${input.label}“ entfernt. Der Widerruf ist hier wirksam, aber ${input.provider} hat die Löschung des Tokens nicht bestätigt.`,
+                "",
+                `Token: ${input.token}`,
+                "",
+                "Bitte im Konto des Anbieters nachziehen.",
+            ].join("\n"),
+            html: renderEmail({
+                preheader: `Löschung bei ${input.provider} nicht bestätigt.`,
+                heading: "Zahlungsmittel nicht gelöscht",
+                intro: [
+                    `Ein Kunde hat „${input.label}“ entfernt. Der Widerruf ist hier wirksam und es wird nichts mehr eingezogen, aber ${input.provider} hat die Löschung des Tokens nicht bestätigt. Bitte im Konto des Anbieters nachziehen.`,
+                ],
+                rowsTitle: "Eckdaten",
+                rows: [
+                    { label: "Zahlungsmittel", value: input.label },
+                    { label: "Anbieter", value: input.provider },
+                    { label: "Token", value: input.token },
+                ],
+            }),
+        });
+    } catch (error) {
+        logMailError("detach failure notice", error);
+    }
 }
 
 /**

@@ -10,6 +10,7 @@ import {
 } from "@/lib/payments/paypal";
 import {
     failPayment,
+    markProcessing,
     notifyCollectionFailed,
     recordAttempt,
     settlePayment,
@@ -267,6 +268,19 @@ export async function collectIssuedInvoice(invoiceId: string) {
             });
 
             return { attempted: true as const, succeeded: true };
+        }
+
+        // PENDING is not a refusal — PayPal is still working on it and will
+        // say so by webhook. Reporting it as failed would tell the operator
+        // the money did not come, and the notice would promise no retry while
+        // PayPal quietly settles it anyway.
+        if (capture.captureStatus === "PENDING") {
+            await markProcessing({
+                provider: "paypal",
+                providerRef: capture.orderId,
+            });
+
+            return { attempted: true as const, pending: true as const };
         }
 
         throw new Error(capture.captureStatus ?? capture.status);

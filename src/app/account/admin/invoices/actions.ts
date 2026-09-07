@@ -461,7 +461,13 @@ export async function issueInvoice(
     if (collects) {
         try {
             const result = await collectIssuedInvoice(invoiceId);
-            collected = result.attempted ? Boolean(result.succeeded) : null;
+            // A collection still in flight is neither: PayPal will say by
+            // webhook whether it came through, and saying "failed" here would
+            // send the operator after money that is on its way.
+            collected =
+                !result.attempted || "pending" in result
+                    ? null
+                    : Boolean(result.succeeded);
         } catch (error) {
             console.error(
                 "[admin] invoice issued but collecting failed:",

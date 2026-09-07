@@ -5,6 +5,8 @@ import {
     firstDelivery,
     forgetDelivery,
     markProcessing,
+    markReversed,
+    notifyUnmatchedPayment,
     revalidateAfterPayment,
     settlePayment,
 } from "@/lib/payments/settle";
@@ -94,6 +96,15 @@ async function handle(event: Stripe.Event) {
                 feeCents: intentId ? await fee(intentId) : null,
             });
 
+            if (!outcome.known) {
+                await notifyUnmatchedPayment({
+                    provider: "stripe",
+                    providerRef: session.id,
+                    event: event.type,
+                });
+                return;
+            }
+
             revalidateAfterPayment(outcome.invoiceId);
             return;
         }
@@ -120,6 +131,15 @@ async function handle(event: Stripe.Event) {
                 feeCents: await fee(intent.id),
             });
 
+            if (!outcome.known) {
+                await notifyUnmatchedPayment({
+                    provider: "stripe",
+                    providerRef: intent.id,
+                    event: event.type,
+                });
+                return;
+            }
+
             revalidateAfterPayment(outcome.invoiceId);
             return;
         }
@@ -140,6 +160,25 @@ async function handle(event: Stripe.Event) {
                 providerRef: intent.id,
                 code: intent.last_payment_error?.code ?? null,
                 message: intent.last_payment_error?.message ?? null,
+            });
+            return;
+        }
+
+        // Money going back out. The invoice is deliberately left alone: what
+        // a refund means for it — a correction, a re-issue, nothing — is a
+        // decision, and § 8 leaves those to the operator.
+        case "charge.refunded":
+        case "charge.dispute.created": {
+            const charge = event.data.object;
+            const intentId =
+                typeof charge.payment_intent === "string"
+                    ? charge.payment_intent
+                    : (charge.payment_intent?.id ?? null);
+
+            await markReversed({
+                provider: "stripe",
+                captureRef: intentId,
+                event: event.type,
             });
             return;
         }

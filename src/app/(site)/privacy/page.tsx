@@ -218,8 +218,9 @@ export default function Page() {
                     ohne die Zahlungsdaten selbst zu kennen — sowie eine
                     Bezeichnung zur Anzeige, etwa „VISA •••• 4242“ oder die bei
                     PayPal hinterlegte E-Mail-Adresse. Widerrufst du die
-                    Autorisierung im Kundenbereich, löschen wir den Token beim
-                    Zahlungsdienstleister und verwenden ihn nicht mehr.
+                    Autorisierung im Kundenbereich, verwenden wir den Token ab
+                    sofort nicht mehr und beauftragen den Zahlungsdienstleister
+                    mit seiner Löschung.
                 </p>
                 <p>
                     Rechtsgrundlage für die Verarbeitung durch uns ist Art. 6

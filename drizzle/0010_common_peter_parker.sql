@@ -1,0 +1,1 @@
+ALTER TABLE "payment_method" ADD COLUMN "detached_at" timestamp;

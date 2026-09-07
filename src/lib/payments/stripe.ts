@@ -52,6 +52,13 @@ export async function createInvoiceCheckout(input: CheckoutInput) {
     const session = await stripe().checkout.sessions.create(
         {
             mode: "payment",
+            // Pinned rather than left to the dashboard: § 7 (7) of the terms
+            // and the Datenschutzerklärung both name card and PayPal, and a
+            // method switched on in Stripe would silently make them wrong.
+            // Adding SEPA means adding the mandate and the Vorabankündigung
+            // to those texts first — and finishing the six-day settlement
+            // path this state machine only half has.
+            payment_method_types: ["card"],
             line_items: [
                 {
                     quantity: 1,
@@ -140,6 +147,9 @@ export async function createSetupCheckout(input: {
     const session = await stripe().checkout.sessions.create({
         mode: "setup",
         currency: "eur",
+        // Same reason as the payment session: what may be stored is what the
+        // terms say may be stored.
+        payment_method_types: ["card"],
         customer: input.stripeCustomerId,
         locale: "de",
         setup_intent_data: {
@@ -192,6 +202,8 @@ export async function readStoredMethod(sessionId: string) {
         token: method.id,
         label,
         contractId: intent.metadata?.contract_id || null,
+        /** Written by createSetupCheckout, so the return can be checked. */
+        userId: intent.metadata?.user_id || null,
     };
 }
 
