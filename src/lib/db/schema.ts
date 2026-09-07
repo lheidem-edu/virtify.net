@@ -4,6 +4,7 @@ import {
     boolean,
     index,
     integer,
+    jsonb,
     pgEnum,
     pgTable,
     text,
@@ -457,6 +458,103 @@ export const payment = pgTable(
         updatedAt: timestamp("updated_at").notNull().defaultNow(),
     },
     (table) => [index("payment_invoice_id_idx").on(table.invoiceId)],
+);
+
+/**
+ * The operator's own details — everything the Impressum, the invoices and the
+ * legal texts quote. One row, because there is one operator; the defaults in
+ * src/lib/site.ts apply until it exists, so a fresh database still serves a
+ * complete site.
+ */
+export const siteSetting = pgTable("site_setting", {
+    id: text("id").primaryKey(),
+
+    siteName: text("site_name").notNull(),
+    siteUrl: text("site_url").notNull(),
+    tagline: text("tagline").notNull(),
+    description: text("description").notNull(),
+
+    operatorName: text("operator_name").notNull(),
+    operatorStreet: text("operator_street").notNull(),
+    operatorCity: text("operator_city").notNull(),
+    operatorCountry: text("operator_country").notNull(),
+    operatorEmail: text("operator_email").notNull(),
+    operatorVatId: text("operator_vat_id").notNull(),
+    operatorPhone: text("operator_phone").notNull(),
+
+    bankName: text("bank_name").notNull(),
+    bankIban: text("bank_iban").notNull(),
+    bankBic: text("bank_bic").notNull(),
+
+    logRetentionDays: integer("log_retention_days").notNull(),
+    paymentTermDays: integer("payment_term_days").notNull(),
+    dataRetrievalDays: integer("data_retrieval_days").notNull(),
+    securityMaintenanceNoticeHours: integer(
+        "security_maintenance_notice_hours",
+    ).notNull(),
+
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const legalKind = pgEnum("legal_kind", ["terms", "privacy", "imprint"]);
+
+export const legalStatus = pgEnum("legal_status", [
+    "draft",
+    "published",
+    "archived",
+]);
+
+/**
+ * One version of one legal document. Versions are kept rather than
+ * overwritten: § 17 of the terms promises six weeks' notice before a change
+ * takes effect, which only means something if the fassung that was in force
+ * at any given moment can still be produced.
+ */
+export const legalDocument = pgTable(
+    "legal_document",
+    {
+        id: text("id")
+            .primaryKey()
+            .$defaultFn(() => createId("legaldocument")),
+        kind: legalKind("kind").notNull(),
+        version: integer("version").notNull(),
+        status: legalStatus("status").notNull().default("draft"),
+
+        title: text("title").notNull(),
+        eyebrow: text("eyebrow"),
+        intro: text("intro"),
+
+        /** The day it starts to apply; never in the past when published. */
+        effectiveFrom: timestamp("effective_from", { mode: "date" }),
+        publishedAt: timestamp("published_at"),
+        /** Set when the customers were told, so it is not sent twice. */
+        announcedAt: timestamp("announced_at"),
+
+        createdAt: timestamp("created_at").notNull().defaultNow(),
+        updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    },
+    (table) => [index("legal_document_kind_idx").on(table.kind)],
+);
+
+export const legalSection = pgTable(
+    "legal_section",
+    {
+        id: text("id")
+            .primaryKey()
+            .$defaultFn(() => createId("legalsection")),
+        documentId: text("document_id")
+            .notNull()
+            .references(() => legalDocument.id, { onDelete: "cascade" }),
+        position: integer("position").notNull(),
+        /** "§ 7", "01" — the two documents number differently. */
+        label: text("label"),
+        title: text("title").notNull(),
+        /** paren | dash | prose, see src/lib/legal/types.ts. */
+        variant: text("variant").notNull().default("paren"),
+        /** The items, in order; a nested list is encoded in the item itself. */
+        items: jsonb("items").notNull(),
+    },
+    (table) => [index("legal_section_document_id_idx").on(table.documentId)],
 );
 
 /**

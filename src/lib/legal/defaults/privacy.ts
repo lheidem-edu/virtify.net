@@ -1,0 +1,204 @@
+import type { LegalDocumentData } from "@/lib/legal/types";
+
+/**
+ * The text as it stood when the documents became editable. It is what a fresh
+ * installation serves and what the first published version is copied from, so
+ * it is the wording itself — unchanged, not a summary of it. Values and links
+ * are placeholders; the syntax is described in @/lib/legal/types.
+ */
+const document: LegalDocumentData = {
+    title: "Datenschutzerklärung",
+    intro: "Diese Erklärung informiert dich nach Art. 13 und 14 DSGVO darüber, welche personenbezogenen Daten wir beim Besuch von {{siteName}}, bei der Nutzung des Kundenbereichs und im Rahmen der Vertragsabwicklung verarbeiten.\n\nWelche der nachstehenden Verarbeitungen tatsächlich stattfinden, hängt davon ab, wie du unsere Angebote nutzt. Für personenbezogene Daten, die du selbst auf einer von uns bereitgestellten Instanz verarbeitest, bist du Verantwortlicher — nicht wir.",
+    sections: [
+        {
+            title: "Verantwortlicher",
+            variant: "prose",
+            items: [
+                "{{operatorName}}\n{{operatorStreet}}\n{{operatorCity}}\n{{operatorCountry}}",
+                "E-Mail: [{{operatorEmail}}](mailto:{{operatorEmail}})",
+                "Ein Datenschutzbeauftragter ist nicht bestellt, da die Voraussetzungen des Art. 37 DSGVO und des § 38 BDSG nicht vorliegen.",
+            ],
+            label: "01",
+        },
+        {
+            title: "Grundsätze",
+            variant: "prose",
+            items: [
+                "Wir verarbeiten personenbezogene Daten nur, soweit dies für den Betrieb der Internetseite, für die Begründung und Durchführung des Vertragsverhältnisses oder zur Erfüllung gesetzlicher Pflichten erforderlich ist. Eine Verarbeitung zu Werbezwecken findet ohne deine Einwilligung nicht statt.",
+                "Die Übertragung zwischen deinem Endgerät und unseren Servern ist durchgehend mit TLS verschlüsselt.",
+            ],
+            label: "02",
+        },
+        {
+            title: "Betrieb und Server-Logfiles",
+            variant: "prose",
+            items: [
+                "Diese Internetseite und die bereitgestellten Instanzen laufen auf eigener Hardware von {{siteName}}. Ein externer Hosting-Dienstleister wird nicht als Auftragsverarbeiter eingesetzt.",
+                {
+                    text: "Bei jedem Zugriff erfasst der Webserver automatisch Zugriffsdaten in Logdateien:",
+                    items: [
+                        "IP-Adresse des anfragenden Endgeräts",
+                        "Datum und Uhrzeit des Zugriffs",
+                        "angeforderte Adresse und verwendete HTTP-Methode",
+                        "HTTP-Statuscode und übertragene Datenmenge",
+                        "Referrer-Adresse, sofern übermittelt",
+                        "Browsertyp und Betriebssystem (User-Agent)",
+                    ],
+                },
+                "Zweck ist der technisch fehlerfreie, sichere und stabile Betrieb sowie die Abwehr und Aufklärung von Angriffen. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; unser berechtigtes Interesse liegt in den genannten Zwecken. Die Logdateien werden spätestens nach {{logRetentionDays}} Tagen gelöscht, sofern sie nicht zur Aufklärung eines konkreten Sicherheitsvorfalls ausnahmsweise länger benötigt werden.",
+            ],
+            label: "03",
+        },
+        {
+            title: "Kontaktaufnahme",
+            variant: "prose",
+            items: [
+                "Wenn du uns per E-Mail oder über ein Kontaktformular schreibst, verarbeiten wir deine Kontaktdaten und den Inhalt der Nachricht, um die Anfrage zu bearbeiten. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO bei vertragsbezogenen Anfragen, im Übrigen Art. 6 Abs. 1 lit. f DSGVO. Die Nachrichten werden gelöscht, sobald der Vorgang abgeschlossen ist und keine gesetzlichen Aufbewahrungsfristen entgegenstehen.",
+            ],
+            label: "04",
+        },
+        {
+            title: "Kundenkonto und Vertragsabwicklung",
+            variant: "prose",
+            items: [
+                "Für den Kundenbereich verarbeiten wir die dafür erforderlichen Bestands- und Vertragsdaten: Name, optional Firma, Anschrift, E-Mail-Adresse, optional Umsatzsteuer-Identifikationsnummer und Telefonnummer, das Passwort ausschließlich als kryptografischen Hash, sowie Vertragsgegenstand, Laufzeit, Angebote und Rechnungen.",
+                "Aktivierst du die Zwei-Faktor-Authentifizierung, speichern wir zusätzlich das dafür nötige Geheimnis und deine Wiederherstellungscodes. Zur Abwehr automatisierter Anmeldeversuche halten wir außerdem kurzzeitig Zähler vor, die an die anfragende IP-Adresse gebunden sind (Art. 6 Abs. 1 lit. f DSGVO).",
+                "Zweck ist die Begründung, Durchführung und Beendigung des Vertragsverhältnisses einschließlich Abrechnung und Support. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO. Soweit wir Nutzungsdaten zur Missbrauchserkennung und Systemsicherheit auswerten, ist Rechtsgrundlage Art. 6 Abs. 1 lit. f DSGVO.",
+                "Nach Vertragsende werden die Daten gelöscht, sobald sie für die Zwecke nicht mehr erforderlich sind und keine gesetzlichen Aufbewahrungspflichten bestehen.",
+            ],
+            label: "05",
+        },
+        {
+            title: "Angebote und Rechnungen",
+            variant: "prose",
+            items: [
+                "Angebote und Rechnungen erstellen wir aus deinen Stammdaten und stellen sie dir im Kundenbereich sowie per E-Mail bereit. Rechnungen versenden wir zusätzlich im Format XRechnung, damit du sie maschinell weiterverarbeiten kannst. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Vertragsdurchführung) sowie Art. 6 Abs. 1 lit. c DSGVO (Rechnungsstellung nach § 14 UStG).",
+                "Eine ausgestellte Rechnung ist unveränderlich; Korrekturen erfolgen durch Stornierung und Neuausstellung. Name und Anschrift werden zum Zeitpunkt der Ausstellung in das Dokument übernommen und bleiben dort erhalten, auch wenn du deine Stammdaten später änderst — andernfalls würde ein bereits erteilter Beleg nachträglich verändert.",
+            ],
+            label: "06",
+        },
+        {
+            title: "Zahlungsabwicklung",
+            variant: "prose",
+            items: [
+                "Rechnungen kannst du per Überweisung begleichen oder über einen Zahlungsdienstleister bezahlen. Für die Kartenzahlung setzen wir Stripe Payments Europe, Ltd., Dublin, Irland ein, für die Zahlung mit einem PayPal-Konto PayPal (Europe) S.à r.l. et Cie, S.C.A., Luxemburg. Der Zahlungsvorgang findet auf einer Seite des jeweiligen Anbieters statt; von unserer Seite wirst du dorthin weitergeleitet und anschließend zurückgeführt. Bei einer Überweisung ist kein Zahlungsdienstleister beteiligt.",
+                "An Stripe übermitteln wir deinen Namen, deine E-Mail-Adresse, den Rechnungsbetrag, die Rechnungsnummer sowie die internen Kennungen deines Kundenkontos und der Rechnung. An PayPal übermitteln wir den Rechnungsbetrag, die Rechnungsnummer und die interne Kennung der Rechnung.",
+                "Hinterlegst du ein Zahlungsmittel, übermitteln wir zusätzlich die interne Kennung deines Kundenkontos und — sofern du den Einzug für einen Vertrag einrichtest — die Kennung dieses Vertrags, damit die spätere Abbuchung der richtigen Rechnung zugeordnet werden kann.",
+                "Deine Zahlungsdaten erhalten wir nicht: Kartennummer, Kartenprüfnummer, IBAN und deine PayPal-Zugangsdaten gibst du ausschließlich beim Zahlungsdienstleister ein. Sie erreichen unsere Server zu keinem Zeitpunkt.",
+                "Zurück erhalten und speichern wir eine Kennung deines Kundenkontos beim Zahlungsdienstleister, die Referenz der Zahlung, den Betrag, das vom Anbieter einbehaltene Entgelt, den Status der Zahlung und den Zeitpunkt. Scheitert eine Zahlung, speichern wir zusätzlich den vom Anbieter gemeldeten Fehlergrund.",
+                "Hinterlegst du für einen Vertrag ein Zahlungsmittel, damit Rechnungen daraus automatisch eingezogen werden, speichern wir außerdem einen Token — eine Zeichenfolge, mit der wir beim Zahlungsdienstleister einen Einzug auslösen können, ohne die Zahlungsdaten selbst zu kennen — sowie eine Bezeichnung zur Anzeige, etwa „VISA •••• 4242“ oder die bei PayPal hinterlegte E-Mail-Adresse. Widerrufst du die Autorisierung im Kundenbereich, verwenden wir den Token ab sofort nicht mehr und beauftragen den Zahlungsdienstleister mit seiner Löschung.",
+                "Rechtsgrundlage für die Verarbeitung durch uns ist Art. 6 Abs. 1 lit. b DSGVO (Durchführung des Vertrags). Soweit die Zahlungsdienstleister die Daten darüber hinaus zur Betrugsprävention verarbeiten, stützen sie das auf Art. 6 Abs. 1 lit. f DSGVO. Für den Zahlungsvorgang sind sie eigene Verantwortliche und nicht unsere Auftragsverarbeiter; Näheres steht im Abschnitt „Empfänger“. Es gelten ihre eigenen Datenschutzhinweise: [stripe.com/de/privacy](https://stripe.com/de/privacy) und [paypal.com/de/legalhub/privacy-full](https://www.paypal.com/de/legalhub/privacy-full) .",
+                "Zahlungen sind Buchungsbelege. Die dazu gespeicherten Daten bewahren wir daher gemeinsam mit der zugehörigen Rechnung für die Dauer der handels- und steuerrechtlichen Aufbewahrungsfristen auf (§ 257 HGB, § 147 AO) und beschränken für diese Zeit die Verarbeitung.",
+            ],
+            label: "07",
+        },
+        {
+            title: "Cookies und vergleichbare Techniken",
+            variant: "prose",
+            items: [
+                "Für den Aufruf dieser Internetseite werden keine Cookies gesetzt und keine Informationen auf deinem Endgerät gespeichert oder ausgelesen. Es kommen keine Verfahren zur Wiedererkennung von Besuchern und kein Fingerprinting zum Einsatz.",
+                "Soweit ein Kundenbereich bereitgestellt wird, werden dort ausschließlich technisch notwendige Cookies zur Sitzungsverwaltung und zum Schutz vor Cross-Site-Request-Forgery eingesetzt. Diese sind für den von dir ausdrücklich gewünschten Dienst unbedingt erforderlich; eine Einwilligung ist dafür nach § 25 Abs. 2 Nr. 2 TDDDG nicht erforderlich. Rechtsgrundlage der anschließenden Verarbeitung ist Art. 6 Abs. 1 lit. b DSGVO.",
+                "Ein Cookie-Banner wird deshalb nicht angezeigt.",
+            ],
+            label: "08",
+        },
+        {
+            title: "Keine Analyse, keine Einbindung Dritter",
+            variant: "prose",
+            items: [
+                "Es findet keine Webanalyse und keine Reichweitenmessung statt. Es sind keine Tracking-Dienste, Werbenetzwerke, Social-Media-Plugins, Kartendienste, Video-Einbettungen oder externen Content-Delivery-Networks eingebunden. Schriftarten, Skripte und Stylesheets werden ausschließlich von unserem eigenen Server ausgeliefert.",
+            ],
+            label: "09",
+        },
+        {
+            title: "Externe Verlinkungen",
+            variant: "prose",
+            items: [
+                "Unsere Seiten können Verweise auf Websites Dritter enthalten. Solche Verweise werden ausschließlich als reine Links eingebunden; Inhalte Dritter werden nicht eingebettet. Eine Verbindung zum jeweiligen Anbieter entsteht erst, wenn du einen solchen Link aktiv anklickst. Dabei wird deine IP-Adresse an den Anbieter der Zielseite übertragen. Auf die dortige Verarbeitung haben wir keinen Einfluss; es gelten die Datenschutzhinweise des jeweiligen Anbieters.",
+            ],
+            label: "10",
+        },
+        {
+            title: "Daten auf den von dir genutzten Instanzen",
+            variant: "prose",
+            items: [
+                "Für personenbezogene Daten, die du auf einer von uns bereitgestellten Instanz speicherst oder verarbeitest, bist du Verantwortlicher im Sinne des Art. 4 Nr. 7 DSGVO. Wir werden insoweit als Auftragsverarbeiter tätig und verarbeiten diese Daten ausschließlich nach deinen Weisungen. Vor Beginn einer solchen Verarbeitung schließen wir mit dir einen Auftragsverarbeitungsvertrag nach Art. 28 DSGVO.",
+                "Dir obliegt es, für die auf der Instanz verarbeiteten Daten die eigenen datenschutzrechtlichen Pflichten zu erfüllen, insbesondere Informationspflichten, Einwilligungen und Betroffenenrechte.",
+            ],
+            label: "11",
+        },
+        {
+            title: "Empfänger",
+            variant: "prose",
+            items: [
+                "Personenbezogene Daten werden nicht verkauft, nicht vermietet und nicht zu Werbezwecken an Dritte weitergegeben. Eine Offenlegung erfolgt nur, soweit wir gesetzlich dazu verpflichtet sind, soweit dies zur Durchführung des Vertrags erforderlich ist oder soweit du eingewilligt hast.",
+                "Soweit wir Dienstleister einsetzen, die personenbezogene Daten ausschließlich nach unseren Weisungen verarbeiten — etwa für den E-Mail-Versand oder Rechenzentrumsleistungen —, geschieht dies auf Grundlage eines Auftragsverarbeitungsvertrags nach Art. 28 DSGVO.",
+                "Für die Zahlungsabwicklung gilt das nicht. Stripe Payments Europe, Ltd., Dublin, Irland, und PayPal (Europe) S.à r.l. et Cie, S.C.A., Luxemburg, entscheiden über Zwecke und Mittel der Verarbeitung des Zahlungsvorgangs selbst — unter anderem, weil sie eigene aufsichtsrechtliche Pflichten erfüllen und Betrug verhindern müssen. Sie sind insoweit eigene Verantwortliche im Sinne des Art. 4 Nr. 7 DSGVO und nicht unsere Auftragsverarbeiter; für ihre Verarbeitung gelten ihre eigenen Datenschutzhinweise. Welche Daten wir ihnen übermitteln, steht im Abschnitt „Zahlungsabwicklung“.",
+            ],
+            label: "12",
+        },
+        {
+            title: "Drittlandübermittlung",
+            variant: "prose",
+            items: [
+                "Wir selbst übermitteln keine personenbezogenen Daten in Länder außerhalb der Europäischen Union oder des Europäischen Wirtschaftsraums.",
+                "Unsere Zahlungsdienstleister sitzen in Irland und Luxemburg, geben Daten aber an Konzerngesellschaften außerhalb des Europäischen Wirtschaftsraums weiter. Diese Übermittlungen stützen beide auf die Standardvertragsklauseln der Europäischen Kommission (Art. 46 Abs. 2 lit. c DSGVO). Einzelheiten stehen in ihren Datenschutzhinweisen.",
+            ],
+            label: "13",
+        },
+        {
+            title: "Speicherdauer",
+            variant: "prose",
+            items: [
+                "Wir speichern personenbezogene Daten nur so lange, wie es für die jeweiligen Zwecke erforderlich ist. Danach werden sie gelöscht, sofern keine gesetzlichen Aufbewahrungspflichten entgegenstehen. Handels- und steuerrechtliche Aufbewahrungsfristen betragen insbesondere sechs Jahre nach § 257 HGB und zehn Jahre nach § 147 AO; für die Dauer dieser Fristen wird die Verarbeitung eingeschränkt.",
+            ],
+            label: "14",
+        },
+        {
+            title: "Automatisierte Entscheidungsfindung",
+            variant: "prose",
+            items: [
+                "Eine automatisierte Entscheidungsfindung einschließlich Profiling nach Art. 22 DSGVO findet nicht statt.",
+            ],
+            label: "15",
+        },
+        {
+            title: "Deine Rechte",
+            variant: "prose",
+            items: [
+                {
+                    text: "Dir stehen uns gegenüber folgende Rechte zu:",
+                    items: [
+                        "Auskunft über die zu deiner Person verarbeiteten Daten (Art. 15 DSGVO)",
+                        "Berichtigung unrichtiger oder Vervollständigung unvollständiger Daten (Art. 16 DSGVO)",
+                        "Löschung (Art. 17 DSGVO)",
+                        "Einschränkung der Verarbeitung (Art. 18 DSGVO)",
+                        "Datenübertragbarkeit (Art. 20 DSGVO)",
+                        "Widerspruch gegen Verarbeitungen auf Grundlage von Art. 6 Abs. 1 lit. f DSGVO (Art. 21 DSGVO)",
+                        "Widerruf einer erteilten Einwilligung mit Wirkung für die Zukunft (Art. 7 Abs. 3 DSGVO)",
+                    ],
+                },
+                "Zur Ausübung genügt eine formlose Nachricht an [{{operatorEmail}}](mailto:{{operatorEmail}}) .",
+            ],
+            label: "16",
+        },
+        {
+            title: "Beschwerderecht",
+            variant: "prose",
+            items: [
+                "Unbeschadet anderweitiger Rechtsbehelfe steht dir ein Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde zu (Art. 77 DSGVO). Für uns zuständig ist die Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen in Düsseldorf ( [ldi.nrw.de](https://www.ldi.nrw.de) ). Du kannst dich auch an die Aufsichtsbehörde deines gewöhnlichen Aufenthaltsorts wenden.",
+            ],
+            label: "17",
+        },
+        {
+            title: "Änderungen dieser Erklärung",
+            variant: "prose",
+            items: [
+                "Wir passen diese Datenschutzerklärung an, sobald sich die beschriebenen Verarbeitungen ändern — insbesondere mit dem Start des Kundenbereichs. Es gilt jeweils die hier veröffentlichte Fassung.",
+            ],
+            label: "18",
+        },
+    ],
+};
+
+export default document;
