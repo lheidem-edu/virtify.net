@@ -10,11 +10,16 @@ import {
 } from "@/lib/payments/paypal";
 import {
     failPayment,
+    markProcessing,
     notifyCollectionFailed,
     recordAttempt,
     settlePayment,
 } from "@/lib/payments/settle";
-import { chargeStoredMethod, stripe } from "@/lib/payments/stripe";
+import {
+    confirmStoredCharge,
+    prepareStoredCharge,
+    stripe,
+} from "@/lib/payments/stripe";
 
 /**
  * Taking the money, from both directions: the customer who approved a PayPal
@@ -57,6 +62,55 @@ export async function captureAndSettle(orderId: string) {
     });
 
     return true;
+}
+
+/**
+ * Closes the checkouts an invoice has left open before a new one is started.
+ * Two live sessions for one invoice are two ways to pay it, and the customer
+ * with an old tab open would pay twice through no fault of their own.
+ */
+export async function closeOpenAttempts(invoiceId: string) {
+    const open = await db
+        .select({
+            id: schema.payment.id,
+            provider: schema.payment.provider,
+            providerRef: schema.payment.providerRef,
+        })
+        .from(schema.payment)
+        .where(
+            and(
+                eq(schema.payment.invoiceId, invoiceId),
+                eq(schema.payment.status, "pending"),
+            ),
+        );
+
+    for (const attempt of open) {
+        try {
+            // Only Stripe can be told to close a session; a PayPal order the
+            // customer never approved simply expires, and capturing one needs
+            // an approval it will never get.
+            if (
+                attempt.provider === "stripe" &&
+                attempt.providerRef.startsWith("cs_")
+            ) {
+                await stripe().checkout.sessions.expire(attempt.providerRef);
+            }
+        } catch (error) {
+            // Already expired, already paid, or gone — either way the row
+            // below is what stops us offering it again.
+            console.error(
+                "[payments] expiring the old checkout failed:",
+                error,
+            );
+        }
+
+        await failPayment({
+            provider: attempt.provider,
+            providerRef: attempt.providerRef,
+            code: "superseded",
+            message: "Durch einen neuen Zahlungsvorgang ersetzt.",
+        });
+    }
 }
 
 /**
@@ -149,7 +203,7 @@ export async function collectIssuedInvoice(invoiceId: string) {
                 throw new Error("no stripe customer for a stored method");
             }
 
-            const intent = await chargeStoredMethod({
+            const prepared = await prepareStoredCharge({
                 invoiceId,
                 invoiceNumber: row.number,
                 amountCents,
@@ -157,16 +211,19 @@ export async function collectIssuedInvoice(invoiceId: string) {
                 token: row.token,
             });
 
-            // The attempt is keyed on the PaymentIntent, which is also what
-            // the webhook will carry — there is no session in this flow.
+            // Written down before the money moves. The attempt is keyed on the
+            // PaymentIntent, which is also what the webhook will carry — there
+            // is no checkout session in this flow.
             await recordAttempt({
                 invoiceId,
                 userId: row.userId,
                 provider: "stripe",
-                providerRef: intent.id,
+                providerRef: prepared.id,
                 amountCents,
                 paymentMethodId: row.methodId,
             });
+
+            const intent = await confirmStoredCharge(prepared.id);
 
             if (intent.status === "succeeded") {
                 await settlePayment({
@@ -211,6 +268,19 @@ export async function collectIssuedInvoice(invoiceId: string) {
             });
 
             return { attempted: true as const, succeeded: true };
+        }
+
+        // PENDING is not a refusal — PayPal is still working on it and will
+        // say so by webhook. Reporting it as failed would tell the operator
+        // the money did not come, and the notice would promise no retry while
+        // PayPal quietly settles it anyway.
+        if (capture.captureStatus === "PENDING") {
+            await markProcessing({
+                provider: "paypal",
+                providerRef: capture.orderId,
+            });
+
+            return { attempted: true as const, pending: true as const };
         }
 
         throw new Error(capture.captureStatus ?? capture.status);

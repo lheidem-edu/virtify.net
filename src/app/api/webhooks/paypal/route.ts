@@ -1,9 +1,13 @@
 import { captureAndSettle } from "@/lib/payments/collect";
-import { paypalEnabled } from "@/lib/payments/config";
+import { paypalConfig, paypalEnabled } from "@/lib/payments/config";
 import { verifyWebhook } from "@/lib/payments/paypal";
 import {
     failPayment,
     firstDelivery,
+    forgetDelivery,
+    markReversed,
+    notifyUnmatchedPayment,
+    revalidateAfterPayment,
     settlePayment,
 } from "@/lib/payments/settle";
 
@@ -28,7 +32,10 @@ type Event = {
 };
 
 export async function POST(request: Request) {
-    if (!paypalEnabled()) {
+    // Without the webhook id nothing can be verified, so every genuine event
+    // would be answered "invalid signature". That is a configuration gap and
+    // has to say so, the same way the Stripe route does.
+    if (!paypalEnabled() || !paypalConfig.webhookId) {
         return new Response("payments are not configured", { status: 503 });
     }
 
@@ -65,7 +72,9 @@ export async function POST(request: Request) {
     try {
         await handle(event);
     } catch (error) {
+        // Released so PayPal's retry is not deduped into a silent no-op.
         console.error(`[payments] paypal ${event.event_type} failed:`, error);
+        await forgetDelivery(event.id);
         return new Response("handler failed", { status: 500 });
     }
 
@@ -82,15 +91,33 @@ async function handle(event: Event) {
     switch (event.event_type) {
         case "PAYMENT.CAPTURE.COMPLETED": {
             if (!orderId) {
+                // A completed capture we cannot tie to an order is money we
+                // cannot book. Silence would be the worst possible answer.
+                await notifyUnmatchedPayment({
+                    provider: "paypal",
+                    providerRef: event.resource?.id ?? "unbekannt",
+                    event: event.event_type,
+                });
                 return;
             }
 
-            await settlePayment({
+            const outcome = await settlePayment({
                 provider: "paypal",
                 providerRef: orderId,
                 captureRef: event.resource?.id ?? null,
                 feeCents: fee ? Math.round(Number(fee) * 100) : null,
             });
+
+            if (!outcome.known) {
+                await notifyUnmatchedPayment({
+                    provider: "paypal",
+                    providerRef: orderId,
+                    event: event.event_type,
+                });
+                return;
+            }
+
+            revalidateAfterPayment(outcome.invoiceId);
             return;
         }
 
@@ -117,6 +144,17 @@ async function handle(event: Event) {
             if (id) {
                 await captureAndSettle(id);
             }
+            return;
+        }
+
+        // Money going back out; the invoice is left as it is, deliberately.
+        case "PAYMENT.CAPTURE.REFUNDED":
+        case "PAYMENT.CAPTURE.REVERSED": {
+            await markReversed({
+                provider: "paypal",
+                captureRef: event.resource?.id ?? null,
+                event: event.event_type,
+            });
             return;
         }
 

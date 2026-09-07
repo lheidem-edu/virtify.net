@@ -38,8 +38,14 @@ async function settleOnReturn(invoiceId: string, query: Query) {
             return;
         }
 
-        // PayPal comes back without its order id, so the attempt we wrote
-        // before sending the customer off is what identifies the order.
+        // PayPal appends the approved order as `token`. It is taken from the
+        // URL but trusted for nothing: only an order this invoice actually
+        // started is captured, so a token pasted from somewhere else finds no
+        // attempt and does nothing. Without it — an older PayPal flow, or a
+        // stripped parameter — the invoice's newest open attempt is the best
+        // guess left.
+        const token = single(query.token);
+
         const [attempt] = await db
             .select({ providerRef: schema.payment.providerRef })
             .from(schema.payment)
@@ -48,6 +54,7 @@ async function settleOnReturn(invoiceId: string, query: Query) {
                     eq(schema.payment.invoiceId, invoiceId),
                     eq(schema.payment.provider, "paypal"),
                     eq(schema.payment.status, "pending"),
+                    ...(token ? [eq(schema.payment.providerRef, token)] : []),
                 ),
             )
             .orderBy(desc(schema.payment.createdAt))

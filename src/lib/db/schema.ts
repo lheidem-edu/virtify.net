@@ -388,6 +388,13 @@ export const paymentMethod = pgTable(
          * the row is the only record left afterwards.
          */
         revokedAt: timestamp("revoked_at"),
+        /**
+         * Set when the provider confirmed the token is gone on their side.
+         * Revoking always works here; deleting there can fail, and the
+         * difference is what the customer was promised, so it is recorded
+         * rather than assumed.
+         */
+        detachedAt: timestamp("detached_at"),
 
         createdAt: timestamp("created_at").notNull().defaultNow(),
         updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -451,6 +458,27 @@ export const payment = pgTable(
     },
     (table) => [index("payment_invoice_id_idx").on(table.invoiceId)],
 );
+
+/**
+ * A payment-method setup the customer has started but not yet finished. Both
+ * providers send them back to a URL anyone could construct, carrying an
+ * identifier anyone could present — so the identifier is only worth anything
+ * if we minted it for this account. The row is written before the redirect
+ * and consumed on return, once.
+ */
+export const paymentSetup = pgTable("payment_setup", {
+    /** The provider's own id: a Checkout Session or a PayPal setup token. */
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+        .notNull()
+        .references(() => user.id, { onDelete: "cascade" }),
+    provider: paymentProvider("provider").notNull(),
+    /** The contract the setup was started from, if it was started from one. */
+    contractId: text("contract_id").references(() => contract.id, {
+        onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 /**
  * Every webhook a provider has already delivered. Providers retry, and both

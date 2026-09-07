@@ -461,7 +461,13 @@ export async function issueInvoice(
     if (collects) {
         try {
             const result = await collectIssuedInvoice(invoiceId);
-            collected = result.attempted ? Boolean(result.succeeded) : null;
+            // A collection still in flight is neither: PayPal will say by
+            // webhook whether it came through, and saying "failed" here would
+            // send the operator after money that is on its way.
+            collected =
+                !result.attempted || "pending" in result
+                    ? null
+                    : Boolean(result.succeeded);
         } catch (error) {
             console.error(
                 "[admin] invoice issued but collecting failed:",
@@ -671,13 +677,20 @@ export async function cancelInvoice(
                 // original's frozen buyer — not whoever the account is today.
                 recipient: row.recipient,
                 buyerReference: row.buyerReference,
-                buyerName: row.buyerName,
-                buyerStreet: row.buyerStreet,
-                buyerPostalCode: row.buyerPostalCode,
-                buyerCity: row.buyerCity,
-                buyerCountry: row.buyerCountry,
-                buyerVatId: row.buyerVatId,
-                buyerEmail: row.buyerEmail,
+                // An invoice issued before the freeze existed has nothing to
+                // inherit; the correction then takes its own snapshot rather
+                // than leaving a document that can still change underneath it.
+                ...(row.buyerName
+                    ? {
+                          buyerName: row.buyerName,
+                          buyerStreet: row.buyerStreet,
+                          buyerPostalCode: row.buyerPostalCode,
+                          buyerCity: row.buyerCity,
+                          buyerCountry: row.buyerCountry,
+                          buyerVatId: row.buyerVatId,
+                          buyerEmail: row.buyerEmail,
+                      }
+                    : freezeBuyer(buyer)),
                 issuedAt,
                 // Nothing falls due on a correction; it settles the original.
                 dueAt: null,

@@ -64,6 +64,20 @@
       "when": 1788791148385,
       "tag": "0008_slow_edwin_jarvis",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788796919277,
+      "tag": "0009_black_rockslide",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788797087957,
+      "tag": "0010_common_peter_parker",
+      "breakpoints": true
     }
   ]
 }

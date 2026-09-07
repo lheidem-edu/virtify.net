@@ -101,7 +101,7 @@ export function RemovePaymentMethod({
             title="Zahlungsmittel entfernen?"
             description={
                 provider === "stripe"
-                    ? `${label} wird bei Stripe endgültig gelöscht und lässt sich nicht wiederherstellen. Verträge, die davon eingezogen werden, stellen wir wieder auf manuelle Zahlung um.`
+                    ? `${label} wird nicht mehr verwendet, und wir beauftragen Stripe mit der Löschung — dort ist sie endgültig und lässt sich nicht rückgängig machen. Verträge, die davon eingezogen werden, stellen wir wieder auf manuelle Zahlung um.`
                     : `${label} wird bei PayPal gelöscht. Verträge, die davon eingezogen werden, stellen wir wieder auf manuelle Zahlung um.`
             }
             confirmLabel="Entfernen"

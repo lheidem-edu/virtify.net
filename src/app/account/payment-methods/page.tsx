@@ -52,8 +52,16 @@ async function storeMethod(
             .onConflictDoUpdate({
                 target: schema.paymentMethod.token,
                 set: { label, revokedAt: null },
+                // Never across accounts: without this, presenting a token that
+                // belongs to somebody else would revive their withdrawn
+                // authorisation and hand it to whoever asked.
+                setWhere: eq(schema.paymentMethod.userId, userId),
             })
             .returning({ id: schema.paymentMethod.id });
+
+        if (!row) {
+            throw new Error("token belongs to another account");
+        }
 
         if (!contractId) {
             return;
@@ -88,12 +96,38 @@ async function consumeReturn(userId: string, query: Query) {
         return null;
     }
 
+    // The identifier came out of a URL, so it is worth exactly as much as the
+    // row we wrote before sending this account away. Claiming it deletes it:
+    // an approval is redeemed once, by the account that asked for it.
+    const claimed = await db
+        .delete(schema.paymentSetup)
+        .where(
+            and(
+                eq(schema.paymentSetup.id, sessionId ?? approvalTokenId ?? ""),
+                eq(schema.paymentSetup.userId, userId),
+            ),
+        )
+        .returning({ id: schema.paymentSetup.id });
+
+    if (claimed.length === 0) {
+        // Either a replayed return, or somebody else's approval. Neither is
+        // something to store, and neither is worth a different message.
+        return "failed";
+    }
+
     try {
         if (sessionId) {
             // Resolves the checkout session's SetupIntent: the token we may
             // collect from, a label for the customer, and the contract the
             // setup was started from, if any.
             const stored = await readStoredMethod(sessionId);
+
+            // A second lock, from the other side: the SetupIntent carries the
+            // account it was created for, so a session that names a different
+            // one is not stored whatever the query string claims.
+            if (stored?.userId && stored.userId !== userId) {
+                throw new Error("setup belongs to another account");
+            }
 
             // Null when the session was never completed — someone reloading an
             // old return URL, or opening one that belongs to nothing.

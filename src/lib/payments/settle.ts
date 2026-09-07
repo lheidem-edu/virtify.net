@@ -89,6 +89,9 @@ export async function settlePayment(input: {
                 invoiceId: null as string | null,
                 paidTo: null as string | null,
                 amountCents: 0,
+                unexpected: false,
+                invoiceNumber: null as string | null,
+                invoiceStatus: null as string | null,
             };
         }
 
@@ -99,6 +102,9 @@ export async function settlePayment(input: {
                 invoiceId: attempt.invoiceId as string | null,
                 paidTo: null as string | null,
                 amountCents: attempt.amountCents,
+                unexpected: false,
+                invoiceNumber: null as string | null,
+                invoiceStatus: null as string | null,
             };
         }
 
@@ -125,6 +131,11 @@ export async function settlePayment(input: {
         // already paid one keeps the state it has; the payment row records
         // that money came in either way, which is what the books need.
         let paidTo: string | null = null;
+        // Money against an invoice that is no longer open: corrected in the
+        // meantime, paid twice, or paid after a manual booking. The payment is
+        // recorded either way — it happened — but somebody has to decide
+        // whether it goes back, so the caller is told rather than nothing.
+        const unexpected = invoice ? invoice.status !== "issued" : true;
 
         if (invoice?.status === "issued") {
             await tx
@@ -156,30 +167,44 @@ export async function settlePayment(input: {
             invoiceId: attempt.invoiceId as string | null,
             paidTo,
             amountCents: attempt.amountCents,
+            unexpected,
+            invoiceNumber: invoice?.number ?? null,
+            invoiceStatus: invoice?.status ?? null,
         };
     });
 
     if (outcome.changed) {
-        revalidatePath("/account/invoices");
-        revalidatePath("/account/admin/invoices");
-        revalidatePath(`/account/admin/invoices/${outcome.invoiceId}`);
-        revalidatePath("/account");
-
         // Exactly once per invoice, because only the transaction above can
         // report `changed`. A webhook holds the customer's redirect while
         // this runs, which is worth the second it costs: the alternative is
         // that money leaves their account and nothing says so.
         if (outcome.invoiceId && outcome.paidTo) {
-            try {
-                await sendPaymentReceivedMail({
-                    invoiceId: outcome.invoiceId,
-                    to: outcome.paidTo,
-                    amountCents: outcome.amountCents ?? 0,
-                    paidAt: settledAt,
-                });
-            } catch (error) {
+            const receipt = sendPaymentReceivedMail({
+                invoiceId: outcome.invoiceId,
+                to: outcome.paidTo,
+                amountCents: outcome.amountCents ?? 0,
+                paidAt: settledAt,
+            }).catch((error) => {
                 console.error("[payments] receipt mail failed:", error);
-            }
+            });
+
+            // A webhook holds the customer's redirect while this runs and the
+            // provider gives up after ten seconds, so the mail gets a few and
+            // then finishes on its own time. The payment is settled either
+            // way; a slow relay must not look like a failed webhook.
+            await Promise.race([
+                receipt,
+                new Promise((resolve) => setTimeout(resolve, 4_000)),
+            ]);
+        }
+
+        if (outcome.unexpected) {
+            await notifyUnexpectedPayment({
+                invoiceNumber:
+                    outcome.invoiceNumber ?? outcome.invoiceId ?? "—",
+                status: outcome.invoiceStatus ?? "—",
+                amountCents: outcome.amountCents ?? 0,
+            });
         }
     }
 
@@ -212,6 +237,195 @@ export async function failPayment(input: {
         .returning();
 
     return attempt ?? null;
+}
+
+/**
+ * A payment that went back out — refunded, or reversed by a bank. The payment
+ * row records it; the invoice is deliberately left alone, because what a
+ * refund means for the document (a correction, a re-issue, nothing at all) is
+ * a decision the operator makes, not one a webhook makes for them.
+ */
+export async function markReversed(input: {
+    provider: Provider;
+    captureRef: string | null;
+    event: string;
+}) {
+    if (!input.captureRef) {
+        return;
+    }
+
+    const [row] = await db
+        .update(schema.payment)
+        .set({
+            status: "refunded",
+            failureCode: input.event,
+            updatedAt: new Date(),
+        })
+        .where(
+            and(
+                eq(schema.payment.provider, input.provider),
+                eq(schema.payment.captureRef, input.captureRef),
+            ),
+        )
+        .returning({
+            invoiceId: schema.payment.invoiceId,
+            amountCents: schema.payment.amountCents,
+        });
+
+    if (!row) {
+        return;
+    }
+
+    const transport = createTransport();
+
+    if (!transport) {
+        console.error("[payments] payment reversed, no transport:", input);
+        return;
+    }
+
+    try {
+        await transport.sendMail({
+            from: mailFrom,
+            to: operator.email,
+            subject: `Zahlung zurückgegangen — ${input.event}`,
+            text: [
+                `Eine Zahlung über ${formatPrice(row.amountCents)} ist zurückgegangen (${input.event}).`,
+                "",
+                "Die Rechnung steht weiterhin auf „Bezahlt“ — ob sie wieder zu öffnen oder zu korrigieren ist, entscheidest du.",
+                `${site.url}/account/admin/invoices/${row.invoiceId}`,
+            ].join("\n"),
+            html: renderEmail({
+                preheader: `Zahlung über ${formatPrice(row.amountCents)} zurückgegangen.`,
+                heading: "Zahlung zurückgegangen",
+                intro: [
+                    `Eine Zahlung über ${formatPrice(row.amountCents)} ist zurückgegangen (${input.event}). Die Rechnung steht weiterhin auf „Bezahlt“ — ob sie wieder zu öffnen oder zu korrigieren ist, entscheidest du.`,
+                ],
+                action: {
+                    label: "Rechnung öffnen",
+                    url: `${site.url}/account/admin/invoices/${row.invoiceId}`,
+                },
+                rowsTitle: "Eckdaten",
+                rows: [
+                    { label: "Betrag", value: formatPrice(row.amountCents) },
+                    { label: "Ereignis", value: input.event },
+                ],
+            }),
+        });
+    } catch (error) {
+        logMailError("reversal notice", error);
+    }
+}
+
+/**
+ * Money we cannot match to anything we started. Rare, and exactly the case
+ * that must not pass quietly: it means either a payment nobody recorded, or a
+ * reference from a different system pointing at this account.
+ */
+export async function notifyUnmatchedPayment(input: {
+    provider: Provider;
+    providerRef: string;
+    event: string;
+}) {
+    console.error("[payments] a payment matched no attempt:", input);
+
+    const transport = createTransport();
+
+    if (!transport) {
+        return;
+    }
+
+    try {
+        await transport.sendMail({
+            from: mailFrom,
+            to: operator.email,
+            subject: `Zahlung ohne Zuordnung — ${input.provider}`,
+            text: [
+                `${input.provider} meldet ${input.event} für ${input.providerRef}, aber dazu gibt es hier keinen Zahlungsvorgang.`,
+                "",
+                "Es wurde nichts verbucht. Bitte im Konto des Anbieters nachsehen, worum es geht.",
+            ].join("\n"),
+            html: renderEmail({
+                preheader: `${input.provider}: Zahlung ohne Zuordnung.`,
+                heading: "Zahlung ohne Zuordnung",
+                intro: [
+                    `${input.provider} meldet ${input.event} für ${input.providerRef}, aber dazu gibt es hier keinen Zahlungsvorgang. Es wurde nichts verbucht.`,
+                ],
+                rowsTitle: "Eckdaten",
+                rows: [
+                    { label: "Anbieter", value: input.provider },
+                    { label: "Ereignis", value: input.event },
+                    { label: "Referenz", value: input.providerRef },
+                ],
+            }),
+        });
+    } catch (error) {
+        logMailError("unmatched payment notice", error);
+    }
+}
+
+/**
+ * The routes a settled payment makes stale. Called by the webhooks and by the
+ * server actions — never by settlePayment itself, because a page renders that
+ * too and revalidating during a render is not allowed.
+ */
+export function revalidateAfterPayment(invoiceId: string | null) {
+    revalidatePath("/account/invoices");
+    revalidatePath("/account/admin/invoices");
+    revalidatePath("/account");
+
+    if (invoiceId) {
+        revalidatePath(`/account/admin/invoices/${invoiceId}`);
+    }
+}
+
+/**
+ * Money for an invoice that was not waiting for it. Nothing is undone
+ * automatically — a refund is a decision, and § 8 leaves it to the operator.
+ */
+async function notifyUnexpectedPayment(input: {
+    invoiceNumber: string;
+    status: string;
+    amountCents: number;
+}) {
+    const transport = createTransport();
+
+    if (!transport) {
+        console.error("[payments] unexpected payment, no transport:", input);
+        return;
+    }
+
+    try {
+        await transport.sendMail({
+            from: mailFrom,
+            to: operator.email,
+            subject: `Unerwarteter Zahlungseingang — ${input.invoiceNumber}`,
+            text: [
+                `Für ${input.invoiceNumber} ist eine Zahlung über ${formatPrice(input.amountCents)} eingegangen, obwohl die Rechnung den Status „${input.status}" hat.`,
+                "",
+                "Die Zahlung ist erfasst, der Rechnungsstatus wurde nicht verändert. Bitte prüfen, ob der Betrag zu erstatten ist.",
+                `${site.url}/account/admin/invoices`,
+            ].join("\n"),
+            html: renderEmail({
+                preheader: `Zahlung zu ${input.invoiceNumber}, die nicht erwartet war.`,
+                heading: "Unerwarteter Zahlungseingang",
+                intro: [
+                    `Für ${input.invoiceNumber} ist eine Zahlung über ${formatPrice(input.amountCents)} eingegangen, obwohl die Rechnung den Status „${input.status}" hat. Die Zahlung ist erfasst, der Rechnungsstatus wurde nicht verändert.`,
+                ],
+                action: {
+                    label: "Rechnungen öffnen",
+                    url: `${site.url}/account/admin/invoices`,
+                },
+                rowsTitle: "Eckdaten",
+                rows: [
+                    { label: "Rechnung", value: input.invoiceNumber },
+                    { label: "Status", value: input.status },
+                    { label: "Betrag", value: formatPrice(input.amountCents) },
+                ],
+            }),
+        });
+    } catch (error) {
+        logMailError("unexpected payment notice", error);
+    }
 }
 
 /** A debit that has been submitted but is not money yet — SEPA takes days. */
@@ -248,6 +462,25 @@ export async function firstDelivery(event: {
         .returning({ id: schema.webhookEvent.id });
 
     return inserted.length > 0;
+}
+
+/**
+ * Undoes firstDelivery when the handler failed. Without this the row we wrote
+ * to make a repeat delivery harmless makes the provider's RETRY harmless too:
+ * it would answer 200 and do nothing, and a payment that failed to settle
+ * once would never settle at all.
+ */
+export async function forgetDelivery(id: string) {
+    try {
+        await db
+            .delete(schema.webhookEvent)
+            .where(eq(schema.webhookEvent.id, id));
+    } catch (error) {
+        console.error(
+            "[payments] releasing the event for retry failed:",
+            error,
+        );
+    }
 }
 
 /**

@@ -52,6 +52,13 @@ export async function createInvoiceCheckout(input: CheckoutInput) {
     const session = await stripe().checkout.sessions.create(
         {
             mode: "payment",
+            // Pinned rather than left to the dashboard: § 7 (7) of the terms
+            // and the Datenschutzerklärung both name card and PayPal, and a
+            // method switched on in Stripe would silently make them wrong.
+            // Adding SEPA means adding the mandate and the Vorabankündigung
+            // to those texts first — and finishing the six-day settlement
+            // path this state machine only half has.
+            payment_method_types: ["card"],
             line_items: [
                 {
                     quantity: 1,
@@ -140,6 +147,9 @@ export async function createSetupCheckout(input: {
     const session = await stripe().checkout.sessions.create({
         mode: "setup",
         currency: "eur",
+        // Same reason as the payment session: what may be stored is what the
+        // terms say may be stored.
+        payment_method_types: ["card"],
         customer: input.stripeCustomerId,
         locale: "de",
         setup_intent_data: {
@@ -192,6 +202,8 @@ export async function readStoredMethod(sessionId: string) {
         token: method.id,
         label,
         contractId: intent.metadata?.contract_id || null,
+        /** Written by createSetupCheckout, so the return can be checked. */
+        userId: intent.metadata?.user_id || null,
     };
 }
 
@@ -201,13 +213,16 @@ export async function readStoredMethod(sessionId: string) {
  * is nothing to do about it here except report it, which is what the operator
  * asked for.
  */
-export async function chargeStoredMethod(input: {
+export async function prepareStoredCharge(input: {
     invoiceId: string;
     invoiceNumber: string;
     amountCents: number;
     stripeCustomerId: string;
     token: string;
 }) {
+    // Created but NOT confirmed: this hands back the id we record the attempt
+    // under before any money moves, so a crash between the charge and the
+    // bookkeeping cannot leave a payment nothing in here knows about.
     const intent = await stripe().paymentIntents.create(
         {
             amount: input.amountCents,
@@ -215,7 +230,7 @@ export async function chargeStoredMethod(input: {
             customer: input.stripeCustomerId,
             payment_method: input.token,
             off_session: true,
-            confirm: true,
+            confirm: false,
             description: `Rechnung ${input.invoiceNumber}`,
             metadata: {
                 invoice_id: input.invoiceId,
@@ -226,6 +241,11 @@ export async function chargeStoredMethod(input: {
     );
 
     return intent;
+}
+
+/** Moves the money for an intent that has already been written down. */
+export async function confirmStoredCharge(intentId: string) {
+    return stripe().paymentIntents.confirm(intentId, { off_session: true });
 }
 
 /** Irreversible on Stripe's side — the row we keep is the only record left. */

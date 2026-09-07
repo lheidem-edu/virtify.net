@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth-session";
 import { loadInvoice } from "@/lib/documents/repository";
+import { closeOpenAttempts } from "@/lib/payments/collect";
 import { paypalEnabled, stripeEnabled } from "@/lib/payments/config";
 import { createInvoiceOrder } from "@/lib/payments/paypal";
 import { nextAttempt, recordAttempt } from "@/lib/payments/settle";
@@ -70,6 +71,10 @@ export async function startInvoicePayment(
     let url: string;
 
     try {
+        // An abandoned checkout stays payable at the provider until it
+        // expires, so it is closed before a second one is opened.
+        await closeOpenAttempts(invoice.id);
+
         const attempt = await nextAttempt(invoice.id);
 
         const checkout =
