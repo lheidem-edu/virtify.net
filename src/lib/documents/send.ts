@@ -532,3 +532,65 @@ export async function sendPaymentReceivedMail(input: {
         throw error;
     }
 }
+
+/**
+ * The notice § 17 of the terms owes the customer before a new version of a
+ * legal document takes effect: what changes, when, and that not objecting
+ * within the period counts as agreement. Sent on the operator's word, never
+ * automatically — publishing a version and telling people about it are two
+ * decisions, and only the second one is irreversible in the customer's inbox.
+ */
+export async function sendLegalChangeMail(input: {
+    to: string;
+    documentLabel: string;
+    documentPath: string;
+    effectiveFrom: Date;
+}) {
+    const { operator, site } = await loadSettings();
+    const transport = transportOrThrow();
+    const effective = formatDate(input.effectiveFrom);
+
+    try {
+        await transport.sendMail({
+            from: await mailFrom(),
+            to: input.to,
+            subject: `Änderung: ${input.documentLabel} zum ${effective} — ${site.name}`,
+            text: [
+                "Sehr geehrte Damen und Herren,",
+                "",
+                `wir haben unsere ${input.documentLabel} überarbeitet. Die neue Fassung gilt ab dem ${effective}.`,
+                "",
+                `Sie können sie hier einsehen: ${site.url}${input.documentPath}`,
+                "",
+                "Widersprechen Sie der Änderung nicht innerhalb von sechs Wochen nach Zugang dieser Mitteilung in Textform, gilt sie als angenommen. Widersprechen Sie, kann jede Vertragspartei den Vertrag zum geplanten Zeitpunkt des Wirksamwerdens kündigen.",
+                "",
+                "Mit freundlichen Grüßen",
+                operator.name,
+            ].join("\n"),
+            html: await renderEmail({
+                preheader: `${input.documentLabel} in neuer Fassung ab ${effective}.`,
+                heading: `${input.documentLabel} in neuer Fassung`,
+                intro: [
+                    "Sehr geehrte Damen und Herren,",
+                    `wir haben unsere ${input.documentLabel} überarbeitet. Die neue Fassung gilt ab dem ${effective}.`,
+                ],
+                action: {
+                    label: `${input.documentLabel} ansehen`,
+                    url: `${site.url}${input.documentPath}`,
+                },
+                rowsTitle: "Eckdaten",
+                rows: [
+                    { label: "Dokument", value: input.documentLabel },
+                    { label: "Gilt ab", value: effective },
+                ],
+                outro: [
+                    "Widersprechen Sie der Änderung nicht innerhalb von sechs Wochen nach Zugang dieser Mitteilung in Textform, gilt sie als angenommen. Widersprechen Sie, kann jede Vertragspartei den Vertrag zum geplanten Zeitpunkt des Wirksamwerdens kündigen.",
+                    `Mit freundlichen Grüßen\n${operator.name}`,
+                ],
+            }),
+        });
+    } catch (error) {
+        logMailError("legal change notice", error);
+        throw error;
+    }
+}

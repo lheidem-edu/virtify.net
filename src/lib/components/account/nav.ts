@@ -29,6 +29,12 @@ export const ADMIN_NAV = [
         icon: "file-signature",
     },
     { href: "/account/admin/invoices", label: "Rechnungen", icon: "receipt" },
+    { href: "/account/admin/legal", label: "Rechtstexte", icon: "scale" },
+    {
+        href: "/account/admin/settings",
+        label: "Einstellungen",
+        icon: "settings",
+    },
 ] as const;
 
 export type NavEntry = { href: string; label: string; icon: string };

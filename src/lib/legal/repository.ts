@@ -105,6 +105,15 @@ export async function loadSections(documentId: string) {
     }));
 }
 
+/** The rows themselves, for the editor — it needs the ids the view does not. */
+export async function loadSectionRows(documentId: string) {
+    return db
+        .select()
+        .from(schema.legalSection)
+        .where(eq(schema.legalSection.documentId, documentId))
+        .orderBy(asc(schema.legalSection.position));
+}
+
 /** The wording a new version starts from when nothing has been published. */
 export function defaultDocument(kind: LegalKind) {
     return DEFAULTS[kind];
