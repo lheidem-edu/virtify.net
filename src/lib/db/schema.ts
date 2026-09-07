@@ -50,6 +50,10 @@ export const user = pgTable("user", {
     // Better Auth two-factor plugin.
     twoFactorEnabled: boolean("two_factor_enabled").default(false),
 
+    /** Provider-side identity, created the first time a method is stored. */
+    stripeCustomerId: text("stripe_customer_id").unique(),
+    paypalCustomerId: text("paypal_customer_id").unique(),
+
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -164,6 +168,17 @@ export const contract = pgTable("contract", {
     /** Stored in cents to keep money out of floating point. */
     monthlyPriceCents: integer("monthly_price_cents").notNull(),
     terminatedTo: timestamp("terminated_to", { mode: "date" }),
+
+    /**
+     * Set when the customer asked for this contract to be collected
+     * automatically. The table is declared further down, hence the lazy
+     * reference; set null rather than cascade, because withdrawing a payment
+     * method must not take the contract with it.
+     */
+    paymentMethodId: text("payment_method_id").references(
+        (): AnyPgColumn => paymentMethod.id,
+        { onDelete: "set null" },
+    ),
 
     /** Internal only — never rendered in the customer area. */
     note: text("note"),
@@ -332,3 +347,106 @@ export type Offer = typeof offer.$inferSelect;
 export type OfferItem = typeof offerItem.$inferSelect;
 export type Invoice = typeof invoice.$inferSelect;
 export type InvoiceItem = typeof invoiceItem.$inferSelect;
+
+export const paymentProvider = pgEnum("payment_provider", ["stripe", "paypal"]);
+
+/**
+ * A payment method the customer left behind so a contract can be collected
+ * without them. The token is the provider's: a Stripe PaymentMethod (pm_…) or
+ * a PayPal vault token. We never see a card number or an IBAN.
+ */
+export const paymentMethod = pgTable(
+    "payment_method",
+    {
+        id: text("id")
+            .primaryKey()
+            .$defaultFn(() => createId("paymentmethod")),
+        userId: text("user_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "restrict" }),
+        provider: paymentProvider("provider").notNull(),
+        /** Unique so the same authorisation cannot be stored twice. */
+        token: text("token").notNull().unique(),
+        /** What the customer recognises: "Visa •••• 4242", "PayPal, max@…". */
+        label: text("label").notNull(),
+        /**
+         * Revoked rather than deleted: a payment that was collected through it
+         * must keep pointing at something. Stripe's detach is irreversible, so
+         * the row is the only record left afterwards.
+         */
+        revokedAt: timestamp("revoked_at"),
+
+        createdAt: timestamp("created_at").notNull().defaultNow(),
+        updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    },
+    (table) => [index("payment_method_user_id_idx").on(table.userId)],
+);
+
+export const paymentStatus = pgEnum("payment_status", [
+    /** Started, customer is at the provider or the charge is in flight. */
+    "pending",
+    /** Accepted but not yet money — a SEPA debit takes days to settle. */
+    "processing",
+    "succeeded",
+    "failed",
+    "refunded",
+]);
+
+/**
+ * One attempt to pay one invoice. Attempts are kept, not overwritten: a
+ * customer who abandons a checkout and comes back leaves two rows, and the
+ * provider's own reference has to stay resolvable for the books.
+ */
+export const payment = pgTable(
+    "payment",
+    {
+        id: text("id")
+            .primaryKey()
+            .$defaultFn(() => createId("payment")),
+        invoiceId: text("invoice_id")
+            .notNull()
+            .references(() => invoice.id, { onDelete: "restrict" }),
+        userId: text("user_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "restrict" }),
+        provider: paymentProvider("provider").notNull(),
+        status: paymentStatus("status").notNull().default("pending"),
+
+        /** Set when the charge was collected from a stored method. */
+        paymentMethodId: text("payment_method_id").references(
+            () => paymentMethod.id,
+            { onDelete: "set null" },
+        ),
+
+        amountCents: integer("amount_cents").notNull(),
+        /** § 19 UStG: no tax anywhere, but the currency still has to match. */
+        currency: text("currency").notNull().default("EUR"),
+
+        /** What we sent the customer to: Checkout Session or PayPal order. */
+        providerRef: text("provider_ref").notNull().unique(),
+        /** What actually moved the money: PaymentIntent or PayPal capture. */
+        captureRef: text("capture_ref").unique(),
+        /** The provider's cut, in cents, once it is known. */
+        feeCents: integer("fee_cents"),
+
+        failureCode: text("failure_code"),
+        failureMessage: text("failure_message"),
+
+        settledAt: timestamp("settled_at"),
+        createdAt: timestamp("created_at").notNull().defaultNow(),
+        updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    },
+    (table) => [index("payment_invoice_id_idx").on(table.invoiceId)],
+);
+
+/**
+ * Every webhook a provider has already delivered. Providers retry, and both
+ * of them say so plainly: the same event will arrive twice. The primary key
+ * is what makes handling it twice a no-op.
+ */
+export const webhookEvent = pgTable("webhook_event", {
+    id: text("id").primaryKey(),
+    provider: paymentProvider("provider").notNull(),
+    type: text("type").notNull(),
+    receivedAt: timestamp("received_at").notNull().defaultNow(),
+});

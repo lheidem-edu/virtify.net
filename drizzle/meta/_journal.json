@@ -50,6 +50,13 @@
       "when": 1788711120583,
       "tag": "0006_adorable_senator_kelly",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788774659655,
+      "tag": "0007_red_supernaut",
+      "breakpoints": true
     }
   ]
 }

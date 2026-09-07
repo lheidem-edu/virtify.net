@@ -16,6 +16,8 @@ export const ID_PREFIX = {
     offerItem: "offeritem",
     invoice: "invoice",
     invoiceItem: "invoiceitem",
+    payment: "payment",
+    paymentMethod: "paymentmethod",
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIX)[keyof typeof ID_PREFIX];
