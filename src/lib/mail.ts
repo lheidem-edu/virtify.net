@@ -12,6 +12,30 @@ type SmtpOptions = Parameters<typeof nodemailer.createTransport>[0] & {
 };
 
 /**
+ * The name this server gives in EHLO. Nodemailer sends the machine's own
+ * hostname and falls back to 127.0.0.1 when that is not a name anyone outside
+ * knows — which is what Microsoft 365 saw in the header of the messages it
+ * sorted as spam. An address rather than a name is fine there, but only as an
+ * address literal (RFC 5321 §4.1.3): a bare 118.91.184.85 is neither a domain
+ * nor a literal, and a receiving MTA is entitled to score it as a malformed
+ * greeting. The brackets are added here so the variable can hold the plain
+ * address, which is what anyone setting it would write.
+ */
+export function ehloName() {
+    const value = process.env.VIRTIFY_SMTP_EHLO?.trim();
+
+    if (!value || value.startsWith("[")) {
+        return value || undefined;
+    }
+
+    if (value.includes(":")) {
+        return `[IPv6:${value}]`;
+    }
+
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(value) ? `[${value}]` : value;
+}
+
+/**
  * Mail relay used for outbound notifications. The relay is reached on port 25
  * without authentication, so it is expected to be an internal host that
  * accepts mail from this server by address. Certificate validation is relaxed
@@ -28,6 +52,7 @@ export function createTransport() {
     const options: SmtpOptions = {
         host,
         port: 25,
+        name: ehloName(),
         secure: false,
         auth: undefined,
         tls: { rejectUnauthorized: false },
