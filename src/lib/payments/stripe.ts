@@ -201,13 +201,16 @@ export async function readStoredMethod(sessionId: string) {
  * is nothing to do about it here except report it, which is what the operator
  * asked for.
  */
-export async function chargeStoredMethod(input: {
+export async function prepareStoredCharge(input: {
     invoiceId: string;
     invoiceNumber: string;
     amountCents: number;
     stripeCustomerId: string;
     token: string;
 }) {
+    // Created but NOT confirmed: this hands back the id we record the attempt
+    // under before any money moves, so a crash between the charge and the
+    // bookkeeping cannot leave a payment nothing in here knows about.
     const intent = await stripe().paymentIntents.create(
         {
             amount: input.amountCents,
@@ -215,7 +218,7 @@ export async function chargeStoredMethod(input: {
             customer: input.stripeCustomerId,
             payment_method: input.token,
             off_session: true,
-            confirm: true,
+            confirm: false,
             description: `Rechnung ${input.invoiceNumber}`,
             metadata: {
                 invoice_id: input.invoiceId,
@@ -226,6 +229,11 @@ export async function chargeStoredMethod(input: {
     );
 
     return intent;
+}
+
+/** Moves the money for an intent that has already been written down. */
+export async function confirmStoredCharge(intentId: string) {
+    return stripe().paymentIntents.confirm(intentId, { off_session: true });
 }
 
 /** Irreversible on Stripe's side — the row we keep is the only record left. */

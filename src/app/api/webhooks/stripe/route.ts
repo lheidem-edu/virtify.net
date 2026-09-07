@@ -3,7 +3,9 @@ import { stripeConfig, stripeEnabled } from "@/lib/payments/config";
 import {
     failPayment,
     firstDelivery,
+    forgetDelivery,
     markProcessing,
+    revalidateAfterPayment,
     settlePayment,
 } from "@/lib/payments/settle";
 import { readFeeCents, stripe } from "@/lib/payments/stripe";
@@ -53,9 +55,11 @@ export async function POST(request: Request) {
     try {
         await handle(event);
     } catch (error) {
-        // A 500 makes Stripe retry, which is what we want for a database
-        // that was briefly unavailable — the event id keeps that safe.
+        // The dedupe row has to go back, or Stripe's retry would find the
+        // event already delivered and answer 200 without doing anything —
+        // turning a transient failure into a payment that never settles.
         console.error(`[payments] stripe ${event.type} failed:`, error);
+        await forgetDelivery(event.id);
         return new Response("handler failed", { status: 500 });
     }
 
@@ -83,12 +87,14 @@ async function handle(event: Stripe.Event) {
                     ? session.payment_intent
                     : (session.payment_intent?.id ?? null);
 
-            await settlePayment({
+            const outcome = await settlePayment({
                 provider: "stripe",
                 providerRef: session.id,
                 captureRef: intentId,
-                feeCents: intentId ? await readFeeCents(intentId) : null,
+                feeCents: intentId ? await fee(intentId) : null,
             });
+
+            revalidateAfterPayment(outcome.invoiceId);
             return;
         }
 
@@ -107,12 +113,14 @@ async function handle(event: Stripe.Event) {
         case "payment_intent.succeeded": {
             const intent = event.data.object;
 
-            await settlePayment({
+            const outcome = await settlePayment({
                 provider: "stripe",
                 providerRef: intent.id,
                 captureRef: intent.id,
-                feeCents: await readFeeCents(intent.id),
+                feeCents: await fee(intent.id),
             });
+
+            revalidateAfterPayment(outcome.invoiceId);
             return;
         }
 
@@ -138,5 +146,18 @@ async function handle(event: Stripe.Event) {
 
         default:
             return;
+    }
+}
+
+/**
+ * The provider's cut is bookkeeping decoration. It costs another API call, and
+ * that call must never be the reason a payment fails to settle.
+ */
+async function fee(paymentIntentId: string) {
+    try {
+        return await readFeeCents(paymentIntentId);
+    } catch (error) {
+        console.error("[payments] reading the stripe fee failed:", error);
+        return null;
     }
 }

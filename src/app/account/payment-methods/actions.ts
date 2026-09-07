@@ -242,21 +242,25 @@ export async function setContractCollection(
                 throw new Error("not-found");
             }
 
-            // A terminated or ended contract produces no further invoices, so
-            // there is nothing left to collect.
-            if (
-                contract.status !== "provisioning" &&
-                contract.status !== "active"
-            ) {
-                throw new Error("not-open");
-            }
-
+            // Withdrawing comes first and is never refused: § 7 (8) of the
+            // terms promises it can be done at any time, and a contract that
+            // has since been terminated is exactly when someone wants to.
             if (mode === "off") {
                 await tx
                     .update(schema.contract)
                     .set({ paymentMethodId: null, updatedAt: new Date() })
                     .where(eq(schema.contract.id, contractId));
                 return;
+            }
+
+            // Switching it on is a different matter: a terminated or ended
+            // contract produces no further invoices, so there is nothing to
+            // collect and nothing to authorise.
+            if (
+                contract.status !== "provisioning" &&
+                contract.status !== "active"
+            ) {
+                throw new Error("not-open");
             }
 
             const [method] = await tx

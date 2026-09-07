@@ -671,13 +671,20 @@ export async function cancelInvoice(
                 // original's frozen buyer — not whoever the account is today.
                 recipient: row.recipient,
                 buyerReference: row.buyerReference,
-                buyerName: row.buyerName,
-                buyerStreet: row.buyerStreet,
-                buyerPostalCode: row.buyerPostalCode,
-                buyerCity: row.buyerCity,
-                buyerCountry: row.buyerCountry,
-                buyerVatId: row.buyerVatId,
-                buyerEmail: row.buyerEmail,
+                // An invoice issued before the freeze existed has nothing to
+                // inherit; the correction then takes its own snapshot rather
+                // than leaving a document that can still change underneath it.
+                ...(row.buyerName
+                    ? {
+                          buyerName: row.buyerName,
+                          buyerStreet: row.buyerStreet,
+                          buyerPostalCode: row.buyerPostalCode,
+                          buyerCity: row.buyerCity,
+                          buyerCountry: row.buyerCountry,
+                          buyerVatId: row.buyerVatId,
+                          buyerEmail: row.buyerEmail,
+                      }
+                    : freezeBuyer(buyer)),
                 issuedAt,
                 // Nothing falls due on a correction; it settles the original.
                 dueAt: null,

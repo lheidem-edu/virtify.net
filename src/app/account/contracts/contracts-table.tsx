@@ -107,8 +107,12 @@ function buildColumns(
             id: "actions",
             header: "",
             enableSorting: false,
+            // Switching the collection on needs a contract that still bills;
+            // switching it off must stay reachable whatever the status, since
+            // the terms promise it can be withdrawn at any time.
             cell: ({ row }) =>
-                billable(row.original.status) ? (
+                billable(row.original.status) ||
+                row.original.paymentMethodId ? (
                     <div className="flex justify-end">
                         <ContractCollection
                             contractId={row.original.id}

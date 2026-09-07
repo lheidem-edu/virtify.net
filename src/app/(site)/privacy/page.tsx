@@ -184,10 +184,17 @@ export default function Page() {
                 </p>
                 <p>
                     An Stripe übermitteln wir deinen Namen, deine
-                    E-Mail-Adresse, den Rechnungsbetrag, die Rechnungsnummer und
-                    die interne Kennung der Rechnung. An PayPal übermitteln wir
-                    den Rechnungsbetrag, die Rechnungsnummer und die interne
-                    Kennung der Rechnung.
+                    E-Mail-Adresse, den Rechnungsbetrag, die Rechnungsnummer
+                    sowie die internen Kennungen deines Kundenkontos und der
+                    Rechnung. An PayPal übermitteln wir den Rechnungsbetrag, die
+                    Rechnungsnummer und die interne Kennung der Rechnung.
+                </p>
+                <p>
+                    Hinterlegst du ein Zahlungsmittel, übermitteln wir
+                    zusätzlich die interne Kennung deines Kundenkontos und —
+                    sofern du den Einzug für einen Vertrag einrichtest — die
+                    Kennung dieses Vertrags, damit die spätere Abbuchung der
+                    richtigen Rechnung zugeordnet werden kann.
                 </p>
                 <p>
                     Deine Zahlungsdaten erhalten wir nicht: Kartennummer,

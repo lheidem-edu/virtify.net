@@ -89,6 +89,9 @@ export async function settlePayment(input: {
                 invoiceId: null as string | null,
                 paidTo: null as string | null,
                 amountCents: 0,
+                unexpected: false,
+                invoiceNumber: null as string | null,
+                invoiceStatus: null as string | null,
             };
         }
 
@@ -99,6 +102,9 @@ export async function settlePayment(input: {
                 invoiceId: attempt.invoiceId as string | null,
                 paidTo: null as string | null,
                 amountCents: attempt.amountCents,
+                unexpected: false,
+                invoiceNumber: null as string | null,
+                invoiceStatus: null as string | null,
             };
         }
 
@@ -125,6 +131,11 @@ export async function settlePayment(input: {
         // already paid one keeps the state it has; the payment row records
         // that money came in either way, which is what the books need.
         let paidTo: string | null = null;
+        // Money against an invoice that is no longer open: corrected in the
+        // meantime, paid twice, or paid after a manual booking. The payment is
+        // recorded either way — it happened — but somebody has to decide
+        // whether it goes back, so the caller is told rather than nothing.
+        const unexpected = invoice ? invoice.status !== "issued" : true;
 
         if (invoice?.status === "issued") {
             await tx
@@ -156,15 +167,13 @@ export async function settlePayment(input: {
             invoiceId: attempt.invoiceId as string | null,
             paidTo,
             amountCents: attempt.amountCents,
+            unexpected,
+            invoiceNumber: invoice?.number ?? null,
+            invoiceStatus: invoice?.status ?? null,
         };
     });
 
     if (outcome.changed) {
-        revalidatePath("/account/invoices");
-        revalidatePath("/account/admin/invoices");
-        revalidatePath(`/account/admin/invoices/${outcome.invoiceId}`);
-        revalidatePath("/account");
-
         // Exactly once per invoice, because only the transaction above can
         // report `changed`. A webhook holds the customer's redirect while
         // this runs, which is worth the second it costs: the alternative is
@@ -180,6 +189,15 @@ export async function settlePayment(input: {
             } catch (error) {
                 console.error("[payments] receipt mail failed:", error);
             }
+        }
+
+        if (outcome.unexpected) {
+            await notifyUnexpectedPayment({
+                invoiceNumber:
+                    outcome.invoiceNumber ?? outcome.invoiceId ?? "—",
+                status: outcome.invoiceStatus ?? "—",
+                amountCents: outcome.amountCents ?? 0,
+            });
         }
     }
 
@@ -212,6 +230,71 @@ export async function failPayment(input: {
         .returning();
 
     return attempt ?? null;
+}
+
+/**
+ * The routes a settled payment makes stale. Called by the webhooks and by the
+ * server actions — never by settlePayment itself, because a page renders that
+ * too and revalidating during a render is not allowed.
+ */
+export function revalidateAfterPayment(invoiceId: string | null) {
+    revalidatePath("/account/invoices");
+    revalidatePath("/account/admin/invoices");
+    revalidatePath("/account");
+
+    if (invoiceId) {
+        revalidatePath(`/account/admin/invoices/${invoiceId}`);
+    }
+}
+
+/**
+ * Money for an invoice that was not waiting for it. Nothing is undone
+ * automatically — a refund is a decision, and § 8 leaves it to the operator.
+ */
+async function notifyUnexpectedPayment(input: {
+    invoiceNumber: string;
+    status: string;
+    amountCents: number;
+}) {
+    const transport = createTransport();
+
+    if (!transport) {
+        console.error("[payments] unexpected payment, no transport:", input);
+        return;
+    }
+
+    try {
+        await transport.sendMail({
+            from: mailFrom,
+            to: operator.email,
+            subject: `Unerwarteter Zahlungseingang — ${input.invoiceNumber}`,
+            text: [
+                `Für ${input.invoiceNumber} ist eine Zahlung über ${formatPrice(input.amountCents)} eingegangen, obwohl die Rechnung den Status „${input.status}" hat.`,
+                "",
+                "Die Zahlung ist erfasst, der Rechnungsstatus wurde nicht verändert. Bitte prüfen, ob der Betrag zu erstatten ist.",
+                `${site.url}/account/admin/invoices`,
+            ].join("\n"),
+            html: renderEmail({
+                preheader: `Zahlung zu ${input.invoiceNumber}, die nicht erwartet war.`,
+                heading: "Unerwarteter Zahlungseingang",
+                intro: [
+                    `Für ${input.invoiceNumber} ist eine Zahlung über ${formatPrice(input.amountCents)} eingegangen, obwohl die Rechnung den Status „${input.status}" hat. Die Zahlung ist erfasst, der Rechnungsstatus wurde nicht verändert.`,
+                ],
+                action: {
+                    label: "Rechnungen öffnen",
+                    url: `${site.url}/account/admin/invoices`,
+                },
+                rowsTitle: "Eckdaten",
+                rows: [
+                    { label: "Rechnung", value: input.invoiceNumber },
+                    { label: "Status", value: input.status },
+                    { label: "Betrag", value: formatPrice(input.amountCents) },
+                ],
+            }),
+        });
+    } catch (error) {
+        logMailError("unexpected payment notice", error);
+    }
 }
 
 /** A debit that has been submitted but is not money yet — SEPA takes days. */
@@ -248,6 +331,25 @@ export async function firstDelivery(event: {
         .returning({ id: schema.webhookEvent.id });
 
     return inserted.length > 0;
+}
+
+/**
+ * Undoes firstDelivery when the handler failed. Without this the row we wrote
+ * to make a repeat delivery harmless makes the provider's RETRY harmless too:
+ * it would answer 200 and do nothing, and a payment that failed to settle
+ * once would never settle at all.
+ */
+export async function forgetDelivery(id: string) {
+    try {
+        await db
+            .delete(schema.webhookEvent)
+            .where(eq(schema.webhookEvent.id, id));
+    } catch (error) {
+        console.error(
+            "[payments] releasing the event for retry failed:",
+            error,
+        );
+    }
 }
 
 /**

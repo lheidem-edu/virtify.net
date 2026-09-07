@@ -4,6 +4,8 @@ import { verifyWebhook } from "@/lib/payments/paypal";
 import {
     failPayment,
     firstDelivery,
+    forgetDelivery,
+    revalidateAfterPayment,
     settlePayment,
 } from "@/lib/payments/settle";
 
@@ -65,7 +67,9 @@ export async function POST(request: Request) {
     try {
         await handle(event);
     } catch (error) {
+        // Released so PayPal's retry is not deduped into a silent no-op.
         console.error(`[payments] paypal ${event.event_type} failed:`, error);
+        await forgetDelivery(event.id);
         return new Response("handler failed", { status: 500 });
     }
 
@@ -85,12 +89,14 @@ async function handle(event: Event) {
                 return;
             }
 
-            await settlePayment({
+            const outcome = await settlePayment({
                 provider: "paypal",
                 providerRef: orderId,
                 captureRef: event.resource?.id ?? null,
                 feeCents: fee ? Math.round(Number(fee) * 100) : null,
             });
+
+            revalidateAfterPayment(outcome.invoiceId);
             return;
         }
 
