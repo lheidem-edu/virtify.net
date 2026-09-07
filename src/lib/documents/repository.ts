@@ -349,6 +349,70 @@ export async function loadContract(
     };
 }
 
+/**
+ * The buyer as EN 16931 wants them, in the shape the invoice freezes at issue.
+ * Kept next to formatRecipient because the two are the same snapshot in two
+ * notations, and they must never disagree.
+ */
+export function freezeBuyer(buyer: {
+    name: string;
+    company: string | null;
+    street: string | null;
+    postalCode: string | null;
+    city: string | null;
+    country: string | null;
+    vatId: string | null;
+    email: string;
+}) {
+    return {
+        buyerName: buyer.company || buyer.name,
+        buyerStreet: buyer.street,
+        buyerPostalCode: buyer.postalCode,
+        buyerCity: buyer.city,
+        buyerCountry: buyer.country,
+        buyerVatId: buyer.vatId,
+        buyerEmail: buyer.email,
+    };
+}
+
+/**
+ * The buyer block for the XML. Prefers what was frozen at issue and only falls
+ * back to the account for invoices issued before the snapshot existed.
+ */
+export function xmlBuyer(
+    invoice: {
+        buyerName: string | null;
+        buyerStreet: string | null;
+        buyerPostalCode: string | null;
+        buyerCity: string | null;
+        buyerCountry: string | null;
+        buyerVatId: string | null;
+        buyerEmail: string | null;
+    },
+    buyer: {
+        name: string;
+        company: string | null;
+        street: string | null;
+        postalCode: string | null;
+        city: string | null;
+        country: string | null;
+        vatId: string | null;
+        email: string;
+    },
+) {
+    return {
+        name: invoice.buyerName ?? (buyer.company || buyer.name),
+        street: invoice.buyerName ? invoice.buyerStreet : buyer.street,
+        postalCode: invoice.buyerName
+            ? invoice.buyerPostalCode
+            : buyer.postalCode,
+        city: invoice.buyerName ? invoice.buyerCity : buyer.city,
+        country: invoice.buyerName ? invoice.buyerCountry : buyer.country,
+        vatId: invoice.buyerName ? invoice.buyerVatId : buyer.vatId,
+        email: invoice.buyerEmail ?? buyer.email,
+    };
+}
+
 /** Postal address as it belongs on a document, one line per element. */
 export function formatRecipient(buyer: {
     name: string;

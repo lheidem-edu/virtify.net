@@ -31,6 +31,7 @@ import {
 import {
     CancelInvoiceAction,
     DeleteInvoiceAction,
+    DuplicateInvoiceAction,
     IssueForm,
     MarkPaidForm,
     ResendMailAction,
@@ -434,6 +435,7 @@ export default async function Page({
                             {invoice.status === "paid" ? (
                                 <UnmarkPaidForm invoiceId={invoice.id} />
                             ) : null}
+                            <DuplicateInvoiceAction invoiceId={invoice.id} />
                             {invoice.status === "issued" ||
                             invoice.status === "paid" ? (
                                 <ResendMailAction

@@ -48,4 +48,4 @@ export const policy = {
 export const commit = process.env.NEXT_PUBLIC_COMMIT ?? "unbekannt";
 
 /** Rendered as "Stand: …" at the top of every legal document. */
-export const legalUpdated = "6. September 2026";
+export const legalUpdated = "7. September 2026";

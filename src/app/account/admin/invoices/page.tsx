@@ -96,6 +96,7 @@ export default async function Page({
                         status: entry.status as keyof typeof INVOICE_STATUS_LABEL,
                         issuedAt: entry.issuedAt,
                         dueAt: entry.dueAt,
+                        paidAt: entry.paidAt,
                         email: entry.email,
                         amount: entry.amount,
                         isCorrection: entry.cancelsInvoiceId !== null,

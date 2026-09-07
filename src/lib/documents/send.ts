@@ -5,6 +5,7 @@ import {
     loadContract,
     loadInvoice,
     loadOffer,
+    xmlBuyer,
 } from "@/lib/documents/repository";
 import { renderXRechnung } from "@/lib/documents/xrechnung";
 import { formatDate, formatPrice } from "@/lib/format";
@@ -183,15 +184,7 @@ export async function sendInvoiceMail(
             end: invoice.servicePeriodEnd,
         },
         note: invoice.note,
-        buyer: {
-            name: buyer.company || buyer.name,
-            street: buyer.street,
-            postalCode: buyer.postalCode,
-            city: buyer.city,
-            country: buyer.country,
-            vatId: buyer.vatId,
-            email: buyer.email,
-        },
+        buyer: xmlBuyer(invoice, buyer),
         totals,
     });
 
@@ -463,6 +456,71 @@ export async function sendContractTerminationMail(
         });
     } catch (error) {
         logMailError("contract termination mail", error);
+        throw error;
+    }
+}
+
+/**
+ * Confirms that money arrived. Stripe and PayPal both offer to send their own
+ * receipt and both are switched off, because a second document about the same
+ * payment is exactly what confuses a customer holding our invoice — so this is
+ * the one confirmation, and it names our invoice.
+ */
+export async function sendPaymentReceivedMail(input: {
+    invoiceId: string;
+    to: string;
+    amountCents: number;
+    paidAt: Date;
+}) {
+    const loaded = await loadInvoice(input.invoiceId, "", true);
+
+    if (!loaded?.invoice.number) {
+        return;
+    }
+
+    const number = loaded.invoice.number;
+    const transport = transportOrThrow();
+
+    try {
+        await transport.sendMail({
+            from: mailFrom,
+            to: input.to,
+            subject: `Zahlungseingang zu Rechnung ${number} — ${site.name}`,
+            text: [
+                "Sehr geehrte Damen und Herren,",
+                "",
+                `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Die Rechnung ist damit ausgeglichen.`,
+                "",
+                `Ihre Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/account/invoices`,
+                "",
+                "Mit freundlichen Grüßen",
+                operator.name,
+            ].join("\n"),
+            html: renderEmail({
+                preheader: `Zahlung über ${formatPrice(input.amountCents)} erhalten.`,
+                heading: "Zahlungseingang",
+                intro: [
+                    "Sehr geehrte Damen und Herren,",
+                    `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Die Rechnung ist damit ausgeglichen.`,
+                ],
+                action: {
+                    label: "Rechnungen ansehen",
+                    url: `${site.url}/account/invoices`,
+                },
+                rowsTitle: "Eckdaten",
+                rows: [
+                    { label: "Rechnungsnummer", value: number },
+                    { label: "Betrag", value: formatPrice(input.amountCents) },
+                    {
+                        label: "Eingegangen am",
+                        value: formatDate(input.paidAt),
+                    },
+                ],
+                outro: [`Mit freundlichen Grüßen\n${operator.name}`],
+            }),
+        });
+    } catch (error) {
+        logMailError("payment received mail", error);
         throw error;
     }
 }

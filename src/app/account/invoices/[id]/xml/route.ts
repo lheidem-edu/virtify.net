@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth-session";
-import { loadInvoice } from "@/lib/documents/repository";
+import { loadInvoice, xmlBuyer } from "@/lib/documents/repository";
 import { renderXRechnung } from "@/lib/documents/xrechnung";
 
 export async function GET(
@@ -42,15 +42,7 @@ export async function GET(
             end: invoice.servicePeriodEnd,
         },
         note: invoice.note,
-        buyer: {
-            name: buyer.company || buyer.name,
-            street: buyer.street,
-            postalCode: buyer.postalCode,
-            city: buyer.city,
-            country: buyer.country,
-            vatId: buyer.vatId,
-            email: buyer.email,
-        },
+        buyer: xmlBuyer(invoice, buyer),
         totals,
     });
 

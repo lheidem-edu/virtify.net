@@ -8,7 +8,7 @@ import { db, schema } from "@/lib/db";
 import { createId } from "@/lib/db/id";
 import { parseDate, readLineItems } from "@/lib/documents/line-items";
 import { nextNumber } from "@/lib/documents/numbering";
-import { formatRecipient } from "@/lib/documents/repository";
+import { formatRecipient, freezeBuyer } from "@/lib/documents/repository";
 import { sendInvoiceMail } from "@/lib/documents/send";
 import { collectIssuedInvoice } from "@/lib/payments/collect";
 import { policy } from "@/lib/site";
@@ -218,6 +218,99 @@ export async function updateInvoice(
 }
 
 /**
+ * Last month's invoice is almost always this month's invoice. Copying one into
+ * a fresh draft costs nothing from the RE- series — a draft has no number —
+ * and saves retyping the positions of a recurring contract twelve times a
+ * year. The service period moves on by a month; everything else is the
+ * original's, including a correction's negative quantities, so duplicating one
+ * of those is deliberate rather than accidental.
+ */
+export async function duplicateInvoice(
+    _previous: InvoiceState,
+    data: FormData,
+): Promise<InvoiceState> {
+    await requireAdmin();
+
+    const invoiceId = String(data.get("invoiceId") ?? "");
+    const copyId = createId("invoice");
+
+    try {
+        await db.transaction(async (tx) => {
+            const [row] = await tx
+                .select()
+                .from(schema.invoice)
+                .where(eq(schema.invoice.id, invoiceId));
+
+            if (!row) {
+                throw new Error("not-found");
+            }
+
+            const items = await tx
+                .select()
+                .from(schema.invoiceItem)
+                .where(eq(schema.invoiceItem.invoiceId, invoiceId))
+                .orderBy(asc(schema.invoiceItem.position));
+
+            if (items.length === 0) {
+                throw new Error("no-items");
+            }
+
+            await tx.insert(schema.invoice).values({
+                id: copyId,
+                userId: row.userId,
+                contractId: row.contractId,
+                status: "draft",
+                introText: row.introText,
+                note: row.note,
+                servicePeriodStart: shiftMonth(row.servicePeriodStart),
+                servicePeriodEnd: shiftMonth(row.servicePeriodEnd),
+            });
+
+            await tx.insert(schema.invoiceItem).values(
+                items.map((item, index) => ({
+                    id: createId("invoiceitem"),
+                    invoiceId: copyId,
+                    position: index + 1,
+                    description: item.description,
+                    detail: item.detail,
+                    quantity: item.quantity,
+                    unitCode: item.unitCode,
+                    unitPriceCents: item.unitPriceCents,
+                })),
+            );
+        });
+    } catch (error) {
+        console.error("[admin] duplicating invoice failed:", error);
+        return {
+            status: "error",
+            message:
+                error instanceof Error && error.message === "no-items"
+                    ? "Diese Rechnung hat keine Positionen."
+                    : "Die Rechnung konnte nicht dupliziert werden.",
+        };
+    }
+
+    revalidatePath("/account/admin/invoices");
+
+    return { status: "created", message: copyId };
+}
+
+/** One calendar month on, clamped like § 188 BGB: 31.01. becomes 28.02. */
+function shiftMonth(date: Date | null) {
+    if (!date) {
+        return null;
+    }
+
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth() + 1;
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+    return new Date(
+        Date.UTC(year, month, Math.min(date.getUTCDate(), lastDay)),
+    );
+}
+
+/**
  * A draft carries no number, so deleting it burns nothing and leaves no gap in
  * the RE- series that § 14 Abs. 4 Nr. 4 UStG requires to be unbroken. Anything
  * that has been issued is kept for the § 257 HGB / § 147 AO retention period
@@ -328,6 +421,7 @@ export async function issueInvoice(
                     buyerReference:
                         buyer.buyerReference ??
                         String(buyer.customerNumber ?? buyer.id),
+                    ...freezeBuyer(buyer),
                     updatedAt: issuedAt,
                 })
                 .where(eq(schema.invoice.id, invoiceId));
@@ -573,8 +667,17 @@ export async function cancelInvoice(
                 contractId: row.contractId,
                 number,
                 status: "issued",
+                // The correction speaks about the original, so it carries the
+                // original's frozen buyer — not whoever the account is today.
                 recipient: row.recipient,
                 buyerReference: row.buyerReference,
+                buyerName: row.buyerName,
+                buyerStreet: row.buyerStreet,
+                buyerPostalCode: row.buyerPostalCode,
+                buyerCity: row.buyerCity,
+                buyerCountry: row.buyerCountry,
+                buyerVatId: row.buyerVatId,
+                buyerEmail: row.buyerEmail,
                 issuedAt,
                 // Nothing falls due on a correction; it settles the original.
                 dueAt: null,

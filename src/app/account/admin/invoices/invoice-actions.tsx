@@ -7,6 +7,7 @@ import FormStatus from "@/lib/components/account/form-status";
 import {
     cancelInvoice,
     deleteInvoice,
+    duplicateInvoice,
     type InvoiceState,
     issueInvoice,
     markInvoicePaid,
@@ -153,5 +154,44 @@ export function ResendMailAction({
             confirmLabel="Senden"
             variant="outline"
         />
+    );
+}
+
+/**
+ * Copies the invoice into a fresh draft. Not behind a confirmation: a draft
+ * too many is deleted in one click, which is the cheapest mistake in here.
+ */
+export function DuplicateInvoiceAction({ invoiceId }: { invoiceId: string }) {
+    const [state, formAction, pending] = useActionState(
+        duplicateInvoice,
+        initialState,
+    );
+
+    return (
+        <form action={formAction} className="flex flex-col gap-2">
+            <input type="hidden" name="invoiceId" value={invoiceId} />
+            {state.status === "error" ? (
+                <FormStatus
+                    tone="error"
+                    message={state.message}
+                    variant="inline"
+                />
+            ) : null}
+            {state.status === "created" ? (
+                <FormStatus
+                    tone="success"
+                    message="Der Entwurf ist angelegt und steht in der Liste."
+                    variant="inline"
+                />
+            ) : null}
+            <Button
+                type="submit"
+                variant="outline"
+                size="sm"
+                disabled={pending}
+            >
+                {pending ? "…" : "Duplizieren"}
+            </Button>
+        </form>
     );
 }

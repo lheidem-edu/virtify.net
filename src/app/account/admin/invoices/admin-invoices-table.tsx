@@ -6,10 +6,12 @@ import Link from "next/link";
 import DataTable from "@/lib/components/account/data-table";
 import StatusBadge from "@/lib/components/account/status-badge";
 import {
+    daysOverdue,
     formatDate,
     formatPrice,
     INVOICE_STATUS_LABEL,
     INVOICE_STATUS_TONE,
+    isOverdue,
 } from "@/lib/format";
 import { IssueForm, MarkPaidForm } from "./invoice-actions";
 
@@ -19,6 +21,7 @@ export type AdminInvoiceRow = {
     status: keyof typeof INVOICE_STATUS_LABEL;
     issuedAt: Date | null;
     dueAt: Date | null;
+    paidAt: Date | null;
     email: string;
     amount: number;
     /** A correction settles the invoice it reverses; nothing on it falls due. */
@@ -64,7 +67,17 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
     {
         accessorKey: "dueAt",
         header: "Fällig",
-        cell: ({ row }) => formatDate(row.original.dueAt),
+        cell: ({ row }) =>
+            isOverdue(row.original) ? (
+                <span className="text-amber-400">
+                    {formatDate(row.original.dueAt)}
+                    <span className="block text-xs">
+                        seit {daysOverdue(row.original.dueAt)} Tagen überfällig
+                    </span>
+                </span>
+            ) : (
+                formatDate(row.original.dueAt)
+            ),
         sortingFn: (a, b) =>
             (a.original.dueAt?.getTime() ?? 0) -
             (b.original.dueAt?.getTime() ?? 0),
@@ -80,7 +93,9 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
                 />
                 {/* Quiet on purpose: it explains why a row may turn paid by
                     itself, it is not another thing to click. */}
-                {row.original.autoCollect ? (
+                {row.original.autoCollect &&
+                row.original.status === "issued" &&
+                !row.original.isCorrection ? (
                     <span
                         title="Wird über das hinterlegte Zahlungsmittel automatisch eingezogen."
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground"

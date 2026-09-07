@@ -286,9 +286,22 @@ export const invoice = pgTable("invoice", {
     number: text("number").unique(),
     status: invoiceStatus("status").notNull().default("draft"),
 
-    /** Frozen copies taken at issue time. */
+    /**
+     * Frozen copies taken at issue time. `recipient` is the address block the
+     * PDF prints; the fields below are the same address in the structured
+     * shape EN 16931 wants, because the XRechnung is a document too — reading
+     * it from the live account would rewrite an invoice the customer holds
+     * every time they correct a typo in their own master data.
+     */
     recipient: text("recipient"),
     buyerReference: text("buyer_reference"),
+    buyerName: text("buyer_name"),
+    buyerStreet: text("buyer_street"),
+    buyerPostalCode: text("buyer_postal_code"),
+    buyerCity: text("buyer_city"),
+    buyerCountry: text("buyer_country"),
+    buyerVatId: text("buyer_vat_id"),
+    buyerEmail: text("buyer_email"),
 
     issuedAt: timestamp("issued_at", { mode: "date" }),
     /** § 10 of the terms: due within 14 days unless agreed otherwise. */

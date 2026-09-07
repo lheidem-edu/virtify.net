@@ -6,10 +6,12 @@ import { useMemo } from "react";
 import DataTable from "@/lib/components/account/data-table";
 import StatusBadge from "@/lib/components/account/status-badge";
 import {
+    daysOverdue,
     formatDate,
     formatPrice,
     INVOICE_STATUS_LABEL,
     INVOICE_STATUS_TONE,
+    isOverdue,
 } from "@/lib/format";
 import PayActions from "./pay-actions";
 
@@ -19,6 +21,7 @@ export type InvoiceRow = {
     status: keyof typeof INVOICE_STATUS_LABEL;
     issuedAt: Date | null;
     dueAt: Date | null;
+    paidAt: Date | null;
     email: string;
     amount: number;
     /** A correction is issued like any other invoice but reverses one. */
@@ -52,7 +55,17 @@ function buildColumns(
         {
             accessorKey: "dueAt",
             header: "Fällig",
-            cell: ({ row }) => formatDate(row.original.dueAt),
+            cell: ({ row }) =>
+                isOverdue(row.original) ? (
+                    <span className="text-amber-400">
+                        {formatDate(row.original.dueAt)}
+                        <span className="block text-xs">
+                            seit {daysOverdue(row.original.dueAt)} Tagen offen
+                        </span>
+                    </span>
+                ) : (
+                    formatDate(row.original.dueAt)
+                ),
             sortingFn: (a, b) =>
                 (a.original.dueAt?.getTime() ?? 0) -
                 (b.original.dueAt?.getTime() ?? 0),

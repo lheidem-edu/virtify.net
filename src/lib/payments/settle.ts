@@ -3,6 +3,7 @@ import { and, count, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { createId } from "@/lib/db/id";
+import { sendPaymentReceivedMail } from "@/lib/documents/send";
 import { formatPrice } from "@/lib/format";
 import {
     createTransport,
@@ -82,14 +83,22 @@ export async function settlePayment(input: {
             .for("update");
 
         if (!attempt) {
-            return { known: false, changed: false, invoiceId: null };
+            return {
+                known: false,
+                changed: false,
+                invoiceId: null as string | null,
+                paidTo: null as string | null,
+                amountCents: 0,
+            };
         }
 
         if (attempt.status === "succeeded") {
             return {
                 known: true,
                 changed: false,
-                invoiceId: attempt.invoiceId,
+                invoiceId: attempt.invoiceId as string | null,
+                paidTo: null as string | null,
+                amountCents: attempt.amountCents,
             };
         }
 
@@ -115,6 +124,8 @@ export async function settlePayment(input: {
         // Only an invoice that is still open becomes paid. A corrected or
         // already paid one keeps the state it has; the payment row records
         // that money came in either way, which is what the books need.
+        let paidTo: string | null = null;
+
         if (invoice?.status === "issued") {
             await tx
                 .update(schema.invoice)
@@ -124,9 +135,28 @@ export async function settlePayment(input: {
                     updatedAt: settledAt,
                 })
                 .where(eq(schema.invoice.id, invoice.id));
+
+            // The frozen address when the invoice has one, so the receipt
+            // follows the invoice rather than a since-changed account.
+            paidTo = invoice.buyerEmail;
+
+            if (!paidTo) {
+                const [buyer] = await tx
+                    .select({ email: schema.user.email })
+                    .from(schema.user)
+                    .where(eq(schema.user.id, attempt.userId));
+
+                paidTo = buyer?.email ?? null;
+            }
         }
 
-        return { known: true, changed: true, invoiceId: attempt.invoiceId };
+        return {
+            known: true,
+            changed: true,
+            invoiceId: attempt.invoiceId as string | null,
+            paidTo,
+            amountCents: attempt.amountCents,
+        };
     });
 
     if (outcome.changed) {
@@ -134,6 +164,23 @@ export async function settlePayment(input: {
         revalidatePath("/account/admin/invoices");
         revalidatePath(`/account/admin/invoices/${outcome.invoiceId}`);
         revalidatePath("/account");
+
+        // Exactly once per invoice, because only the transaction above can
+        // report `changed`. A webhook holds the customer's redirect while
+        // this runs, which is worth the second it costs: the alternative is
+        // that money leaves their account and nothing says so.
+        if (outcome.invoiceId && outcome.paidTo) {
+            try {
+                await sendPaymentReceivedMail({
+                    invoiceId: outcome.invoiceId,
+                    to: outcome.paidTo,
+                    amountCents: outcome.amountCents ?? 0,
+                    paidAt: settledAt,
+                });
+            } catch (error) {
+                console.error("[payments] receipt mail failed:", error);
+            }
+        }
     }
 
     return outcome;
