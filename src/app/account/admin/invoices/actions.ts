@@ -11,7 +11,7 @@ import { nextNumber } from "@/lib/documents/numbering";
 import { formatRecipient, freezeBuyer } from "@/lib/documents/repository";
 import { sendInvoiceMail } from "@/lib/documents/send";
 import { collectIssuedInvoice } from "@/lib/payments/collect";
-import { policy } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
 
 export type InvoiceState = {
     status:
@@ -371,6 +371,8 @@ export async function issueInvoice(
     await requireAdmin();
 
     const invoiceId = String(data.get("invoiceId") ?? "");
+    const { policy } = await loadSettings();
+    const paymentTermDays = policy.paymentTermDays;
 
     let recipientEmail = "";
     let recipientName = "";
@@ -406,7 +408,7 @@ export async function issueInvoice(
 
             const issuedAt = new Date();
             const dueAt = new Date(issuedAt);
-            dueAt.setDate(dueAt.getDate() + policy.paymentTermDays);
+            dueAt.setDate(dueAt.getDate() + paymentTermDays);
 
             const number = await nextNumber(tx, "invoice", issuedAt);
 

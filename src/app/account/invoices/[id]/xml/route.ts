@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth-session";
 import { loadInvoice, xmlBuyer } from "@/lib/documents/repository";
 import { renderXRechnung } from "@/lib/documents/xrechnung";
+import { loadSettings } from "@/lib/settings";
 
 export async function GET(
     _request: Request,
@@ -26,7 +27,11 @@ export async function GET(
     // Narrowed above; re-binding through the destructure loses it.
     const number = invoice.number as string;
 
+    const { operator, site } = await loadSettings();
+
     const xml = renderXRechnung({
+        seller: operator,
+        siteName: site.name,
         number,
         // A correction carries negative amounts, which a validator rejects
         // under 380; 384 is the corrected-invoice code it belongs to.

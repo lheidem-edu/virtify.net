@@ -13,7 +13,8 @@ import {
     MUTED,
     RULE,
 } from "@/lib/documents/typography";
-import { legalUpdated, operator, site } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
+import { legalUpdated } from "@/lib/site";
 
 const styles = StyleSheet.create({
     page: {
@@ -72,7 +73,10 @@ const styles = StyleSheet.create({
 });
 
 /** Muster-Widerrufsformular nach Anlage 2 zu Art. 246a § 1 Abs. 2 Satz 1 Nr. 1 EGBGB. */
-function Widerrufsformular() {
+function Widerrufsformular({
+    operator,
+    site,
+}: Awaited<ReturnType<typeof loadSettings>>) {
     return (
         <Document
             title={`Muster-Widerrufsformular — ${site.name}`}
@@ -171,7 +175,8 @@ function Widerrufsformular() {
 }
 
 export async function GET() {
-    const buffer = await renderToBuffer(<Widerrufsformular />);
+    const settings = await loadSettings();
+    const buffer = await renderToBuffer(<Widerrufsformular {...settings} />);
 
     return new Response(new Uint8Array(buffer), {
         headers: {

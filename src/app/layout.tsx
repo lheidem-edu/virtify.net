@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./tailwind.css";
-import { site } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
 
 const inter = Inter({
     subsets: ["latin"],
@@ -9,20 +9,24 @@ const inter = Inter({
     display: "swap",
 });
 
-export const metadata: Metadata = {
-    metadataBase: new URL(site.url),
-    title: {
-        default: `${site.name} — KVM-Instanzen`,
-        template: `%s — ${site.name}`,
-    },
-    description: `${site.tagline} ${site.description}`,
-    openGraph: {
-        type: "website",
-        locale: "de_DE",
-        siteName: site.name,
-        url: site.url,
-    },
-};
+export async function generateMetadata(): Promise<Metadata> {
+    const { site } = await loadSettings();
+
+    return {
+        metadataBase: new URL(site.url),
+        title: {
+            default: `${site.name} — KVM-Instanzen`,
+            template: `%s — ${site.name}`,
+        },
+        description: `${site.tagline} ${site.description}`,
+        openGraph: {
+            type: "website",
+            locale: "de_DE",
+            siteName: site.name,
+            url: site.url,
+        },
+    };
+}
 
 /**
  * Root shell only. The marketing frame lives in the (site) group and the

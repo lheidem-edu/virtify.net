@@ -1,0 +1,25 @@
+@title Impressum
+
+@intro
+Anbieterkennzeichnung nach § 5 DDG für {{siteName}}.
+
+@section | Anbieter | prose
+{{operatorName}}
+{{operatorStreet}}
+{{operatorCity}}
+{{operatorCountry}}
+
+{{siteName}} ist eine nicht eingetragene Einzelunternehmung; es besteht kein Handelsregistereintrag.
+
+@section | Kontakt | prose
+E-Mail: [{{operatorEmail}}](mailto:{{operatorEmail}})
+
+Anfragen werden ausschließlich elektronisch entgegengenommen. Eine Telefonnummer wird nicht vorgehalten; eine schnelle elektronische Kontaktaufnahme und unmittelbare Kommunikation ist über die vorstehende Adresse sichergestellt.
+
+@section | Umsatzsteuer | prose
+Umsatzsteuer-Identifikationsnummer gemäß § 27 a UStG: `{{operatorVatId}}`
+
+Als Kleinunternehmer im Sinne des § 19 Abs. 1 UStG wird keine Umsatzsteuer berechnet und in Rechnungen nicht ausgewiesen. Die Umsatzsteuer-Identifikationsnummer wird für innergemeinschaftliche Leistungen und Erwerbe verwendet.
+
+@section | Verbraucherstreitbeilegung | prose
+Wir sind weder bereit noch verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen (§ 36 VSBG).

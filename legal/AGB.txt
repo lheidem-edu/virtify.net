@@ -1,0 +1,300 @@
+ALLGEMEINE GESCHÄFTSBEDINGUNGEN
+
+Stand: 7. September 2026
+
+Diese Bedingungen gelten für die Bereitstellung und den Betrieb von KVM-Instanzen durch Luca Heidemann (virtify.net). Sie ergänzen den jeweils geschlossenen Einzelvertrag; abweichende Regelungen darin gehen vor.
+
+Die bloße Nutzung dieser Website begründet weder ein Vertragsverhältnis noch eine Zahlungspflicht.
+
+§ 1 Geltungsbereich und Begriffe
+
+(1) Diese Allgemeinen Geschäftsbedingungen gelten für alle Verträge über die Bereitstellung und den Betrieb informationstechnischer Infrastruktur in Form von KVM-Instanzen (virtuellen Maschinen) sowie damit verbundene Leistungen zwischen Luca Heidemann, Hermann-Löns-Weg 19, 32832 Augustdorf, Deutschland, handelnd unter virtify.net (nachfolgend „Anbieter“), und dem Kunden.
+
+(2) Der Anbieter ist unter admin@virtify.net erreichbar. Diese Adresse ist zugleich Kontaktstelle nach Art. 11 und 12 der Verordnung (EU) 2022/2065 sowie nach Art. 15 der Verordnung (EU) 2021/784. Die Kommunikation erfolgt in deutscher oder englischer Sprache.
+
+(3) Abweichende, entgegenstehende oder ergänzende Bedingungen des Kunden werden nicht Vertragsbestandteil, es sei denn, der Anbieter stimmt ihrer Geltung ausdrücklich in Textform zu.
+
+(4) Individuelle Vereinbarungen im Einzelvertrag gehen diesen Bedingungen vor (§ 305b BGB). Leistungsumfang, Vergütung und Laufzeit ergeben sich aus dem jeweiligen Angebot.
+
+(5) Verbraucher ist jede natürliche Person, die ein Rechtsgeschäft zu Zwecken abschließt, die überwiegend weder ihrer gewerblichen noch ihrer selbständigen beruflichen Tätigkeit zugerechnet werden können (§ 13 BGB). Unternehmer ist eine natürliche oder juristische Person oder eine rechtsfähige Personengesellschaft, die bei Abschluss des Vertrags in Ausübung ihrer gewerblichen oder selbständigen beruflichen Tätigkeit handelt (§ 14 BGB).
+
+(6) Werktage sind Montag bis Freitag mit Ausnahme der gesetzlichen Feiertage am Sitz des Anbieters.
+
+§ 2 Vertragsgegenstand und Leistungsumfang
+
+(1) Der Anbieter stellt dem Kunden die im Einzelvertrag bezeichneten KVM-Instanzen bereit und betreibt die zugrunde liegende Infrastruktur für die Vertragsdauer. Die Instanzen werden dem Kunden mit ausschließlichem Nutzungsrecht überlassen.
+
+(2) Die wesentlichen Merkmale der Leistung ergeben sich aus der Leistungsbeschreibung des jeweiligen Angebots.
+
+(3) Sämtliche Komponenten der eingesetzten Infrastruktur verbleiben vollumfänglich im Eigentum beziehungsweise in der Verfügungsgewalt des Anbieters. Ein Eigentumsübergang findet nicht statt.
+
+(4) Die Komponenten werden in betriebsbereitem Zustand bereitgestellt. Der Anbieter ist für den Austausch defekter Komponenten verantwortlich.
+
+(5) Zugewiesene IP-Adressen und Adressbereiche werden dem Kunden nur für die Vertragsdauer zur Nutzung überlassen. Ein Anspruch darauf, dass der Instanz dieselbe Adresse für die gesamte Vertragslaufzeit zugewiesen bleibt, besteht nicht; der Anbieter behält sich vor, zugewiesene Adressen bei technischer oder rechtlicher Notwendigkeit zu ändern. Ein Anspruch auf Übertragung oder Mitnahme besteht nicht.
+
+(6) Der Anbieter ist berechtigt, die eingesetzte Hard- und Software an den jeweiligen Stand der Technik anzupassen, soweit der vertraglich geschuldete Leistungsumfang dadurch nicht eingeschränkt wird und die Anpassung für den Kunden zumutbar ist. Ergeben sich hieraus zusätzliche Anforderungen an die vom Kunden betriebenen Systeme, teilt der Anbieter dies rechtzeitig mit.
+
+(7) Soweit der Anbieter Software bereitstellt, erhält der Kunde für die Vertragsdauer ein einfaches, nicht übertragbares Nutzungsrecht. Die Lizenzbedingungen der jeweiligen Hersteller sind einzuhalten.
+
+§ 3 Vertragsschluss, Vertragssprache und Vertragstext
+
+(1) Die Darstellung der Leistungen stellt kein bindendes Angebot dar, sondern eine Aufforderung an den Kunden, ein Angebot abzugeben.
+
+(2) Mit dem Absenden einer Bestellung gibt der Kunde ein verbindliches Angebot ab. Der Anbieter kann dieses innerhalb von fünf Tagen durch eine Bestätigung in Textform oder durch die Bereitstellung der Leistung annehmen.
+
+(3) Unterbreitet der Anbieter dem Kunden ein Angebot im Kundenbereich, kommt der Vertrag mit dessen Annahme durch den Kunden zustande. Die Annahme erfolgt durch die entsprechende Schaltfläche im Kundenbereich; der Zeitpunkt wird dort festgehalten. Ein abgelaufenes Angebot kann nicht mehr angenommen werden.
+
+(4) Vor dem Absenden der Bestellung kann der Kunde sämtliche Angaben prüfen, ändern oder die Bestellung abbrechen.
+
+(5) Anfragen des Kunden zur Erstellung eines individuellen Angebots sind unverbindlich. Der Anbieter unterbreitet hierzu ein Angebot in Textform, das der Kunde innerhalb von fünf Tagen annehmen kann, soweit im Angebot keine andere Frist ausgewiesen ist.
+
+(6) Vertragssprache ist Deutsch.
+
+(7) Der Anbieter speichert den Vertragstext nicht in einer für den Kunden abrufbaren Form. Vor dem Absenden der Bestellung kann der Kunde die Vertragsdaten ausdrucken oder elektronisch sichern. Nach Zugang der Bestellung übersendet der Anbieter die Bestelldaten, die gesetzlich vorgeschriebenen Informationen bei Fernabsatzverträgen sowie diese Bedingungen erneut per E-Mail.
+
+§ 4 Kundenkonto
+
+(1) Für die Verwaltung der Leistungen stellt der Anbieter unter virtify.net/account (https://virtify.net/account) einen Kundenbereich bereit. Dort kann der Kunde seine Stammdaten pflegen sowie Verträge, Angebote und Rechnungen einsehen. Die Einrichtung eines Kontos ist unentgeltlich und begründet für sich genommen keine Zahlungspflicht.
+
+(2) Der Kunde hält die bei der Registrierung angegebenen Daten zutreffend und aktuell und informiert den Anbieter unverzüglich über Änderungen der für die Vertragsdurchführung erforderlichen Daten.
+
+(3) Die Abwicklung und die Übermittlung der im Zusammenhang mit dem Vertragsschluss erforderlichen Informationen erfolgen ganz oder teilweise automatisiert per E-Mail. Der Kunde stellt sicher, dass die hinterlegte E-Mail-Adresse zutreffend ist und der Empfang technisch möglich ist, insbesondere nicht durch Spam-Filter verhindert wird.
+
+(4) Der Kunde kann die Löschung des Kundenkontos jederzeit verlangen, soweit keine laufenden Verträge oder offenen Forderungen entgegenstehen und keine gesetzlichen Aufbewahrungspflichten bestehen.
+
+§ 5 Bereitstellung und Service-Readiness
+
+(1) Die Bereitstellung erfolgt, soweit nicht anders vereinbart, innerhalb eines Werktages nach Vertragsschluss; bei vereinbarter Vorauszahlung nach dem Zeitpunkt der Zahlungsanweisung des Kunden.
+
+(2) Service-Readiness ist erreicht, sobald der Kunde alle vertraglich vereinbarten Zugangsdaten erhalten hat und die Instanz erstmalig in betriebsbereitem Zustand für den Kunden erreichbar ist.
+
+(3) Mit Erreichen der Service-Readiness beginnen die Laufzeit und die Rechnungsstellung.
+
+§ 6 Zugriffs- und Verwaltungsbestimmungen
+
+(1) Der Kunde erhält den im Einzelvertrag vereinbarten Zugang zur Instanz und zum Kundenbereich. Die Zugangsdaten stellt der Anbieter bereit.
+
+(2) Der Kunde hat Zugangsdaten geheim zu halten, vor dem Zugriff Dritter zu schützen und den Anbieter unverzüglich zu informieren, wenn Anhaltspunkte für eine missbräuchliche Nutzung bestehen.
+
+(3) Soweit im Einzelvertrag nichts anderes vereinbart ist, ist der Kunde nicht berechtigt, Konfiguration oder Zugangsdaten der vom Anbieter betriebenen Management-Ebenen zu ändern; dazu zählen insbesondere Host-Systeme, Hypervisor und Out-of-Band-Management. Der Zugang des Kunden beschränkt sich auf die ihm zugewiesene Instanz und den Kundenbereich.
+
+(4) Werden wegen eines Verstoßes gegen Absatz (3) manuelle Eingriffe erforderlich, kann der Anbieter den tatsächlich entstandenen Aufwand einschließlich Anfahrt, Arbeitszeit und Wiederherstellung nach dem im Einzelvertrag vereinbarten oder dem vorab mitgeteilten Stundensatz gesondert in Rechnung stellen. Dem Kunden bleibt der Nachweis vorbehalten, dass kein oder ein geringerer Aufwand entstanden ist.
+
+§ 7 Vergütung und Zahlung
+
+(1) Der Anbieter ist Kleinunternehmer im Sinne des § 19 UStG. Sämtliche Preise enthalten daher keine Umsatzsteuer; Umsatzsteuer wird nicht ausgewiesen und nicht berechnet. Die angegebenen Preise sind Gesamtpreise und enthalten alle Preisbestandteile.
+
+(2) Die Höhe der Vergütung, inkludierte Kontingente und die verfügbaren Zahlungsarten ergeben sich aus dem jeweiligen Angebot.
+
+(3) Die Rechnungsstellung erfolgt, soweit nicht anders vereinbart, im Voraus für den jeweiligen Abrechnungszeitraum. Die Zahlung ist innerhalb von 14 Tagen nach Rechnungsdatum ohne Abzug fällig.
+
+(4) Sind im Einzelvertrag Transfervolumina oder vergleichbare Kontingente inkludiert, informiert der Anbieter den Kunden rechtzeitig vor deren Ausschöpfung. Überschreitungen werden zu den im Einzelvertrag vereinbarten Sätzen abgerechnet.
+
+(5) Bei Zahlungsverzug ist der Anbieter berechtigt, den Zugang zur Instanz nach erfolgloser Mahnung mit einer Frist von sieben Werktagen vorübergehend zu sperren. Während der Sperrung kann der Anbieter die vertraglichen Leistungen nicht erbringen. Gesetzliche Ansprüche auf Verzugszinsen und Ersatz von Mahnkosten bleiben unberührt.
+
+(6) Soweit nicht anders vereinbart, erfolgt die Zahlung bargeldlos. Kosten der Geldübermittlung trägt der Kunde, soweit die Zahlung außerhalb der Europäischen Union veranlasst wurde.
+
+(7) Soweit im Kundenbereich angeboten und im Einzelvertrag nicht abweichend vereinbart, stehen dem Kunden folgende Zahlungsarten zur Verfügung: Überweisung auf das dem Kunden mitgeteilte Konto, Kreditkartenzahlung über Stripe sowie Zahlung über PayPal. Die Zahlung per Kreditkarte und über PayPal wird auf einer vom jeweiligen Zahlungsdienstleister betriebenen Seite abgewickelt; für diesen Zahlungsvorgang gelten zusätzlich dessen Nutzungsbedingungen und Datenschutzhinweise. Die Zahlungsdaten selbst gibt der Kunde ausschließlich dort ein; sie werden dem Anbieter nicht bekannt.
+
+(8) Der Kunde kann im Kundenbereich (https://virtify.net/account) für einen Vertrag ein Zahlungsmittel hinterlegen. Damit ermächtigt er den Anbieter, die für diesen Vertrag ausgestellten Rechnungen mit ihrer Ausstellung über das hinterlegte Zahlungsmittel einzuziehen, frühestens jedoch am Rechnungsdatum. Rechnungen aus anderen Verträgen werden darüber nicht eingezogen. Der Kunde kann die Ermächtigung jederzeit im Kundenbereich mit Wirkung für die Zukunft widerrufen; bereits eingezogene Beträge bleiben davon unberührt.
+
+(9) Scheitert ein Einzug, bleibt es bei der Fälligkeit nach Absatz (3); die Zahlungsfrist verlängert sich dadurch nicht. Der Kunde kann die Rechnung in diesem Fall auf einem der übrigen Wege begleichen. Zahlt er nicht, gerät er nach den allgemeinen Regeln in Verzug; Absatz (5) bleibt unberührt. Ein Einzug wird nicht automatisch wiederholt.
+
+(10) Entgelte, die das Kreditinstitut oder der Zahlungsdienstleister des Kunden diesem für die Zahlung berechnet, trägt der Kunde.
+
+(11) Rechnungen werden elektronisch erteilt: als PDF und zusätzlich im strukturierten Format XRechnung. Sie werden an die im Kundenkonto hinterlegte E-Mail-Adresse versandt und stehen dort dauerhaft zum Abruf bereit. Mit Vertragsschluss stimmt der Kunde dem elektronischen Rechnungsversand zu; eine Rechnung in Papierform wird nicht erteilt.
+
+(12) Eine ausgestellte Rechnung wird nicht verändert. Korrekturen erfolgen durch Stornierung und Neuausstellung.
+
+(13) Der Kunde kann nur mit unbestrittenen oder rechtskräftig festgestellten Forderungen aufrechnen. Ein Zurückbehaltungsrecht steht ihm nur wegen Ansprüchen aus demselben Vertragsverhältnis zu.
+
+§ 8 Laufzeit und Kündigung
+
+(1) Der Vertrag wird mit Vertragsschluss wirksam. Er hat die im jeweiligen Angebot ausgewiesene Grundlaufzeit; eine Grundlaufzeit von mehr als zwölf Monaten wird nicht vereinbart. Ist keine Grundlaufzeit ausgewiesen, beträgt sie zwölf Monate ab Service-Readiness und endet zwölf Monate nach dem Ende des Monats, in dem die Service-Readiness erreicht wurde.
+
+(2) Wird der Vertrag nicht spätestens einen Monat vor Ablauf der Grundlaufzeit von einer der Vertragsparteien gekündigt, verlängert er sich auf unbestimmte Zeit. Das verlängerte Vertragsverhältnis kann von beiden Vertragsparteien jederzeit mit einer Frist von einem Monat gekündigt werden.
+
+(3) Das Recht zur außerordentlichen Kündigung aus wichtigem Grund bleibt unberührt. Ein wichtiger Grund liegt für den Anbieter insbesondere bei erheblichen oder wiederholten Verstößen gegen die §§ 10 bis 13 sowie bei Zahlungsverzug mit mehr als zwei Abrechnungszeiträumen vor.
+
+(4) Kündigungen bedürfen der Textform, etwa per E-Mail oder Ticket. Verbraucher, die den Vertrag über die Website geschlossen haben, können die Kündigung zusätzlich über die Kündigungsschaltfläche (https://virtify.net/cancellation) nach § 312k BGB erklären; diese ist auf jeder Seite von virtify.net unmittelbar erreichbar. Den Eingang der Kündigung bestätigt der Anbieter unverzüglich in Textform an die dabei angegebene E-Mail-Adresse.
+
+(5) Der Kunde ist verpflichtet, seine Daten vor Vertragsende zu sichern. Der Anbieter hält die Daten des Kunden nach Vertragsende noch mindestens 14 Tage zum Abruf bereit und löscht die Instanz einschließlich der darauf gespeicherten Daten erst nach Ablauf dieser Frist. Innerhalb dieser Frist unterstützt der Anbieter den Kunden im Rahmen seiner betrieblichen Möglichkeiten beim Datenexport. Eine frühere Löschung erfolgt nur auf Verlangen des Kunden oder soweit rechtliche Gründe sie gebieten.
+
+§ 9 Betrieb, Wartung und Verfügbarkeit
+
+(1) Der Anbieter betreibt die Infrastruktur mit der Sorgfalt eines ordentlichen Kaufmanns und beseitigt Störungen im Rahmen seiner betrieblichen Möglichkeiten.
+
+(2) Eine bestimmte Verfügbarkeit wird nicht allgemein zugesagt. Ein Service Level Agreement kommt nur zustande, soweit es im jeweiligen Angebot ausdrücklich ausgewiesen ist; Zusagewert, Messverfahren und etwaige Gutschriften richten sich dann ausschließlich danach.
+
+(3) Maßgeblicher Übergabepunkt für eine vereinbarte Verfügbarkeitsmessung ist, soweit nicht anders vereinbart, der Ausgang des vom Anbieter betriebenen Netzes.
+
+(4) Geplante Wartungsarbeiten werden dem Kunden mindestens sieben Werktage im Voraus in Textform mitgeteilt und gelten nicht als Ausfallzeit.
+
+(5) Dringende sicherheitsrelevante Wartungen — insbesondere das Einspielen von Aktualisierungen zur Schließung bekannt gewordener Schwachstellen — kann der Anbieter mit verkürzter Frist ankündigen. Die Ankündigung erfolgt so früh wie möglich, in der Regel jedoch mindestens 24 Stunden im Voraus in Textform. Auch diese Wartungen gelten nicht als Ausfallzeit.
+
+(6) Unaufschiebbare Maßnahmen zur Abwehr akuter Gefahren für den Betrieb, die Sicherheit oder Dritte kann der Anbieter ohne Vorankündigung durchführen. Der Kunde wird unverzüglich nachträglich informiert.
+
+(7) Nicht als Ausfallzeit gelten ferner Zeiten, in denen die Instanz aus Gründen außerhalb des Einflussbereichs des Anbieters nicht erreichbar ist, insbesondere höhere Gewalt, Störungen bei Providern außerhalb des vom Anbieter betriebenen Netzes, Ausfälle der Basisinfrastruktur des Rechenzentrums, Distributed-Denial-of-Service-Angriffe sowie vom Kunden verursachte Fehlfunktionen oder Konfigurationsfehler.
+
+(8) Störungen sind dem Anbieter unverzüglich in Textform anzuzeigen.
+
+§ 10 Nutzungsbestimmungen
+
+(1) Der Kunde verpflichtet sich zur ausschließlich rechtmäßigen Nutzung der bereitgestellten Leistungen unter Beachtung sämtlicher geltender Rechtsvorschriften.
+
+(2) Untersagt sind insbesondere:
+    – rechtswidrige Handlungen jeglicher Art,
+    – der Versand unerwünschter elektronischer Nachrichten sowie der Betrieb offener Mail-Relays oder vergleichbarer Systeme,
+    – Denial-of-Service-Angriffe und sonstige Handlungen, die geeignet sind, Netze, Systeme oder Daten Dritter zu beeinträchtigen oder zu gefährden,
+    – das Mining von Kryptowährungen oder vergleichbare rechenintensive Operationen ohne vorherige Absprache,
+    – Verstöße gegen die Nutzungsbedingungen oder Richtlinien der eingesetzten Netz- und Rechenzentrumsbetreiber,
+    – die Verbreitung urheberrechtlich geschützten Materials ohne entsprechende Lizenz, insbesondere über Torrent- oder Filesharing-Dienste.
+
+(3) Bei einem Verstoß ist der Anbieter berechtigt, die Instanz zu sperren oder vom Netz zu trennen und den Vertrag außerordentlich fristlos zu kündigen. Die Maßnahme wird auf das Erforderliche beschränkt und, soweit möglich, vorher angekündigt; bei drohender Gefahr für das Netz, die Systeme des Anbieters oder Dritte kann sie ohne Vorankündigung erfolgen. Der Kunde wird unverzüglich informiert.
+
+(4) Im Fall einer vom Kunden zu vertretenden außerordentlichen Kündigung bleibt der Vergütungsanspruch des Anbieters für den laufenden Abrechnungszeitraum bestehen. Dem Kunden bleibt der Nachweis vorbehalten, dass kein oder ein geringerer Schaden entstanden ist. Weitergehende gesetzliche Ansprüche bleiben unberührt.
+
+(5) Eine allgemeine Pflicht, die vom Kunden gespeicherten Inhalte zu überwachen oder aktiv nach rechtswidrigen Inhalten zu suchen, trifft den Anbieter nicht (§§ 7 ff. DDG, Art. 8 der Verordnung (EU) 2022/2065).
+
+§ 11 Pflichten des Kunden und Datensicherung
+
+(1) Für die auf der Instanz betriebenen Systeme, die dort eingesetzte Software und die dort gespeicherten Inhalte ist der Kunde allein verantwortlich.
+
+(2) Soweit der Kunde administrative Rechte auf der Instanz erhält, obliegen ihm deren Verwaltung und Absicherung. Er hält die eingesetzte Software aktuell, informiert sich über bekannt werdende Sicherheitslücken und schließt diese selbständig. Vom Anbieter bereitgestellte oder empfohlene Werkzeuge entbinden ihn hiervon nicht.
+
+(3) Der Kunde richtet seine Instanz so ein und verwaltet sie so, dass die Sicherheit, Integrität und Verfügbarkeit der Systeme und des Netzes des Anbieters sowie der Systeme, Netze und Daten Dritter nicht gefährdet werden.
+
+(4) Die Datensicherung obliegt dem Kunden, soweit im Einzelvertrag keine Sicherungsleistung ausgewiesen ist. Im Fall eines Datenverlusts überträgt der Kunde die betreffenden Datenbestände erneut auf die Instanz.
+
+(5) Missbrauchsmeldungen beantwortet der Kunde unverzüglich.
+
+§ 12 Verbreitung terroristischer Inhalte
+
+(1) Die Verbreitung terroristischer Inhalte unter Nutzung der Dienste des Anbieters ist untersagt.
+
+(2) Terroristische Inhalte sind Materialien im Sinne des Art. 2 Nr. 7 der Verordnung (EU) 2021/784 (TCO-VO), insbesondere Materialien, die zur Begehung terroristischer Straftaten anstiften, dazu bestimmen oder anleiten, zur Beteiligung an einer terroristischen Vereinigung bestimmen oder die Begehung einer solchen Straftat androhen.
+
+(3) Meldungen über mutmaßlich terroristische Inhalte sind elektronisch an die Kontaktstelle des Anbieters zu richten: admin@virtify.net.
+
+(4) Eine Entfernungsanordnung der zuständigen Behörde setzt der Anbieter spätestens innerhalb einer Stunde nach Erhalt um, sofern die Anordnung keine offensichtlichen Fehler und keine unzureichenden Informationen enthält. Anschließend informiert er die Behörde und den Kunden unverzüglich über die getroffenen Maßnahmen.
+
+(5) Liegt keine behördliche Entfernungsanordnung vor, prüft der Anbieter die gemeldeten Inhalte. Bestätigt sich die öffentliche Verbreitung terroristischer Inhalte, ergreift er nach pflichtgemäßem Ermessen Maßnahmen, um die Verbreitung schnellstmöglich zu unterbinden; hierzu zählen insbesondere die Entfernung oder Sperrung der Inhalte, die Sperrung der Instanz, die Sperrung des Kundenkontos sowie die Verhinderung des Zugriffs auf die Dienste.
+
+(6) Gegen die getroffenen Maßnahmen kann der Kunde innerhalb eines Monats nach der Mitteilung Beschwerde einlegen. Die Beschwerde ist zu begründen und an die Kontaktstelle zu richten. Der Anbieter teilt das Ergebnis seiner Prüfung innerhalb von zwei Wochen nach Eingang der Beschwerde mit. Erweist sich eine Maßnahme als unberechtigt, wird sie aufgehoben und die betroffenen Inhalte werden wiederhergestellt.
+
+§ 13 Umgang mit rechtswidrigen Inhalten
+
+(1) Die Veröffentlichung rechtswidriger Inhalte unter Nutzung der Dienste des Anbieters ist untersagt. Für die über die Instanz veröffentlichten oder in sonstiger Weise zugänglich gemachten Inhalte ist der Kunde allein verantwortlich.
+
+(2) Rechtswidrig sind insbesondere Inhalte, die
+    – gegen Urheber-, Marken- oder Wettbewerbsrecht verstoßen,
+    – den Tatbestand einer Straftat oder einer Ordnungswidrigkeit erfüllen,
+    – gegen datenschutzrechtliche Vorschriften oder die Pflicht zur Anbieterkennzeichnung verstoßen,
+    – rassistisch, diskriminierend, beleidigend oder gewaltverherrlichend sind oder in sonstiger Weise Persönlichkeitsrechte oder andere Grundrechte verletzen,
+    – jugendgefährdend sind.
+
+(3) Der Kunde und Dritte können mutmaßlich rechtswidrige Inhalte jederzeit elektronisch an die Kontaktstelle des Anbieters nach Art. 11 und 12 der Verordnung (EU) 2022/2065 melden: admin@virtify.net. Die Meldung soll die beanstandeten Inhalte hinreichend genau bezeichnen und begründen.
+
+(4) Der Anbieter prüft eingehende Meldungen sorgfältig, objektiv und verhältnismäßig. Die Prüfung wird von Menschen vorgenommen; automatisierte Mittel werden allenfalls unterstützend eingesetzt.
+
+(5) Bestätigt sich die Rechtswidrigkeit, ergreift der Anbieter nach pflichtgemäßem Ermessen Maßnahmen: Entfernung oder Sperrung der betroffenen Inhalte, Sperrung der Instanz, Sperrung des Kundenkontos, Verhinderung des Zugriffs auf die Dienste oder Kündigung des Vertragsverhältnisses. Dabei berücksichtigt er die Rechte und berechtigten Interessen aller Beteiligten, insbesondere die Freiheit der Meinungsäußerung.
+
+(6) Über eine Maßnahme nach Absatz (5) informiert der Anbieter den Kunden und legt eine Begründung nach Art. 17 der Verordnung (EU) 2022/2065 vor.
+
+(7) Gegen eine Maßnahme nach Absatz (5) kann der Kunde innerhalb eines Monats nach Zugang der Begründung Beschwerde einlegen. Die Beschwerde ist zu begründen und an die Kontaktstelle zu richten. Der Anbieter teilt das Ergebnis innerhalb von zwei Wochen nach Eingang mit und hebt unberechtigte Maßnahmen auf.
+
+§ 14 Mängelhaftung und Haftung
+
+(1) Es bestehen die gesetzlichen Mängelhaftungsrechte.
+
+(2) Der Anbieter haftet unbeschränkt bei Vorsatz und grober Fahrlässigkeit, bei der Verletzung des Lebens, des Körpers oder der Gesundheit, im Umfang einer übernommenen Garantie sowie nach dem Produkthaftungsgesetz.
+
+(3) Bei einfacher Fahrlässigkeit haftet der Anbieter nur bei der Verletzung wesentlicher Vertragspflichten (Kardinalpflichten) und der Höhe nach begrenzt auf den vorhersehbaren, vertragstypischen Schaden. Wesentliche Vertragspflichten sind solche, deren Erfüllung die ordnungsgemäße Durchführung des Vertrags überhaupt erst ermöglicht und auf deren Einhaltung der Kunde regelmäßig vertrauen darf.
+
+(4) Eine Haftung für mittelbare Schäden und entgangenen Gewinn ist bei einfacher Fahrlässigkeit ausgeschlossen.
+
+(5) Die Haftung für Datenverlust ist auf den Wiederherstellungsaufwand beschränkt, der bei ordnungsgemäßer und regelmäßiger Datensicherung durch den Kunden angefallen wäre. Die Absätze (2) und (3) bleiben unberührt.
+
+(6) Die verschuldensunabhängige Haftung für bei Vertragsschluss vorhandene Mängel nach § 536a Abs. 1 Alt. 1 BGB ist ausgeschlossen.
+
+(7) Die vorstehenden Haftungsbeschränkungen gelten auch zugunsten der gesetzlichen Vertreter und Erfüllungsgehilfen des Anbieters.
+
+§ 15 Freistellung
+
+Der Kunde stellt den Anbieter von Ansprüchen Dritter frei, die auf einer rechtswidrigen Nutzung der Leistungen durch den Kunden oder auf den von ihm gespeicherten Inhalten beruhen, einschließlich der angemessenen Kosten der Rechtsverteidigung. Der Kunde unterstützt den Anbieter bei der Abwehr solcher Ansprüche. Dies gilt nicht, soweit der Kunde die Rechtsverletzung nicht zu vertreten hat.
+
+§ 16 Datenschutz und Vertraulichkeit
+
+(1) Der Anbieter hält die Bestimmungen der Datenschutz-Grundverordnung sowie sämtliche anwendbaren nationalen Datenschutzvorschriften ein. Eine Weitergabe von Daten an Dritte erfolgt ausschließlich im gesetzlich vorgeschriebenen Umfang oder mit ausdrücklicher Zustimmung des Kunden.
+
+(2) Verarbeitet der Kunde auf der Instanz personenbezogene Daten, ist er hierfür Verantwortlicher im Sinne des Art. 4 Nr. 7 DSGVO. Vor Beginn einer solchen Verarbeitung wird ein Auftragsverarbeitungsvertrag nach Art. 28 DSGVO geschlossen.
+
+(3) Der Kunde ist bei der Nutzung der Leistungen selbst für die Einhaltung datenschutzrechtlicher Bestimmungen verantwortlich, insbesondere für Datenschutzerklärungen, die Einholung von Einwilligungen und die Umsetzung von Betroffenenrechten.
+
+(4) Beide Vertragsparteien behandeln vertrauliche Informationen der jeweils anderen Partei vertraulich, auch über das Vertragsende hinaus.
+
+(5) Für die Verarbeitung beim Besuch dieser Website gilt die Datenschutzerklärung (https://virtify.net/privacy).
+
+§ 17 Höhere Gewalt
+
+Ereignisse höherer Gewalt, die der Anbieter nicht zu vertreten hat — insbesondere Naturkatastrophen, Krieg, Terrorakte, Streiks, behördliche Anordnungen sowie großflächige Strom- oder Netzausfälle — befreien die Vertragsparteien für ihre Dauer von den betroffenen Leistungspflichten. Dauert ein solcher Zustand länger als sechs Wochen an, kann jede Vertragspartei den Vertrag außerordentlich kündigen.
+
+§ 18 Änderungen dieser Bedingungen
+
+(1) Der Anbieter kann diese Bedingungen mit Wirkung für die Zukunft ändern, soweit die Änderung durch eine Änderung der Rechtslage, durch höchstrichterliche Rechtsprechung oder durch technische Entwicklungen veranlasst ist und den Kunden nicht unangemessen benachteiligt.
+
+(2) Änderungen werden dem Kunden mindestens sechs Wochen vor dem geplanten Wirksamwerden in Textform mitgeteilt. Widerspricht der Kunde nicht innerhalb von sechs Wochen nach Zugang in Textform, gelten die Änderungen als angenommen; auf diese Wirkung wird in der Mitteilung gesondert hingewiesen. Widerspricht der Kunde, kann jede Vertragspartei den Vertrag zum geplanten Zeitpunkt des Wirksamwerdens kündigen.
+
+(3) Änderungen der Hauptleistungspflichten oder der vereinbarten Vergütung können auf diesem Weg nicht herbeigeführt werden.
+
+§ 19 Widerrufsrecht für Verbraucher
+
+(1) Ist der Kunde Verbraucher im Sinne des § 13 BGB, steht ihm bei Fernabsatzverträgen ein gesetzliches Widerrufsrecht nach § 355 BGB zu. Der Widerruf kann innerhalb von 14 Tagen ab Vertragsschluss ohne Angabe von Gründen in Textform erklärt werden.
+
+(2) Im Fall eines wirksamen Widerrufs werden bereits geleistete Zahlungen erstattet.
+
+(3) Verlangt der Verbraucher ausdrücklich, dass der Anbieter vor Ablauf der Widerrufsfrist mit der Bereitstellung der Leistung beginnt, schuldet der Verbraucher im Fall eines Widerrufs Wertersatz für die bis zum Widerruf erbrachten Leistungen nach Maßgabe der gesetzlichen Vorschriften.
+
+(4) Das Widerrufsrecht erlischt nur unter den gesetzlichen Voraussetzungen, insbesondere bei vollständiger Erbringung der Dienstleistung und nach vorheriger ausdrücklicher Zustimmung des Verbrauchers zum Leistungsbeginn vor Ablauf der Widerrufsfrist sowie dessen Bestätigung der Kenntnis vom Verlust des Widerrufsrechts bei vollständiger Vertragserfüllung.
+
+(5) Unternehmern steht kein Widerrufsrecht zu.
+
+§ 20 Widerrufsbelehrung
+
+Widerrufsrecht
+
+Sie haben das Recht, binnen vierzehn Tagen ohne Angabe von Gründen diesen Vertrag zu widerrufen. Die Widerrufsfrist beträgt vierzehn Tage ab dem Tag des Vertragsabschlusses.
+
+Um Ihr Widerrufsrecht auszuüben, müssen Sie uns (Luca Heidemann, Hermann-Löns-Weg 19, 32832 Augustdorf, Deutschland, E-Mail: admin@virtify.net) mittels einer eindeutigen Erklärung, etwa per E-Mail oder Ticket, über Ihren Entschluss, diesen Vertrag zu widerrufen, informieren. Sie können dafür das Muster-Widerrufsformular (PDF) (https://virtify.net/withdrawal-form) verwenden, das jedoch nicht vorgeschrieben ist.
+
+Zur Wahrung der Widerrufsfrist reicht es aus, dass Sie die Mitteilung über die Ausübung des Widerrufsrechts vor Ablauf der Widerrufsfrist absenden.
+
+Folgen des Widerrufs
+
+Wenn Sie diesen Vertrag widerrufen, haben wir Ihnen alle Zahlungen, die wir von Ihnen erhalten haben, unverzüglich und spätestens binnen vierzehn Tagen ab dem Tag zurückzuzahlen, an dem die Mitteilung über Ihren Widerruf dieses Vertrags bei uns eingegangen ist. Für diese Rückzahlung verwenden wir dasselbe Zahlungsmittel, das Sie bei der ursprünglichen Transaktion eingesetzt haben, es sei denn, mit Ihnen wurde ausdrücklich etwas anderes vereinbart; in keinem Fall werden Ihnen wegen dieser Rückzahlung Entgelte berechnet.
+
+Haben Sie verlangt, dass die Dienstleistung während der Widerrufsfrist beginnen soll, so haben Sie uns einen angemessenen Betrag zu zahlen, der dem Anteil der bis zu dem Zeitpunkt, zu dem Sie uns von der Ausübung des Widerrufsrechts hinsichtlich dieses Vertrags unterrichten, bereits erbrachten Dienstleistungen im Vergleich zum Gesamtumfang der im Vertrag vorgesehenen Dienstleistungen entspricht.
+
+Die Anrede in dieser Belehrung folgt dem gesetzlichen Mustertext nach Anlage 1 zu Art. 246a EGBGB.
+
+§ 21 Muster-Widerrufsformular
+
+Das Muster-Widerrufsformular nach Anlage 2 zu Art. 246a § 1 Abs. 2 Satz 1 Nr. 1 EGBGB steht als PDF zum Abruf bereit. Seine Verwendung ist nicht vorgeschrieben; der Widerruf kann auch formlos in Textform erklärt werden.
+
+Muster-Widerrufsformular (PDF): https://virtify.net/withdrawal-form
+
+§ 22 Schlussbestimmungen
+
+(1) Für Kündigungen, den Widerruf und sonstige Mitteilungen genügt die Textform, etwa per E-Mail oder Ticket.
+
+(2) Änderungen und Ergänzungen des Vertrags bedürfen der Textform; dies gilt auch für die Aufhebung dieses Formerfordernisses. Der Vorrang von Individualabreden nach § 305b BGB bleibt unberührt.
+
+(3) Der Kunde kann Rechte und Pflichten aus dem Vertrag nur mit vorheriger Zustimmung des Anbieters in Textform auf Dritte übertragen.
+
+(4) Die Vertragsparteien versuchen bei Streitigkeiten aus diesem Vertragsverhältnis zunächst eine außergerichtliche Einigung. Der Anbieter ist weder bereit noch verpflichtet, an einem Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.
+
+(5) Ist der Kunde Kaufmann, juristische Person des öffentlichen Rechts oder öffentlich-rechtliches Sondervermögen, ist der Sitz des Anbieters ausschließlicher Gerichtsstand. Für Verbraucher gelten ausschließlich die gesetzlichen Gerichtsstandsregeln.
+
+(6) Es gilt das Recht der Bundesrepublik Deutschland unter Ausschluss des UN-Kaufrechts. Für Verbraucher gilt dies nur, soweit hierdurch nicht zwingende Verbraucherschutzvorschriften des Staates eingeschränkt werden, in dem der Kunde seinen gewöhnlichen Aufenthalt hat.
+
+(7) Sollten einzelne Bestimmungen dieser Bedingungen ganz oder teilweise unwirksam oder undurchführbar sein oder werden, bleibt die Wirksamkeit der übrigen Bestimmungen unberührt. An die Stelle der unwirksamen Bestimmung treten die gesetzlichen Vorschriften.

@@ -18,6 +18,21 @@ const host = process.env.VIRTIFY_SMTP_HOST;
 const to = process.argv[2] ?? "admin@virtify.net";
 const from = "admin@virtify.net";
 
+/** Mirrors ehloName() in src/lib/mail.ts — see the note there. */
+function ehloName() {
+    const value = process.env.VIRTIFY_SMTP_EHLO?.trim();
+
+    if (!value || value.startsWith("[")) {
+        return value || undefined;
+    }
+
+    if (value.includes(":")) {
+        return `[IPv6:${value}]`;
+    }
+
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(value) ? `[${value}]` : value;
+}
+
 /** Turns the responses this setup actually produces into plain advice. */
 function explain(response) {
     if (response.includes("4.4.62")) {
@@ -54,7 +69,9 @@ function explain(response) {
             "  The relay will not accept this sender or this recipient.",
             "",
             "  Allow this server's IP on the relay, and make sure the sending",
-            "  IP is covered by the SPF record of the From domain.",
+            "  IP is covered by the SPF record of the From domain. If the relay",
+            "  objects to the greeting, set VIRTIFY_SMTP_EHLO to this server's",
+            "  public address or to a name that resolves back to it.",
             "",
         ].join("\n");
     }
@@ -81,6 +98,7 @@ if (!host) {
 }
 
 line("VIRTIFY_SMTP_HOST", host);
+line("EHLO name", ehloName() ?? "this machine's hostname (nodemailer)");
 line("port", "25 (fixed)");
 line("address family", "IPv4 (forced)");
 line("auth", "none (fixed)");
@@ -101,6 +119,7 @@ try {
 const transport = nodemailer.createTransport({
     host,
     port: 25,
+    name: ehloName(),
     secure: false,
     auth: undefined,
     tls: { rejectUnauthorized: false },

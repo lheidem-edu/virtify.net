@@ -1,6 +1,6 @@
 import "server-only";
 import nodemailer from "nodemailer";
-import { operator, site } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
 
 /**
  * `family` is forwarded to net.connect at runtime but is absent from
@@ -10,6 +10,30 @@ import { operator, site } from "@/lib/site";
 type SmtpOptions = Parameters<typeof nodemailer.createTransport>[0] & {
     family?: 4 | 6;
 };
+
+/**
+ * The name this server gives in EHLO. Nodemailer sends the machine's own
+ * hostname and falls back to 127.0.0.1 when that is not a name anyone outside
+ * knows — which is what Microsoft 365 saw in the header of the messages it
+ * sorted as spam. An address rather than a name is fine there, but only as an
+ * address literal (RFC 5321 §4.1.3): a bare 118.91.184.85 is neither a domain
+ * nor a literal, and a receiving MTA is entitled to score it as a malformed
+ * greeting. The brackets are added here so the variable can hold the plain
+ * address, which is what anyone setting it would write.
+ */
+export function ehloName() {
+    const value = process.env.VIRTIFY_SMTP_EHLO?.trim();
+
+    if (!value || value.startsWith("[")) {
+        return value || undefined;
+    }
+
+    if (value.includes(":")) {
+        return `[IPv6:${value}]`;
+    }
+
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(value) ? `[${value}]` : value;
+}
 
 /**
  * Mail relay used for outbound notifications. The relay is reached on port 25
@@ -28,6 +52,7 @@ export function createTransport() {
     const options: SmtpOptions = {
         host,
         port: 25,
+        name: ehloName(),
         secure: false,
         auth: undefined,
         tls: { rejectUnauthorized: false },
@@ -67,8 +92,15 @@ export function logMailError(context: string, error: unknown) {
     );
 }
 
-/** Every outbound mail is sent from, and delivered to, the operator address. */
-export const mailFrom = operator.email;
+/**
+ * Every outbound mail is sent from, and delivered to, the operator address.
+ * A function rather than a constant because the address is editable now: a
+ * module-level copy would keep the old one until the next deployment.
+ */
+export async function mailFrom() {
+    const { operator } = await loadSettings();
+    return operator.email;
+}
 
 export type EmailRow = { label: string; value: string };
 
@@ -100,7 +132,7 @@ const LINE = "#e4e4e7";
  * a dark background either prints as a black page or gets inverted by the
  * client. Tables and inline styles only — no external CSS, no flexbox.
  */
-export function renderEmail(options: {
+export async function renderEmail(options: {
     preheader: string;
     heading: string;
     intro: string[];
@@ -110,6 +142,8 @@ export function renderEmail(options: {
     rows?: EmailRow[];
     outro?: string[];
 }) {
+    const { operator, site } = await loadSettings();
+
     const paragraph = (text: string) =>
         `<p style="margin:0 0 14px;font:400 15px/1.65 ${FONT};color:${MUTED};">${escapeMultiline(text)}</p>`;
 

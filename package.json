@@ -17,6 +17,7 @@
         "db:studio": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs studio",
         "db:up": "node scripts/db.mjs up",
         "dev": "next dev --turbopack",
+        "legal:export": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/legal-export.mts",
         "lint": "biome lint",
         "mail:check": "node --env-file-if-exists=.env.local scripts/mail-check.mjs",
         "start": "node scripts/migrate.mjs && next start"

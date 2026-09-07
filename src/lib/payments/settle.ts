@@ -11,7 +11,7 @@ import {
     mailFrom,
     renderEmail,
 } from "@/lib/mail";
-import { operator, site } from "@/lib/site";
+import { loadSettings } from "@/lib/settings";
 
 /**
  * Everything that decides whether an invoice is paid lives here, once. Both
@@ -250,6 +250,7 @@ export async function markReversed(input: {
     captureRef: string | null;
     event: string;
 }) {
+    const { operator, site } = await loadSettings();
     if (!input.captureRef) {
         return;
     }
@@ -285,7 +286,7 @@ export async function markReversed(input: {
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to: operator.email,
             subject: `Zahlung zurückgegangen — ${input.event}`,
             text: [
@@ -294,7 +295,7 @@ export async function markReversed(input: {
                 "Die Rechnung steht weiterhin auf „Bezahlt“ — ob sie wieder zu öffnen oder zu korrigieren ist, entscheidest du.",
                 `${site.url}/account/admin/invoices/${row.invoiceId}`,
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Zahlung über ${formatPrice(row.amountCents)} zurückgegangen.`,
                 heading: "Zahlung zurückgegangen",
                 intro: [
@@ -326,6 +327,7 @@ export async function notifyUnmatchedPayment(input: {
     providerRef: string;
     event: string;
 }) {
+    const { operator } = await loadSettings();
     console.error("[payments] a payment matched no attempt:", input);
 
     const transport = createTransport();
@@ -336,7 +338,7 @@ export async function notifyUnmatchedPayment(input: {
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to: operator.email,
             subject: `Zahlung ohne Zuordnung — ${input.provider}`,
             text: [
@@ -344,7 +346,7 @@ export async function notifyUnmatchedPayment(input: {
                 "",
                 "Es wurde nichts verbucht. Bitte im Konto des Anbieters nachsehen, worum es geht.",
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `${input.provider}: Zahlung ohne Zuordnung.`,
                 heading: "Zahlung ohne Zuordnung",
                 intro: [
@@ -387,6 +389,7 @@ async function notifyUnexpectedPayment(input: {
     status: string;
     amountCents: number;
 }) {
+    const { operator, site } = await loadSettings();
     const transport = createTransport();
 
     if (!transport) {
@@ -396,7 +399,7 @@ async function notifyUnexpectedPayment(input: {
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to: operator.email,
             subject: `Unerwarteter Zahlungseingang — ${input.invoiceNumber}`,
             text: [
@@ -405,7 +408,7 @@ async function notifyUnexpectedPayment(input: {
                 "Die Zahlung ist erfasst, der Rechnungsstatus wurde nicht verändert. Bitte prüfen, ob der Betrag zu erstatten ist.",
                 `${site.url}/account/admin/invoices`,
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Zahlung zu ${input.invoiceNumber}, die nicht erwartet war.`,
                 heading: "Unerwarteter Zahlungseingang",
                 intro: [
@@ -494,6 +497,7 @@ export async function notifyCollectionFailed(input: {
     amountCents: number;
     reason: string;
 }) {
+    const { operator, site } = await loadSettings();
     const transport = createTransport();
 
     if (!transport) {
@@ -506,7 +510,7 @@ export async function notifyCollectionFailed(input: {
 
     try {
         await transport.sendMail({
-            from: mailFrom,
+            from: await mailFrom(),
             to: operator.email,
             subject: `Einzug fehlgeschlagen — ${input.invoiceNumber}`,
             text: [
@@ -517,7 +521,7 @@ export async function notifyCollectionFailed(input: {
                 "Die Rechnung bleibt offen. Es wird nichts automatisch erneut versucht.",
                 `${site.url}/account/admin/invoices`,
             ].join("\n"),
-            html: renderEmail({
+            html: await renderEmail({
                 preheader: `Einzug für ${input.invoiceNumber} fehlgeschlagen.`,
                 heading: "Einzug fehlgeschlagen",
                 intro: [

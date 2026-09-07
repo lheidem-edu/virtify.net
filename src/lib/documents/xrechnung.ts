@@ -1,5 +1,5 @@
 import type { Totals } from "@/lib/documents/totals";
-import { operator, site } from "@/lib/site";
+import type { Settings } from "@/lib/settings";
 
 /**
  * XRechnung in UN/CEFACT CII syntax (EN 16931 / CIUS XRechnung 3.0).
@@ -15,6 +15,9 @@ import { operator, site } from "@/lib/site";
  */
 
 export type XRechnungInput = {
+    /** The operator, as configured — never a module-level copy of it. */
+    seller: Settings["operator"];
+    siteName: string;
     number: string;
     /**
      * UNTDID 1001: 380 is a commercial invoice, 384 a corrected one. A
@@ -140,18 +143,18 @@ export function renderXRechnung(input: XRechnungInput) {
     <ram:ApplicableHeaderTradeAgreement>
       <ram:BuyerReference>${escapeXml(input.buyerReference)}</ram:BuyerReference>
       <ram:SellerTradeParty>
-        <ram:Name>${escapeXml(operator.name)}</ram:Name>
+        <ram:Name>${escapeXml(input.seller.name)}</ram:Name>
         <ram:PostalTradeAddress>
-          <ram:PostcodeCode>${escapeXml(operator.city.split(" ")[0])}</ram:PostcodeCode>
-          <ram:LineOne>${escapeXml(operator.street)}</ram:LineOne>
-          <ram:CityName>${escapeXml(operator.city.split(" ").slice(1).join(" "))}</ram:CityName>
+          <ram:PostcodeCode>${escapeXml(input.seller.city.split(" ")[0])}</ram:PostcodeCode>
+          <ram:LineOne>${escapeXml(input.seller.street)}</ram:LineOne>
+          <ram:CityName>${escapeXml(input.seller.city.split(" ").slice(1).join(" "))}</ram:CityName>
           <ram:CountryID>DE</ram:CountryID>
         </ram:PostalTradeAddress>
         <ram:URIUniversalCommunication>
-          <ram:URIID schemeID="EM">${escapeXml(operator.email)}</ram:URIID>
+          <ram:URIID schemeID="EM">${escapeXml(input.seller.email)}</ram:URIID>
         </ram:URIUniversalCommunication>
         <ram:SpecifiedTaxRegistration>
-          <ram:ID schemeID="VA">${escapeXml(operator.vatId)}</ram:ID>
+          <ram:ID schemeID="VA">${escapeXml(input.seller.vatId)}</ram:ID>
         </ram:SpecifiedTaxRegistration>
       </ram:SellerTradeParty>
       <ram:BuyerTradeParty>
@@ -207,5 +210,5 @@ export function renderXRechnung(input: XRechnungInput) {
 `;
 }
 
-export const XRECHNUNG_FILENAME = (number: string) =>
-    `${site.name}-${number}.xml`.replace(/[^\w.-]/g, "-");
+export const XRECHNUNG_FILENAME = (siteName: string, number: string) =>
+    `${siteName}-${number}.xml`.replace(/[^\w.-]/g, "-");

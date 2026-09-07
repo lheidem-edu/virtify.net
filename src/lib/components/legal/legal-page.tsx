@@ -1,14 +1,15 @@
-import { legalUpdated } from "@/lib/site";
-
 export default function LegalPage({
     eyebrow = "Rechtliches",
     title,
     intro,
+    updated,
     children,
 }: {
     eyebrow?: string;
     title: string;
     intro?: React.ReactNode;
+    /** "Stand: …" — the day this version took effect. */
+    updated: string;
     children: React.ReactNode;
 }) {
     return (
@@ -25,9 +26,7 @@ export default function LegalPage({
                         {intro}
                     </div>
                 ) : null}
-                <p className="mt-10 text-xs text-zinc-600">
-                    Stand: {legalUpdated}
-                </p>
+                <p className="mt-10 text-xs text-zinc-600">Stand: {updated}</p>
             </header>
             {children}
         </article>
