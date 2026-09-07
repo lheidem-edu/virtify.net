@@ -14,7 +14,7 @@ import {
     recordAttempt,
     settlePayment,
 } from "@/lib/payments/settle";
-import { chargeStoredMethod } from "@/lib/payments/stripe";
+import { chargeStoredMethod, stripe } from "@/lib/payments/stripe";
 
 /**
  * Taking the money, from both directions: the customer who approved a PayPal
@@ -57,6 +57,44 @@ export async function captureAndSettle(orderId: string) {
     });
 
     return true;
+}
+
+/**
+ * Settles a Stripe checkout the customer has just come back from. The webhook
+ * is the authority and will do this too — this only spares the customer a page
+ * that still says "offen" about money they just handed over.
+ *
+ * The session id arrives in a URL the customer could edit, so it is trusted
+ * for nothing: the session's own metadata has to name the invoice the route is
+ * about, and settlePayment then only recognises an attempt we recorded
+ * ourselves.
+ */
+export async function settleCheckoutReturn(
+    sessionId: string,
+    invoiceId: string,
+) {
+    const session = await stripe().checkout.sessions.retrieve(sessionId);
+
+    if (session.metadata?.invoice_id !== invoiceId) {
+        return false;
+    }
+
+    if (session.payment_status === "unpaid") {
+        return false;
+    }
+
+    const intentId =
+        typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : (session.payment_intent?.id ?? null);
+
+    const outcome = await settlePayment({
+        provider: "stripe",
+        providerRef: session.id,
+        captureRef: intentId,
+    });
+
+    return outcome.known;
 }
 
 /**

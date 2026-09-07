@@ -18,6 +18,7 @@ import {
     formatRecipient,
     listContracts,
     loadInvoice,
+    loadInvoicePayments,
 } from "@/lib/documents/repository";
 import {
     formatDate,
@@ -36,6 +37,28 @@ import {
     UnmarkPaidForm,
 } from "../invoice-actions";
 import InvoiceEditForm from "./invoice-edit-form";
+
+/**
+ * Payment vocabulary lives here rather than in src/lib/format.ts because it is
+ * only ever read by the operator — the customer sees the invoice's own status.
+ */
+const PROVIDER_LABEL = { stripe: "Stripe", paypal: "PayPal" } as const;
+
+const PAYMENT_STATUS_LABEL = {
+    pending: "Offen",
+    processing: "In Abwicklung",
+    succeeded: "Bezahlt",
+    failed: "Fehlgeschlagen",
+    refunded: "Erstattet",
+} as const;
+
+const PAYMENT_STATUS_TONE = {
+    pending: "muted",
+    processing: "warning",
+    succeeded: "positive",
+    failed: "warning",
+    refunded: "neutral",
+} as const;
 
 const LINK =
     "underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground";
@@ -64,6 +87,7 @@ export default async function Page({
     const { id } = await params;
 
     const loaded = await loadInvoice(id, session.user.id, true);
+    const payments = await loadInvoicePayments(id, session.user.id, true);
 
     if (!loaded) {
         notFound();
@@ -285,6 +309,94 @@ export default async function Page({
                     Kein Ausweis der Umsatzsteuer nach § 19 UStG.
                 </p>
             </div>
+
+            {payments.length > 0 ? (
+                <div className="border-b px-6 py-10 md:px-10 md:py-12">
+                    <h2 className="mb-6 text-sm font-medium tracking-tight">
+                        Zahlungen
+                    </h2>
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Anbieter</TableHead>
+                                    <TableHead>Quelle</TableHead>
+                                    <TableHead className="text-right">
+                                        Betrag
+                                    </TableHead>
+                                    <TableHead className="text-right">
+                                        Gebühr
+                                    </TableHead>
+                                    <TableHead>Referenz</TableHead>
+                                    <TableHead>Status</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {payments.map((entry) => (
+                                    <TableRow key={entry.id}>
+                                        <TableCell>
+                                            {PROVIDER_LABEL[entry.provider]}
+                                        </TableCell>
+                                        <TableCell>
+                                            {entry.methodLabel ? (
+                                                <>
+                                                    {entry.methodLabel}
+                                                    {entry.methodRevokedAt ? (
+                                                        <span className="block text-xs text-muted-foreground">
+                                                            inzwischen
+                                                            widerrufen
+                                                        </span>
+                                                    ) : null}
+                                                </>
+                                            ) : (
+                                                "Checkout"
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono">
+                                            {formatPrice(entry.amountCents)}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono">
+                                            {entry.feeCents === null
+                                                ? "—"
+                                                : formatPrice(entry.feeCents)}
+                                        </TableCell>
+                                        <TableCell className="font-mono text-xs break-all">
+                                            {entry.captureRef ??
+                                                entry.providerRef}
+                                        </TableCell>
+                                        <TableCell>
+                                            <StatusBadge
+                                                label={
+                                                    PAYMENT_STATUS_LABEL[
+                                                        entry.status
+                                                    ]
+                                                }
+                                                tone={
+                                                    PAYMENT_STATUS_TONE[
+                                                        entry.status
+                                                    ]
+                                                }
+                                            />
+                                            <span className="mt-1 block text-xs text-muted-foreground">
+                                                {entry.settledAt
+                                                    ? formatDate(
+                                                          entry.settledAt,
+                                                      )
+                                                    : `Versuch vom ${formatDate(entry.createdAt)}`}
+                                            </span>
+                                            {entry.failureMessage ? (
+                                                <span className="mt-1 block text-xs text-muted-foreground">
+                                                    {entry.failureMessage}
+                                                </span>
+                                            ) : null}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </div>
+            ) : null}
 
             <div className="border-b px-6 py-10 md:px-10 md:py-12">
                 <h2 className="mb-6 text-sm font-medium tracking-tight">

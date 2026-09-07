@@ -1,6 +1,7 @@
 "use client";
 
 import {
+    CreditCard,
     FileSignature,
     FileText,
     LayoutDashboard,
@@ -40,6 +41,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     "file-text": FileText,
     "file-signature": FileSignature,
     receipt: Receipt,
+    "credit-card": CreditCard,
     user: User,
     shield: Shield,
     users: Users,

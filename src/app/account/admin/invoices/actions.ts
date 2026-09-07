@@ -10,6 +10,7 @@ import { parseDate, readLineItems } from "@/lib/documents/line-items";
 import { nextNumber } from "@/lib/documents/numbering";
 import { formatRecipient } from "@/lib/documents/repository";
 import { sendInvoiceMail } from "@/lib/documents/send";
+import { collectIssuedInvoice } from "@/lib/payments/collect";
 import { policy } from "@/lib/site";
 
 export type InvoiceState = {
@@ -17,6 +18,8 @@ export type InvoiceState = {
         | "idle"
         | "created"
         | "issued"
+        /** Issued and collected from the contract's stored payment method. */
+        | "collected"
         | "saved"
         | "cancelled"
         | "sent"
@@ -278,6 +281,7 @@ export async function issueInvoice(
 
     let recipientEmail = "";
     let recipientName = "";
+    let collects = false;
 
     try {
         await db.transaction(async (tx) => {
@@ -295,6 +299,17 @@ export async function issueInvoice(
                 .select()
                 .from(schema.user)
                 .where(eq(schema.user.id, row.userId));
+
+            if (row.contractId) {
+                const [linked] = await tx
+                    .select({
+                        paymentMethodId: schema.contract.paymentMethodId,
+                    })
+                    .from(schema.contract)
+                    .where(eq(schema.contract.id, row.contractId));
+
+                collects = Boolean(linked?.paymentMethodId);
+            }
 
             const issuedAt = new Date();
             const dueAt = new Date(issuedAt);
@@ -331,20 +346,57 @@ export async function issueInvoice(
         };
     }
 
-    // Sent outside the transaction: a mail failure must not roll back an
-    // issued number, which would leave a gap and could hand it out twice.
+    // Both of these run outside the transaction and independently of each
+    // other: neither a mail server nor a declined card may roll back an
+    // issued number, and a mail that does not go out is no reason to leave
+    // the money uncollected.
+    let mailed = true;
+
     try {
         await sendInvoiceMail(invoiceId, recipientEmail, recipientName);
     } catch (error) {
         console.error("[admin] invoice issued but mail failed:", error);
+        mailed = false;
+    }
+
+    // collectIssuedInvoice already mails the operator about a failure and
+    // returns { attempted: false } when nothing is stored for the contract,
+    // so this only turns the outcome into a sentence the form can show.
+    let collected: boolean | null = null;
+
+    if (collects) {
+        try {
+            const result = await collectIssuedInvoice(invoiceId);
+            collected = result.attempted ? Boolean(result.succeeded) : null;
+        } catch (error) {
+            console.error(
+                "[admin] invoice issued but collecting failed:",
+                error,
+            );
+            collected = false;
+        }
+    }
+
+    if (!mailed || collected === false) {
         // Deliberately not revalidated: a refresh re-renders the row this
         // form lives in, unmounts it and takes the message with it. The
         // mutation is committed either way and the sentence below says so;
         // the next navigation picks up the new state.
         return {
             status: "error",
+            message: !mailed
+                ? collected === false
+                    ? "Die Rechnung ist ausgestellt, aber weder der E-Mail-Versand noch der Einzug haben geklappt. Sie liegt im Kundenbereich bereit."
+                    : "Die Rechnung ist ausgestellt, aber der E-Mail-Versand hat nicht geklappt. Sie liegt im Kundenbereich bereit."
+                : "Die Rechnung ist ausgestellt, der Einzug ist aber fehlgeschlagen. Sie steht im Kundenbereich zur Zahlung bereit.",
+        };
+    }
+
+    if (collected) {
+        return {
+            status: "collected",
             message:
-                "Die Rechnung ist ausgestellt, aber der E-Mail-Versand hat nicht geklappt. Sie liegt im Kundenbereich bereit.",
+                "Die Rechnung ist ausgestellt und der Betrag wurde eingezogen.",
         };
     }
 

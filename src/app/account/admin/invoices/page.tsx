@@ -99,6 +99,7 @@ export default async function Page({
                         email: entry.email,
                         amount: entry.amount,
                         isCorrection: entry.cancelsInvoiceId !== null,
+                        autoCollect: entry.collectedFrom !== null,
                     }))}
                 />
             </div>

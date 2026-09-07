@@ -32,7 +32,7 @@ export type CheckoutInput = {
     invoiceNumber: string;
     amountCents: number;
     customerEmail: string;
-    stripeCustomerId: string | null;
+    stripeCustomerId?: string | null;
     /** Bumped per attempt so an abandoned session is not replayed forever. */
     attempt: number;
 };
@@ -135,7 +135,7 @@ export async function ensureStripeCustomer(user: {
 export async function createSetupCheckout(input: {
     userId: string;
     stripeCustomerId: string;
-    contractId: string | null;
+    contractId?: string | null;
 }) {
     const session = await stripe().checkout.sessions.create({
         mode: "setup",
@@ -159,11 +159,21 @@ export async function createSetupCheckout(input: {
     return { id: session.id, url: session.url };
 }
 
-/** Reads back what the customer stored, in a form worth showing them. */
-export async function readStoredMethod(setupIntentId: string) {
-    const intent = await stripe().setupIntents.retrieve(setupIntentId, {
-        expand: ["payment_method"],
+/**
+ * Reads back what the customer stored, in a form worth showing them. Takes the
+ * Checkout Session id, because that is the only thing the return URL carries —
+ * the SetupIntent is resolved from it here rather than by every caller.
+ */
+export async function readStoredMethod(sessionId: string) {
+    const session = await stripe().checkout.sessions.retrieve(sessionId, {
+        expand: ["setup_intent.payment_method"],
     });
+
+    const intent = session.setup_intent;
+
+    if (!intent || typeof intent === "string") {
+        return null;
+    }
 
     const method = intent.payment_method;
 
@@ -181,7 +191,7 @@ export async function readStoredMethod(setupIntentId: string) {
     return {
         token: method.id,
         label,
-        contractId: intent.metadata?.contract_id,
+        contractId: intent.metadata?.contract_id || null,
     };
 }
 

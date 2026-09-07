@@ -67,7 +67,7 @@ export default async function Page({
         notFound();
     }
 
-    const { contract, buyer, invoices, offer } = loaded;
+    const { contract, buyer, invoices, offer, paymentMethod } = loaded;
 
     const termEnd = minimumTermEnd(
         contract.serviceReadyAt,
@@ -170,6 +170,37 @@ export default async function Page({
                         </span>
                     </Field>
                 </dl>
+            </div>
+
+            <div className="border-b px-6 py-10 md:px-10 md:py-12">
+                <h2 className="mb-6 text-sm font-medium tracking-tight">
+                    Einzug
+                </h2>
+                {paymentMethod && !paymentMethod.revokedAt ? (
+                    <dl className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                        <Field label="Zahlungsmittel">
+                            {paymentMethod.label}
+                        </Field>
+                        <Field label="Anbieter">
+                            {paymentMethod.provider === "stripe"
+                                ? "Stripe"
+                                : "PayPal"}
+                        </Field>
+                        <Field label="Hinterlegt seit">
+                            {formatDate(paymentMethod.createdAt)}
+                        </Field>
+                    </dl>
+                ) : (
+                    <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
+                        {paymentMethod?.revokedAt
+                            ? `Das hinterlegte Zahlungsmittel wurde am ${formatDate(paymentMethod.revokedAt)} widerrufen. Rechnungen zu diesem Vertrag werden nicht mehr eingezogen.`
+                            : "Für diesen Vertrag ist kein Zahlungsmittel hinterlegt. Rechnungen werden vom Kunden selbst überwiesen oder im Kundenbereich bezahlt."}
+                    </p>
+                )}
+                <p className="mt-4 max-w-2xl text-xs leading-6 text-muted-foreground">
+                    Die Berechtigung zum Einzug erteilt und widerruft das Konto
+                    selbst im Kundenbereich; sie lässt sich hier nicht ändern.
+                </p>
             </div>
 
             <div className="border-b px-6 py-10 md:px-10 md:py-12">

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
+import { RefreshCw } from "lucide-react";
 import Link from "next/link";
 import DataTable from "@/lib/components/account/data-table";
 import StatusBadge from "@/lib/components/account/status-badge";
@@ -22,6 +23,11 @@ export type AdminInvoiceRow = {
     amount: number;
     /** A correction settles the invoice it reverses; nothing on it falls due. */
     isCorrection: boolean;
+    /**
+     * The contract behind the invoice carries a stored payment method, so
+     * issuing collects the amount and the row turns paid on its own.
+     */
+    autoCollect: boolean;
 };
 
 const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
@@ -67,10 +73,23 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
-            <StatusBadge
-                label={INVOICE_STATUS_LABEL[row.original.status]}
-                tone={INVOICE_STATUS_TONE[row.original.status]}
-            />
+            <div className="flex items-center gap-2">
+                <StatusBadge
+                    label={INVOICE_STATUS_LABEL[row.original.status]}
+                    tone={INVOICE_STATUS_TONE[row.original.status]}
+                />
+                {/* Quiet on purpose: it explains why a row may turn paid by
+                    itself, it is not another thing to click. */}
+                {row.original.autoCollect ? (
+                    <span
+                        title="Wird über das hinterlegte Zahlungsmittel automatisch eingezogen."
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                    >
+                        <RefreshCw className="size-3" aria-hidden />
+                        Einzug
+                    </span>
+                ) : null}
+            </div>
         ),
         filterFn: (row, id, value) => row.getValue(id) === value,
     },

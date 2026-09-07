@@ -32,6 +32,13 @@ export function IssueForm({ invoiceId }: { invoiceId: string }) {
                     variant="inline"
                 />
             ) : null}
+            {state.status === "collected" ? (
+                <FormStatus
+                    tone="success"
+                    message={state.message}
+                    variant="inline"
+                />
+            ) : null}
             <Button type="submit" size="sm" disabled={pending}>
                 {pending ? "…" : "Ausstellen und senden"}
             </Button>
