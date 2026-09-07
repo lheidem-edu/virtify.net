@@ -38,7 +38,7 @@ export const INVOICE_STATUS_LABEL = {
     draft: "Entwurf",
     issued: "Ausgestellt",
     paid: "Bezahlt",
-    cancelled: "Storniert",
+    cancelled: "Korrigiert",
 } as const;
 
 export const OFFER_STATUS_TONE = {
@@ -49,6 +49,34 @@ export const OFFER_STATUS_TONE = {
     expired: "neutral",
     withdrawn: "neutral",
 } as const;
+
+/**
+ * Overdue is not a status: the invoice is still "issued", it has simply passed
+ * its due date. Deriving it on read keeps it true without a job that has to
+ * run every night to make it true.
+ */
+export function isOverdue(invoice: {
+    status: string;
+    dueAt: Date | null;
+    paidAt: Date | null;
+}) {
+    return (
+        invoice.status === "issued" &&
+        !invoice.paidAt &&
+        invoice.dueAt !== null &&
+        invoice.dueAt.getTime() < Date.now()
+    );
+}
+
+/** Whole days a due date has been in the past; 0 when it has not. */
+export function daysOverdue(dueAt: Date | null) {
+    if (!dueAt) {
+        return 0;
+    }
+
+    const days = Math.floor((Date.now() - dueAt.getTime()) / 86_400_000);
+    return days > 0 ? days : 0;
+}
 
 export const INVOICE_STATUS_TONE = {
     draft: "muted",
@@ -89,8 +117,9 @@ export function formatQuantity(quantity: number, unitCode: string) {
     const amount = quantity.toLocaleString("de-DE", {
         maximumFractionDigits: 2,
     });
+    // A correction line carries a negative quantity; -1 is still singular.
     const unit =
-        quantity === 1
+        Math.abs(quantity) === 1
             ? UNIT_LABEL[unitCode]
             : (UNIT_LABEL_PLURAL[unitCode] ?? UNIT_LABEL[unitCode]);
 

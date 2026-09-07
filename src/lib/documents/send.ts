@@ -5,6 +5,7 @@ import {
     loadContract,
     loadInvoice,
     loadOffer,
+    xmlBuyer,
 } from "@/lib/documents/repository";
 import { renderXRechnung } from "@/lib/documents/xrechnung";
 import { formatDate, formatPrice } from "@/lib/format";
@@ -138,20 +139,21 @@ export async function sendInvoiceMail(
     // Narrowed by the guard above; the destructure loses that.
     const number = invoice.number as string;
 
-    // A Storno is an invoice like any other — same series, same route — so it
-    // is recognised by what it points at rather than by a separate send path.
+    // A correction is an invoice like any other — same series, same route —
+    // so it is recognised by what it points at rather than by a separate
+    // send path.
     const original = invoice.cancelsInvoiceId
         ? ((await loadInvoice(invoice.cancelsInvoiceId, "", true))?.invoice ??
           null)
         : null;
-    const label = original ? "Stornorechnung" : "Rechnung";
+    const label = original ? "Rechnungskorrektur" : "Rechnung";
     const reference = original
-        ? `Storno zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
+        ? `Korrektur zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
         : null;
 
     const pdf = await renderDocumentPdf({
         kind: "invoice",
-        variant: original ? "storno" : null,
+        variant: original ? "correction" : null,
         title: reference,
         number,
         customerNumber: buyer.customerNumber,
@@ -182,15 +184,7 @@ export async function sendInvoiceMail(
             end: invoice.servicePeriodEnd,
         },
         note: invoice.note,
-        buyer: {
-            name: buyer.company || buyer.name,
-            street: buyer.street,
-            postalCode: buyer.postalCode,
-            city: buyer.city,
-            country: buyer.country,
-            vatId: buyer.vatId,
-            email: buyer.email,
-        },
+        buyer: xmlBuyer(invoice, buyer),
         totals,
     });
 
@@ -205,7 +199,7 @@ export async function sendInvoiceMail(
                 "Sehr geehrte Damen und Herren,",
                 "",
                 original
-                    ? `im Anhang finden Sie die Stornorechnung zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
+                    ? `im Anhang finden Sie die Rechnungskorrektur zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
                     : "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
                 "",
                 "Für Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung und danken Ihnen für die angenehme Zusammenarbeit.",
@@ -221,7 +215,7 @@ export async function sendInvoiceMail(
                 intro: [
                     "Sehr geehrte Damen und Herren,",
                     original
-                        ? `im Anhang finden Sie die Stornorechnung zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
+                        ? `im Anhang finden Sie die Rechnungskorrektur zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
                         : "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
                 ],
                 action: {
@@ -230,11 +224,14 @@ export async function sendInvoiceMail(
                 },
                 rowsTitle: "Eckdaten",
                 rows: [
-                    { label: `${label}snummer`, value: number },
+                    {
+                        label: original ? "Korrekturnummer" : "Rechnungsnummer",
+                        value: number,
+                    },
                     ...(original
                         ? [
                               {
-                                  label: "Storniert",
+                                  label: "Korrigiert",
                                   value: original.number ?? "—",
                               },
                           ]
@@ -459,6 +456,71 @@ export async function sendContractTerminationMail(
         });
     } catch (error) {
         logMailError("contract termination mail", error);
+        throw error;
+    }
+}
+
+/**
+ * Confirms that money arrived. Stripe and PayPal both offer to send their own
+ * receipt and both are switched off, because a second document about the same
+ * payment is exactly what confuses a customer holding our invoice — so this is
+ * the one confirmation, and it names our invoice.
+ */
+export async function sendPaymentReceivedMail(input: {
+    invoiceId: string;
+    to: string;
+    amountCents: number;
+    paidAt: Date;
+}) {
+    const loaded = await loadInvoice(input.invoiceId, "", true);
+
+    if (!loaded?.invoice.number) {
+        return;
+    }
+
+    const number = loaded.invoice.number;
+    const transport = transportOrThrow();
+
+    try {
+        await transport.sendMail({
+            from: mailFrom,
+            to: input.to,
+            subject: `Zahlungseingang zu Rechnung ${number} — ${site.name}`,
+            text: [
+                "Sehr geehrte Damen und Herren,",
+                "",
+                `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Die Rechnung ist damit ausgeglichen.`,
+                "",
+                `Ihre Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/account/invoices`,
+                "",
+                "Mit freundlichen Grüßen",
+                operator.name,
+            ].join("\n"),
+            html: renderEmail({
+                preheader: `Zahlung über ${formatPrice(input.amountCents)} erhalten.`,
+                heading: "Zahlungseingang",
+                intro: [
+                    "Sehr geehrte Damen und Herren,",
+                    `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Die Rechnung ist damit ausgeglichen.`,
+                ],
+                action: {
+                    label: "Rechnungen ansehen",
+                    url: `${site.url}/account/invoices`,
+                },
+                rowsTitle: "Eckdaten",
+                rows: [
+                    { label: "Rechnungsnummer", value: number },
+                    { label: "Betrag", value: formatPrice(input.amountCents) },
+                    {
+                        label: "Eingegangen am",
+                        value: formatDate(input.paidAt),
+                    },
+                ],
+                outro: [`Mit freundlichen Grüßen\n${operator.name}`],
+            }),
+        });
+    } catch (error) {
+        logMailError("payment received mail", error);
         throw error;
     }
 }

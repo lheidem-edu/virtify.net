@@ -22,7 +22,11 @@ export default async function Page() {
     ]);
 
     const openOffers = offers.filter((entry) => entry.status === "sent");
-    const unpaid = invoices.filter((entry) => entry.status === "issued");
+    // A correction is issued like any other invoice but owes nothing —
+    // counting it as open would tell the customer to pay a reversal.
+    const unpaid = invoices.filter(
+        (entry) => entry.status === "issued" && !entry.cancelsInvoiceId,
+    );
     const activeContracts = contracts.filter(
         (entry) => entry.status === "active" || entry.status === "provisioning",
     );

@@ -8,6 +8,11 @@ export const ACCOUNT_NAV = [
     { href: "/account/contracts", label: "Verträge", icon: "file-text" },
     { href: "/account/offers", label: "Angebote", icon: "file-signature" },
     { href: "/account/invoices", label: "Rechnungen", icon: "receipt" },
+    {
+        href: "/account/payment-methods",
+        label: "Zahlungsmittel",
+        icon: "credit-card",
+    },
 ] as const;
 
 export const ACCOUNT_SETTINGS_NAV = [

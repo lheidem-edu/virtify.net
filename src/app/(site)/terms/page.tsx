@@ -172,7 +172,26 @@ export default function Page() {
                         </>,
                         "Sind im Einzelvertrag Transfervolumina oder vergleichbare Kontingente inkludiert, informiert der Anbieter den Kunden rechtzeitig vor deren Ausschöpfung. Überschreitungen werden zu den im Einzelvertrag vereinbarten Sätzen abgerechnet.",
                         "Bei Zahlungsverzug ist der Anbieter berechtigt, den Zugang zur Instanz nach erfolgloser Mahnung mit einer Frist von sieben Werktagen vorübergehend zu sperren. Während der Sperrung kann der Anbieter die vertraglichen Leistungen nicht erbringen. Gesetzliche Ansprüche auf Verzugszinsen und Ersatz von Mahnkosten bleiben unberührt.",
-                        "Soweit nicht anders vereinbart, erfolgt die Zahlung bargeldlos auf das dem Kunden mitgeteilte Konto. Kosten der Geldübermittlung trägt der Kunde, soweit die Zahlung außerhalb der Europäischen Union veranlasst wurde.",
+                        "Soweit nicht anders vereinbart, erfolgt die Zahlung bargeldlos. Kosten der Geldübermittlung trägt der Kunde, soweit die Zahlung außerhalb der Europäischen Union veranlasst wurde.",
+                        "Soweit im Kundenbereich angeboten und im Einzelvertrag nicht abweichend vereinbart, stehen dem Kunden folgende Zahlungsarten zur Verfügung: Überweisung auf das dem Kunden mitgeteilte Konto, Kreditkartenzahlung über Stripe sowie Zahlung über PayPal. Die Zahlung per Kreditkarte und über PayPal wird auf einer vom jeweiligen Zahlungsdienstleister betriebenen Seite abgewickelt; für diesen Zahlungsvorgang gelten zusätzlich dessen Nutzungsbedingungen und Datenschutzhinweise. Die Zahlungsdaten selbst gibt der Kunde ausschließlich dort ein; sie werden dem Anbieter nicht bekannt.",
+                        <>
+                            Der Kunde kann im{" "}
+                            <Link href="/account" className={linkClass}>
+                                Kundenbereich
+                            </Link>{" "}
+                            für einen Vertrag ein Zahlungsmittel hinterlegen.
+                            Damit ermächtigt er den Anbieter, die für diesen
+                            Vertrag ausgestellten Rechnungen mit ihrer
+                            Ausstellung über das hinterlegte Zahlungsmittel
+                            einzuziehen, frühestens jedoch am Rechnungsdatum.
+                            Rechnungen aus anderen Verträgen werden darüber
+                            nicht eingezogen. Der Kunde kann die Ermächtigung
+                            jederzeit im Kundenbereich mit Wirkung für die
+                            Zukunft widerrufen; bereits eingezogene Beträge
+                            bleiben davon unberührt.
+                        </>,
+                        "Scheitert ein Einzug, bleibt es bei der Fälligkeit nach Absatz (3); die Zahlungsfrist verlängert sich dadurch nicht. Der Kunde kann die Rechnung in diesem Fall auf einem der übrigen Wege begleichen. Zahlt er nicht, gerät er nach den allgemeinen Regeln in Verzug; Absatz (5) bleibt unberührt. Ein Einzug wird nicht automatisch wiederholt.",
+                        "Entgelte, die das Kreditinstitut oder der Zahlungsdienstleister des Kunden diesem für die Zahlung berechnet, trägt der Kunde.",
                         "Rechnungen werden elektronisch erteilt: als PDF und zusätzlich im strukturierten Format XRechnung. Sie werden an die im Kundenkonto hinterlegte E-Mail-Adresse versandt und stehen dort dauerhaft zum Abruf bereit. Mit Vertragsschluss stimmt der Kunde dem elektronischen Rechnungsversand zu; eine Rechnung in Papierform wird nicht erteilt.",
                         "Eine ausgestellte Rechnung wird nicht verändert. Korrekturen erfolgen durch Stornierung und Neuausstellung.",
                         "Der Kunde kann nur mit unbestrittenen oder rechtskräftig festgestellten Forderungen aufrechnen. Ein Zurückbehaltungsrecht steht ihm nur wegen Ansprüchen aus demselben Vertragsverhältnis zu.",

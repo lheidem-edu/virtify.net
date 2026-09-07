@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import DataTable from "@/lib/components/account/data-table";
 import StatusBadge from "@/lib/components/account/status-badge";
+import { formatDate } from "@/lib/format";
 import { type CustomerState, updateCustomer } from "./actions";
 
 export type Customer = {
@@ -24,6 +25,8 @@ export type Customer = {
     vatId: string;
     phone: string;
     buyerReference: string;
+    /** The account's active stored method, or null when it pays by transfer. */
+    payment: { provider: string; label: string; since: Date } | null;
 };
 
 const EDITABLE = [
@@ -116,6 +119,29 @@ const columns: ColumnDef<Customer, unknown>[] = [
         accessorKey: "city",
         header: "Ort",
         cell: ({ row }) => row.original.city || "—",
+    },
+    {
+        id: "payment",
+        header: "Zahlung",
+        // Through an accessor so the free-text search finds "Einzug" and
+        // "Überweisung" like any other column.
+        accessorFn: (customer) => (customer.payment ? "Einzug" : "Überweisung"),
+        cell: ({ row }) =>
+            row.original.payment ? (
+                <div className="flex items-center gap-2">
+                    <StatusBadge label="Einzug" tone="positive" />
+                    <span
+                        className="text-xs text-muted-foreground"
+                        title={`Hinterlegt seit ${formatDate(row.original.payment.since)}`}
+                    >
+                        {row.original.payment.label}
+                    </span>
+                </div>
+            ) : (
+                <span className="text-xs text-muted-foreground">
+                    Überweisung
+                </span>
+            ),
     },
     {
         id: "state",

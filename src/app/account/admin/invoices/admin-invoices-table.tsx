@@ -1,16 +1,19 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
+import { RefreshCw } from "lucide-react";
 import Link from "next/link";
 import DataTable from "@/lib/components/account/data-table";
 import StatusBadge from "@/lib/components/account/status-badge";
 import {
+    daysOverdue,
     formatDate,
     formatPrice,
     INVOICE_STATUS_LABEL,
     INVOICE_STATUS_TONE,
+    isOverdue,
 } from "@/lib/format";
-import { IssueForm, StateForm } from "./invoice-actions";
+import { IssueForm, MarkPaidForm } from "./invoice-actions";
 
 export type AdminInvoiceRow = {
     id: string;
@@ -18,8 +21,16 @@ export type AdminInvoiceRow = {
     status: keyof typeof INVOICE_STATUS_LABEL;
     issuedAt: Date | null;
     dueAt: Date | null;
+    paidAt: Date | null;
     email: string;
     amount: number;
+    /** A correction settles the invoice it reverses; nothing on it falls due. */
+    isCorrection: boolean;
+    /**
+     * The contract behind the invoice carries a stored payment method, so
+     * issuing collects the amount and the row turns paid on its own.
+     */
+    autoCollect: boolean;
 };
 
 const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
@@ -27,9 +38,12 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
         accessorKey: "number",
         header: "Nummer",
         cell: ({ row }) => (
-            <span className="font-mono">
+            <Link
+                href={`/account/admin/invoices/${row.original.id}`}
+                className="font-mono underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+            >
                 {row.original.number ?? "Entwurf"}
-            </span>
+            </Link>
         ),
     },
     { accessorKey: "email", header: "Konto" },
@@ -53,7 +67,17 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
     {
         accessorKey: "dueAt",
         header: "Fällig",
-        cell: ({ row }) => formatDate(row.original.dueAt),
+        cell: ({ row }) =>
+            isOverdue(row.original) ? (
+                <span className="text-amber-400">
+                    {formatDate(row.original.dueAt)}
+                    <span className="block text-xs">
+                        seit {daysOverdue(row.original.dueAt)} Tagen überfällig
+                    </span>
+                </span>
+            ) : (
+                formatDate(row.original.dueAt)
+            ),
         sortingFn: (a, b) =>
             (a.original.dueAt?.getTime() ?? 0) -
             (b.original.dueAt?.getTime() ?? 0),
@@ -62,14 +86,31 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
-            <StatusBadge
-                label={INVOICE_STATUS_LABEL[row.original.status]}
-                tone={INVOICE_STATUS_TONE[row.original.status]}
-            />
+            <div className="flex items-center gap-2">
+                <StatusBadge
+                    label={INVOICE_STATUS_LABEL[row.original.status]}
+                    tone={INVOICE_STATUS_TONE[row.original.status]}
+                />
+                {/* Quiet on purpose: it explains why a row may turn paid by
+                    itself, it is not another thing to click. */}
+                {row.original.autoCollect &&
+                row.original.status === "issued" &&
+                !row.original.isCorrection ? (
+                    <span
+                        title="Wird über das hinterlegte Zahlungsmittel automatisch eingezogen."
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                    >
+                        <RefreshCw className="size-3" aria-hidden />
+                        Einzug
+                    </span>
+                ) : null}
+            </div>
         ),
         filterFn: (row, id, value) => row.getValue(id) === value,
     },
     {
+        // Only what is done in passing lives here; correction, resend and delete
+        // ask for a confirmation and belong on the detail page.
         id: "actions",
         header: "",
         enableSorting: false,
@@ -91,12 +132,10 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
                         >
                             XML
                         </Link>
-                        {row.original.status === "cancelled" ? null : (
-                            <StateForm
-                                invoiceId={row.original.id}
-                                canMarkPaid={row.original.status === "issued"}
-                            />
-                        )}
+                        {row.original.status === "issued" &&
+                        !row.original.isCorrection ? (
+                            <MarkPaidForm invoiceId={row.original.id} />
+                        ) : null}
                     </>
                 )}
             </div>

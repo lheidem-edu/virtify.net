@@ -2,6 +2,8 @@ import { asc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
 import { db, schema } from "@/lib/db";
+import { earliestTerminationDate } from "@/lib/documents/contract-term";
+import { dateInputValue } from "@/lib/documents/line-items";
 import { listContracts } from "@/lib/documents/repository";
 import type { CONTRACT_STATUS_LABEL } from "@/lib/format";
 import AdminContractsTable from "./admin-contracts-table";
@@ -20,6 +22,9 @@ export default async function Page() {
         .orderBy(asc(schema.user.email));
 
     const contracts = await listContracts(session.user.id, true);
+    // Die Kündigungsfrist rechnet gegen den Tag des Zugangs — für den Vorschlag
+    // im Dialog ist das der Tag, an dem die Liste gerendert wird.
+    const today = new Date();
 
     return (
         <>
@@ -48,7 +53,11 @@ export default async function Page() {
                         serviceReadyAt: entry.serviceReadyAt,
                         minimumTermMonths: entry.minimumTermMonths,
                         monthlyPriceCents: entry.monthlyPriceCents,
+                        terminatedTo: entry.terminatedTo,
                         email: entry.email,
+                        earliestTermination: dateInputValue(
+                            earliestTerminationDate(entry, today),
+                        ),
                     }))}
                 />
             </div>

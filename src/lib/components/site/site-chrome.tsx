@@ -17,6 +17,7 @@ function SiteHeader() {
                 </Link>
 
                 <Button
+                    nativeButton={false}
                     render={<Link href="/account" />}
                     variant="outline"
                     size="sm"

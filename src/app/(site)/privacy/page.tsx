@@ -170,8 +170,89 @@ export default function Page() {
                 </p>
             </LegalSection>
 
+            <LegalSection label="07" title="Zahlungsabwicklung">
+                <p>
+                    Rechnungen kannst du per Überweisung begleichen oder über
+                    einen Zahlungsdienstleister bezahlen. Für die Kartenzahlung
+                    setzen wir Stripe Payments Europe, Ltd., Dublin, Irland ein,
+                    für die Zahlung mit einem PayPal-Konto PayPal (Europe) S.à
+                    r.l. et Cie, S.C.A., Luxemburg. Der Zahlungsvorgang findet
+                    auf einer Seite des jeweiligen Anbieters statt; von unserer
+                    Seite wirst du dorthin weitergeleitet und anschließend
+                    zurückgeführt. Bei einer Überweisung ist kein
+                    Zahlungsdienstleister beteiligt.
+                </p>
+                <p>
+                    An Stripe übermitteln wir deinen Namen, deine
+                    E-Mail-Adresse, den Rechnungsbetrag, die Rechnungsnummer und
+                    die interne Kennung der Rechnung. An PayPal übermitteln wir
+                    den Rechnungsbetrag, die Rechnungsnummer und die interne
+                    Kennung der Rechnung.
+                </p>
+                <p>
+                    Deine Zahlungsdaten erhalten wir nicht: Kartennummer,
+                    Kartenprüfnummer, IBAN und deine PayPal-Zugangsdaten gibst
+                    du ausschließlich beim Zahlungsdienstleister ein. Sie
+                    erreichen unsere Server zu keinem Zeitpunkt.
+                </p>
+                <p>
+                    Zurück erhalten und speichern wir eine Kennung deines
+                    Kundenkontos beim Zahlungsdienstleister, die Referenz der
+                    Zahlung, den Betrag, das vom Anbieter einbehaltene Entgelt,
+                    den Status der Zahlung und den Zeitpunkt. Scheitert eine
+                    Zahlung, speichern wir zusätzlich den vom Anbieter
+                    gemeldeten Fehlergrund.
+                </p>
+                <p>
+                    Hinterlegst du für einen Vertrag ein Zahlungsmittel, damit
+                    Rechnungen daraus automatisch eingezogen werden, speichern
+                    wir außerdem einen Token — eine Zeichenfolge, mit der wir
+                    beim Zahlungsdienstleister einen Einzug auslösen können,
+                    ohne die Zahlungsdaten selbst zu kennen — sowie eine
+                    Bezeichnung zur Anzeige, etwa „VISA •••• 4242“ oder die bei
+                    PayPal hinterlegte E-Mail-Adresse. Widerrufst du die
+                    Autorisierung im Kundenbereich, löschen wir den Token beim
+                    Zahlungsdienstleister und verwenden ihn nicht mehr.
+                </p>
+                <p>
+                    Rechtsgrundlage für die Verarbeitung durch uns ist Art. 6
+                    Abs. 1 lit. b DSGVO (Durchführung des Vertrags). Soweit die
+                    Zahlungsdienstleister die Daten darüber hinaus zur
+                    Betrugsprävention verarbeiten, stützen sie das auf Art. 6
+                    Abs. 1 lit. f DSGVO. Für den Zahlungsvorgang sind sie eigene
+                    Verantwortliche und nicht unsere Auftragsverarbeiter;
+                    Näheres steht im Abschnitt „Empfänger“. Es gelten ihre
+                    eigenen Datenschutzhinweise:{" "}
+                    <a
+                        href="https://stripe.com/de/privacy"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={linkClass}
+                    >
+                        stripe.com/de/privacy
+                    </a>{" "}
+                    und{" "}
+                    <a
+                        href="https://www.paypal.com/de/legalhub/privacy-full"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={linkClass}
+                    >
+                        paypal.com/de/legalhub/privacy-full
+                    </a>
+                    .
+                </p>
+                <p>
+                    Zahlungen sind Buchungsbelege. Die dazu gespeicherten Daten
+                    bewahren wir daher gemeinsam mit der zugehörigen Rechnung
+                    für die Dauer der handels- und steuerrechtlichen
+                    Aufbewahrungsfristen auf (§ 257 HGB, § 147 AO) und
+                    beschränken für diese Zeit die Verarbeitung.
+                </p>
+            </LegalSection>
+
             <LegalSection
-                label="07"
+                label="08"
                 title="Cookies und vergleichbare Techniken"
             >
                 <p>
@@ -195,7 +276,7 @@ export default function Page() {
             </LegalSection>
 
             <LegalSection
-                label="08"
+                label="09"
                 title="Keine Analyse, keine Einbindung Dritter"
             >
                 <p>
@@ -208,7 +289,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="09" title="Externe Verlinkungen">
+            <LegalSection label="10" title="Externe Verlinkungen">
                 <p>
                     Unsere Seiten können Verweise auf Websites Dritter
                     enthalten. Solche Verweise werden ausschließlich als reine
@@ -222,7 +303,7 @@ export default function Page() {
             </LegalSection>
 
             <LegalSection
-                label="10"
+                label="11"
                 title="Daten auf den von dir genutzten Instanzen"
             >
                 <p>
@@ -243,7 +324,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="11" title="Empfänger">
+            <LegalSection label="12" title="Empfänger">
                 <p>
                     Personenbezogene Daten werden nicht verkauft, nicht
                     vermietet und nicht zu Werbezwecken an Dritte weitergegeben.
@@ -253,25 +334,42 @@ export default function Page() {
                 </p>
                 <p>
                     Soweit wir Dienstleister einsetzen, die personenbezogene
-                    Daten in unserem Auftrag verarbeiten — etwa für
-                    Zahlungsabwicklung, Rechnungsstellung, E-Mail-Versand oder
-                    Rechenzentrumsleistungen —, geschieht dies auf Grundlage
-                    eines Auftragsverarbeitungsvertrags nach Art. 28 DSGVO.
+                    Daten ausschließlich nach unseren Weisungen verarbeiten —
+                    etwa für den E-Mail-Versand oder Rechenzentrumsleistungen —,
+                    geschieht dies auf Grundlage eines
+                    Auftragsverarbeitungsvertrags nach Art. 28 DSGVO.
                 </p>
-            </LegalSection>
-
-            <LegalSection label="12" title="Drittlandübermittlung">
                 <p>
-                    Eine Übermittlung personenbezogener Daten in Länder
-                    außerhalb der Europäischen Union oder des Europäischen
-                    Wirtschaftsraums findet nicht statt. Sollte eine solche
-                    Übermittlung künftig erforderlich werden, erfolgt sie nur
-                    unter den Voraussetzungen der Art. 44 ff. DSGVO; diese
-                    Erklärung wird zuvor entsprechend angepasst.
+                    Für die Zahlungsabwicklung gilt das nicht. Stripe Payments
+                    Europe, Ltd., Dublin, Irland, und PayPal (Europe) S.à r.l.
+                    et Cie, S.C.A., Luxemburg, entscheiden über Zwecke und
+                    Mittel der Verarbeitung des Zahlungsvorgangs selbst — unter
+                    anderem, weil sie eigene aufsichtsrechtliche Pflichten
+                    erfüllen und Betrug verhindern müssen. Sie sind insoweit
+                    eigene Verantwortliche im Sinne des Art. 4 Nr. 7 DSGVO und
+                    nicht unsere Auftragsverarbeiter; für ihre Verarbeitung
+                    gelten ihre eigenen Datenschutzhinweise. Welche Daten wir
+                    ihnen übermitteln, steht im Abschnitt „Zahlungsabwicklung“.
                 </p>
             </LegalSection>
 
-            <LegalSection label="13" title="Speicherdauer">
+            <LegalSection label="13" title="Drittlandübermittlung">
+                <p>
+                    Wir selbst übermitteln keine personenbezogenen Daten in
+                    Länder außerhalb der Europäischen Union oder des
+                    Europäischen Wirtschaftsraums.
+                </p>
+                <p>
+                    Unsere Zahlungsdienstleister sitzen in Irland und Luxemburg,
+                    geben Daten aber an Konzerngesellschaften außerhalb des
+                    Europäischen Wirtschaftsraums weiter. Diese Übermittlungen
+                    stützen beide auf die Standardvertragsklauseln der
+                    Europäischen Kommission (Art. 46 Abs. 2 lit. c DSGVO).
+                    Einzelheiten stehen in ihren Datenschutzhinweisen.
+                </p>
+            </LegalSection>
+
+            <LegalSection label="14" title="Speicherdauer">
                 <p>
                     Wir speichern personenbezogene Daten nur so lange, wie es
                     für die jeweiligen Zwecke erforderlich ist. Danach werden
@@ -285,7 +383,7 @@ export default function Page() {
             </LegalSection>
 
             <LegalSection
-                label="14"
+                label="15"
                 title="Automatisierte Entscheidungsfindung"
             >
                 <p>
@@ -294,7 +392,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="15" title="Deine Rechte">
+            <LegalSection label="16" title="Deine Rechte">
                 <p>Dir stehen uns gegenüber folgende Rechte zu:</p>
                 <LegalList
                     items={[
@@ -316,7 +414,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="16" title="Beschwerderecht">
+            <LegalSection label="17" title="Beschwerderecht">
                 <p>
                     Unbeschadet anderweitiger Rechtsbehelfe steht dir ein
                     Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde zu
@@ -336,7 +434,7 @@ export default function Page() {
                 </p>
             </LegalSection>
 
-            <LegalSection label="17" title="Änderungen dieser Erklärung">
+            <LegalSection label="18" title="Änderungen dieser Erklärung">
                 <p>
                     Wir passen diese Datenschutzerklärung an, sobald sich die
                     beschriebenen Verarbeitungen ändern — insbesondere mit dem

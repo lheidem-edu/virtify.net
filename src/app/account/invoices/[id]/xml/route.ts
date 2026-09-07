@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth-session";
-import { loadInvoice } from "@/lib/documents/repository";
+import { loadInvoice, xmlBuyer } from "@/lib/documents/repository";
 import { renderXRechnung } from "@/lib/documents/xrechnung";
 
 export async function GET(
@@ -28,6 +28,9 @@ export async function GET(
 
     const xml = renderXRechnung({
         number,
+        // A correction carries negative amounts, which a validator rejects
+        // under 380; 384 is the corrected-invoice code it belongs to.
+        typeCode: invoice.cancelsInvoiceId ? "384" : "380",
         issuedAt: invoice.issuedAt ?? new Date(),
         dueAt: invoice.dueAt,
         buyerReference:
@@ -39,15 +42,7 @@ export async function GET(
             end: invoice.servicePeriodEnd,
         },
         note: invoice.note,
-        buyer: {
-            name: buyer.company || buyer.name,
-            street: buyer.street,
-            postalCode: buyer.postalCode,
-            city: buyer.city,
-            country: buyer.country,
-            vatId: buyer.vatId,
-            email: buyer.email,
-        },
+        buyer: xmlBuyer(invoice, buyer),
         totals,
     });
 

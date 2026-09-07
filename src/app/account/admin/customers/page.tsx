@@ -2,6 +2,7 @@ import { asc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth-session";
 import PageHeader from "@/lib/components/account/page-header";
 import { db, schema } from "@/lib/db";
+import { listStoredMethods } from "@/lib/documents/repository";
 import CustomerList from "./customer-list";
 
 export default async function Page() {
@@ -12,6 +13,9 @@ export default async function Page() {
         .from(schema.user)
         .orderBy(asc(schema.user.email));
 
+    // One query for every account rather than one per row.
+    const methods = await listStoredMethods();
+
     return (
         <>
             <PageHeader
@@ -20,22 +24,33 @@ export default async function Page() {
             />
             <div className="px-6 py-10 md:px-10 md:py-12">
                 <CustomerList
-                    customers={customers.map((entry) => ({
-                        id: entry.id,
-                        customerNumber: entry.customerNumber,
-                        email: entry.email,
-                        emailVerified: entry.emailVerified,
-                        role: entry.role,
-                        name: entry.name ?? "",
-                        company: entry.company ?? "",
-                        street: entry.street ?? "",
-                        postalCode: entry.postalCode ?? "",
-                        city: entry.city ?? "",
-                        country: entry.country ?? "",
-                        vatId: entry.vatId ?? "",
-                        phone: entry.phone ?? "",
-                        buyerReference: entry.buyerReference ?? "",
-                    }))}
+                    customers={customers.map((entry) => {
+                        const method = methods.get(entry.id);
+
+                        return {
+                            id: entry.id,
+                            payment: method
+                                ? {
+                                      provider: method.provider,
+                                      label: method.label,
+                                      since: method.createdAt,
+                                  }
+                                : null,
+                            customerNumber: entry.customerNumber,
+                            email: entry.email,
+                            emailVerified: entry.emailVerified,
+                            role: entry.role,
+                            name: entry.name ?? "",
+                            company: entry.company ?? "",
+                            street: entry.street ?? "",
+                            postalCode: entry.postalCode ?? "",
+                            city: entry.city ?? "",
+                            country: entry.country ?? "",
+                            vatId: entry.vatId ?? "",
+                            phone: entry.phone ?? "",
+                            buyerReference: entry.buyerReference ?? "",
+                        };
+                    })}
                 />
             </div>
         </>
