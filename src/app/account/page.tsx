@@ -22,8 +22,8 @@ export default async function Page() {
     ]);
 
     const openOffers = offers.filter((entry) => entry.status === "sent");
-    // A Storno is issued like any other invoice but owes nothing — counting
-    // it as open would tell the customer to pay a credit note.
+    // A correction is issued like any other invoice but owes nothing —
+    // counting it as open would tell the customer to pay a reversal.
     const unpaid = invoices.filter(
         (entry) => entry.status === "issued" && !entry.cancelsInvoiceId,
     );

@@ -38,7 +38,7 @@ export const INVOICE_STATUS_LABEL = {
     draft: "Entwurf",
     issued: "Ausgestellt",
     paid: "Bezahlt",
-    cancelled: "Storniert",
+    cancelled: "Korrigiert",
 } as const;
 
 export const OFFER_STATUS_TONE = {
@@ -89,7 +89,7 @@ export function formatQuantity(quantity: number, unitCode: string) {
     const amount = quantity.toLocaleString("de-DE", {
         maximumFractionDigits: 2,
     });
-    // A Storno line carries a negative quantity; -1 is still singular.
+    // A correction line carries a negative quantity; -1 is still singular.
     const unit =
         Math.abs(quantity) === 1
             ? UNIT_LABEL[unitCode]

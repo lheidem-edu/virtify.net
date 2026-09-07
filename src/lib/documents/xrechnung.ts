@@ -17,9 +17,9 @@ import { operator, site } from "@/lib/site";
 export type XRechnungInput = {
     number: string;
     /**
-     * UNTDID 1001: 380 is a commercial invoice, 384 a corrected one. A Storno
-     * restates the original's lines with negated amounts, which is a
-     * correction — a validator reading 380 would reject the negative total.
+     * UNTDID 1001: 380 is a commercial invoice, 384 a corrected one. A
+     * Rechnungskorrektur restates the original's lines with a negated
+     * quantity — a validator reading 380 would reject the negative total.
      */
     typeCode?: "380" | "384";
     issuedAt: Date;

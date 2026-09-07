@@ -283,9 +283,9 @@ export const invoice = pgTable("invoice", {
     paidAt: timestamp("paid_at"),
     cancelledAt: timestamp("cancelled_at"),
     /**
-     * Points at the invoice this one cancels, for the audit trail. Restricted
-     * rather than cascading: the cancelled original must outlive its Storno,
-     * or the correction would document nothing.
+     * Points at the invoice this one corrects, for the audit trail. Restricted
+     * rather than cascading: the corrected original must outlive the
+     * Rechnungskorrektur, or the correction would document nothing.
      */
     cancelsInvoiceId: text("cancels_invoice_id").references(
         (): AnyPgColumn => invoice.id,

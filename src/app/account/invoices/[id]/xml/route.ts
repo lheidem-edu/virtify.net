@@ -28,7 +28,7 @@ export async function GET(
 
     const xml = renderXRechnung({
         number,
-        // A Storno carries negative amounts, which a validator would reject
+        // A correction carries negative amounts, which a validator rejects
         // under 380; 384 is the corrected-invoice code it belongs to.
         typeCode: invoice.cancelsInvoiceId ? "384" : "380",
         issuedAt: invoice.issuedAt ?? new Date(),

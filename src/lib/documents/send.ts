@@ -138,20 +138,21 @@ export async function sendInvoiceMail(
     // Narrowed by the guard above; the destructure loses that.
     const number = invoice.number as string;
 
-    // A Storno is an invoice like any other — same series, same route — so it
-    // is recognised by what it points at rather than by a separate send path.
+    // A correction is an invoice like any other — same series, same route —
+    // so it is recognised by what it points at rather than by a separate
+    // send path.
     const original = invoice.cancelsInvoiceId
         ? ((await loadInvoice(invoice.cancelsInvoiceId, "", true))?.invoice ??
           null)
         : null;
-    const label = original ? "Stornorechnung" : "Rechnung";
+    const label = original ? "Rechnungskorrektur" : "Rechnung";
     const reference = original
-        ? `Storno zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
+        ? `Korrektur zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
         : null;
 
     const pdf = await renderDocumentPdf({
         kind: "invoice",
-        variant: original ? "storno" : null,
+        variant: original ? "correction" : null,
         title: reference,
         number,
         customerNumber: buyer.customerNumber,
@@ -205,7 +206,7 @@ export async function sendInvoiceMail(
                 "Sehr geehrte Damen und Herren,",
                 "",
                 original
-                    ? `im Anhang finden Sie die Stornorechnung zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
+                    ? `im Anhang finden Sie die Rechnungskorrektur zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
                     : "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
                 "",
                 "Für Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung und danken Ihnen für die angenehme Zusammenarbeit.",
@@ -221,7 +222,7 @@ export async function sendInvoiceMail(
                 intro: [
                     "Sehr geehrte Damen und Herren,",
                     original
-                        ? `im Anhang finden Sie die Stornorechnung zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
+                        ? `im Anhang finden Sie die Rechnungskorrektur zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
                         : "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
                 ],
                 action: {
@@ -230,11 +231,14 @@ export async function sendInvoiceMail(
                 },
                 rowsTitle: "Eckdaten",
                 rows: [
-                    { label: `${label}snummer`, value: number },
+                    {
+                        label: original ? "Korrekturnummer" : "Rechnungsnummer",
+                        value: number,
+                    },
                     ...(original
                         ? [
                               {
-                                  label: "Storniert",
+                                  label: "Korrigiert",
                                   value: original.number ?? "—",
                               },
                           ]

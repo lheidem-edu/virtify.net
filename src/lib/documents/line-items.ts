@@ -43,8 +43,8 @@ export function readLineItems(data: FormData): LineItem[] | null {
 
 /**
  * Accepts "9,95" as well as "9.95" — German input is the common case. A
- * leading minus is allowed because a Storno restates the original's lines
- * with negated prices; callers that must not see one check for it themselves.
+ * leading minus is allowed so an amount can be corrected by hand; callers
+ * that must not see one check for it themselves.
  */
 export function parsePriceToCents(value: string) {
     const normalised = value.replace(/\s/g, "").replace(",", ".");

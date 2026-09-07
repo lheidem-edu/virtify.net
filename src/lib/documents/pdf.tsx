@@ -190,9 +190,10 @@ export type DocumentPdfInput = {
     kind: "invoice" | "offer";
     /**
      * A draft has no number yet and must not read as a payable document; a
-     * Storno reverses an invoice and carries its lines with negated prices.
+     * correction reverses an invoice and carries its lines with a negated
+     * quantity.
      */
-    variant?: "draft" | "storno" | null;
+    variant?: "draft" | "correction" | null;
     number: string;
     /** Optional line beneath the heading, such as an offer's title. */
     title?: string | null;
@@ -216,8 +217,8 @@ const DEFAULT_INTRO = {
     offer: "vielen Dank für Ihr Interesse. Gerne unterbreiten wir Ihnen folgendes Angebot:",
 } as const;
 
-const STORNO_INTRO =
-    "hiermit stornieren wir die nachfolgend genannte Rechnung vollständig. Die ursprünglichen Positionen sind mit umgekehrtem Vorzeichen aufgeführt.";
+const CORRECTION_INTRO =
+    "hiermit korrigieren wir die nachfolgend genannte Rechnung vollständig. Die ursprünglichen Positionen sind mit umgekehrtem Vorzeichen aufgeführt.";
 
 function FoldMarks() {
     // 87 mm and 192 mm fold the sheet into thirds for a DIN-lang envelope;
@@ -237,10 +238,10 @@ function FoldMarks() {
 function DocumentPdf(input: DocumentPdfInput) {
     const isInvoice = input.kind === "invoice";
     const isDraft = input.variant === "draft";
-    const isStorno = input.variant === "storno";
+    const isCorrection = input.variant === "correction";
 
-    const label = isStorno
-        ? "Stornorechnung"
+    const label = isCorrection
+        ? "Rechnungskorrektur"
         : isDraft
           ? `${KIND_LABEL[input.kind]}entwurf`
           : KIND_LABEL[input.kind];
@@ -340,8 +341,8 @@ function DocumentPdf(input: DocumentPdfInput) {
                     </Text>
                     <Text style={styles.introText}>
                         {input.introText ||
-                            (isStorno
-                                ? STORNO_INTRO
+                            (isCorrection
+                                ? CORRECTION_INTRO
                                 : DEFAULT_INTRO[input.kind])}
                     </Text>
 
@@ -414,9 +415,9 @@ function DocumentPdf(input: DocumentPdfInput) {
                             Dies ist ein Entwurf und keine Rechnung im Sinne des
                             § 14 UStG. Bitte leisten Sie hierauf keine Zahlung.
                         </Text>
-                    ) : isStorno ? (
+                    ) : isCorrection ? (
                         <Text style={styles.paragraph}>
-                            Diese Stornorechnung hebt die genannte Rechnung
+                            Diese Rechnungskorrektur hebt die genannte Rechnung
                             vollständig auf. Eine Zahlung ist hierauf nicht zu
                             leisten; bereits gezahlte Beträge erstatten wir auf
                             das uns bekannte Konto.

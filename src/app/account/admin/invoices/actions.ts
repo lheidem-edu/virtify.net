@@ -218,7 +218,7 @@ export async function updateInvoice(
  * A draft carries no number, so deleting it burns nothing and leaves no gap in
  * the RE- series that § 14 Abs. 4 Nr. 4 UStG requires to be unbroken. Anything
  * that has been issued is kept for the § 257 HGB / § 147 AO retention period
- * and is corrected by a Storno instead.
+ * and is corrected by a Rechnungskorrektur instead.
  */
 export async function deleteInvoice(
     _previous: InvoiceState,
@@ -454,7 +454,7 @@ export async function unmarkInvoicePaid(
 /**
  * A correction is never an edit: AGB § 7 (7) — "Eine ausgestellte Rechnung
  * wird nicht verändert. Korrekturen erfolgen durch Stornierung und
- * Neuausstellung." So the Storno is a full invoice of its own, drawn from the
+ * Neuausstellung." So the correction is a full invoice of its own, drawn from
  * same RE- series, carrying the original's lines with reversed signs.
  *
  * Everything frozen at issue time — recipient, buyer reference, service period
@@ -469,7 +469,7 @@ export async function cancelInvoice(
     await requireAdmin();
 
     const invoiceId = String(data.get("invoiceId") ?? "");
-    const stornoId = createId("invoice");
+    const correctionId = createId("invoice");
 
     let recipientEmail = "";
     let recipientName = "";
@@ -482,7 +482,7 @@ export async function cancelInvoice(
                 .where(eq(schema.invoice.id, invoiceId))
                 .for("update");
 
-            // A Storno is itself an issued invoice, so "issued or paid" alone
+            // A correction is itself an issued invoice, so "issued or paid"
             // would let one be reversed again into an endless chain.
             if (
                 !row?.number ||
@@ -516,7 +516,7 @@ export async function cancelInvoice(
             const number = await nextNumber(tx, "invoice", issuedAt);
 
             await tx.insert(schema.invoice).values({
-                id: stornoId,
+                id: correctionId,
                 userId: row.userId,
                 contractId: row.contractId,
                 number,
@@ -524,12 +524,14 @@ export async function cancelInvoice(
                 recipient: row.recipient,
                 buyerReference: row.buyerReference,
                 issuedAt,
-                // Nothing falls due on a Storno; it settles the original.
+                // Nothing falls due on a correction; it settles the original.
                 dueAt: null,
                 servicePeriodStart: row.servicePeriodStart,
                 servicePeriodEnd: row.servicePeriodEnd,
                 cancelsInvoiceId: invoiceId,
-                note: `Storno zu Rechnung ${row.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben.`,
+                // The document already says what a correction does; the note
+                // only has to name what it corrects, for the audit trail.
+                note: `Korrektur zu Rechnung ${row.number}.`,
             });
 
             // The reversal sits on the quantity, not on the price: EN 16931
@@ -539,7 +541,7 @@ export async function cancelInvoice(
             await tx.insert(schema.invoiceItem).values(
                 items.map((item, index) => ({
                     id: createId("invoiceitem"),
-                    invoiceId: stornoId,
+                    invoiceId: correctionId,
                     position: index + 1,
                     description: item.description,
                     detail: item.detail,
@@ -572,12 +574,12 @@ export async function cancelInvoice(
         };
     }
 
-    // Outside the transaction: the Storno carries a number of its own, and
+    // Outside the transaction: the correction carries a number of its own,
     // rolling it back over a failed mail would tear a gap into the series.
     try {
-        await sendInvoiceMail(stornoId, recipientEmail, recipientName);
+        await sendInvoiceMail(correctionId, recipientEmail, recipientName);
     } catch (error) {
-        console.error("[admin] storno created but mail failed:", error);
+        console.error("[admin] correction created but mail failed:", error);
         // Deliberately not revalidated: a refresh re-renders the row this
         // form lives in, unmounts it and takes the message with it. The
         // mutation is committed either way and the sentence below says so;
@@ -585,7 +587,7 @@ export async function cancelInvoice(
         return {
             status: "error",
             message:
-                "Die Stornorechnung ist erstellt, aber der E-Mail-Versand hat nicht geklappt. Sie liegt im Kundenbereich bereit.",
+                "Die Rechnungskorrektur ist erstellt, aber der E-Mail-Versand hat nicht geklappt. Sie liegt im Kundenbereich bereit.",
         };
     }
 
@@ -593,7 +595,7 @@ export async function cancelInvoice(
     revalidatePath(`/account/admin/invoices/${invoiceId}`);
     revalidatePath("/account/invoices");
 
-    return { status: "cancelled", message: stornoId };
+    return { status: "cancelled", message: correctionId };
 }
 
 /**
@@ -617,7 +619,7 @@ export async function resendInvoiceMail(
 
         // A cancelled invoice is annulled: sending it again would put a
         // payable document the customer no longer owes back in their inbox.
-        // The Storno itself is status "issued", so it stays resendable.
+        // The correction itself is status "issued", so it stays resendable.
         if (
             !row?.number ||
             (row.status !== "issued" && row.status !== "paid")

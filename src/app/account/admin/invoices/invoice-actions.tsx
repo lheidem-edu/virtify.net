@@ -103,10 +103,10 @@ export function CancelInvoiceAction({
             action={cancelInvoice}
             initialState={initialState}
             fields={{ invoiceId }}
-            label="Stornieren"
-            title={`Rechnung ${number} stornieren?`}
-            description="Es entsteht eine Stornorechnung mit eigener Nummer und umgekehrten Vorzeichen, die dem Kunden sofort zugestellt wird. Die ursprüngliche Rechnung bleibt erhalten und gilt als aufgehoben."
-            confirmLabel="Stornieren und senden"
+            label="Korrigieren"
+            title={`Rechnung ${number} korrigieren?`}
+            description="Es entsteht eine Rechnungskorrektur mit eigener Nummer und umgekehrten Vorzeichen, die dem Kunden sofort zugestellt wird. Die ursprüngliche Rechnung bleibt erhalten und gilt als aufgehoben."
+            confirmLabel="Korrigieren und senden"
             variant="outline"
             confirmVariant="destructive"
         />

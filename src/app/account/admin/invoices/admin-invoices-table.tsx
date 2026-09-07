@@ -20,8 +20,8 @@ export type AdminInvoiceRow = {
     dueAt: Date | null;
     email: string;
     amount: number;
-    /** A Storno settles the invoice it reverses; nothing on it falls due. */
-    isStorno: boolean;
+    /** A correction settles the invoice it reverses; nothing on it falls due. */
+    isCorrection: boolean;
 };
 
 const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
@@ -75,7 +75,7 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
         filterFn: (row, id, value) => row.getValue(id) === value,
     },
     {
-        // Only what is done in passing lives here; storno, resend and delete
+        // Only what is done in passing lives here; correction, resend and delete
         // ask for a confirmation and belong on the detail page.
         id: "actions",
         header: "",
@@ -99,7 +99,7 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
                             XML
                         </Link>
                         {row.original.status === "issued" &&
-                        !row.original.isStorno ? (
+                        !row.original.isCorrection ? (
                             <MarkPaidForm invoiceId={row.original.id} />
                         ) : null}
                     </>

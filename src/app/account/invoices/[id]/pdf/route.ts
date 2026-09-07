@@ -21,7 +21,7 @@ export async function GET(
 
     const { invoice, buyer, totals } = loaded;
 
-    // A Storno is recognised by what it points at, exactly as the mail does —
+    // A correction is recognised by what it points at, as the mail does —
     // it is an invoice of the same series, only with reversed signs.
     const original = invoice.cancelsInvoiceId
         ? ((
@@ -36,9 +36,13 @@ export async function GET(
     const pdf = await renderDocumentPdf({
         kind: "invoice",
         variant:
-            invoice.status === "draft" ? "draft" : original ? "storno" : null,
+            invoice.status === "draft"
+                ? "draft"
+                : original
+                  ? "correction"
+                  : null,
         title: original
-            ? `Storno zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
+            ? `Korrektur zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
             : null,
         number: invoice.number ?? "ENTWURF",
         customerNumber: buyer.customerNumber,

@@ -72,7 +72,7 @@ export default async function Page({
     const { invoice, items, buyer, totals } = loaded;
     const isDraft = invoice.status === "draft";
 
-    // Both directions of the Storno pair: the invoice this one reverses, and
+    // Both directions of the correction pair: the invoice this one reverses,
     // the one that reversed it. Neither is reachable from the row itself.
     const [cancels] = invoice.cancelsInvoiceId
         ? await db
@@ -123,7 +123,7 @@ export default async function Page({
             <PageHeader
                 title={
                     cancels
-                        ? `Stornorechnung ${invoice.number}`
+                        ? `Rechnungskorrektur ${invoice.number}`
                         : `Rechnung ${invoice.number ?? "(Entwurf)"}`
                 }
                 intro={`${buyer.email}${buyer.company ? ` — ${buyer.company}` : ""}`}
@@ -168,7 +168,7 @@ export default async function Page({
                     </Field>
                     <Field label="Fällig">{formatDate(invoice.dueAt)}</Field>
                     <Field label="Bezahlt">{formatDate(invoice.paidAt)}</Field>
-                    <Field label="Storniert">
+                    <Field label="Korrigiert am">
                         {formatDate(invoice.cancelledAt)}
                     </Field>
                     <Field label="Leistungszeitraum">
@@ -190,7 +190,7 @@ export default async function Page({
                         )}
                     </Field>
                     {cancels ? (
-                        <Field label="Storniert Rechnung">
+                        <Field label="Korrigiert Rechnung">
                             <Link
                                 href={`/account/admin/invoices/${cancels.id}`}
                                 className={`font-mono ${LINK}`}
@@ -201,7 +201,7 @@ export default async function Page({
                         </Field>
                     ) : null}
                     {cancelledBy ? (
-                        <Field label="Storniert durch">
+                        <Field label="Korrigiert durch">
                             <Link
                                 href={`/account/admin/invoices/${cancelledBy.id}`}
                                 className={`font-mono ${LINK}`}
@@ -314,7 +314,7 @@ export default async function Page({
                         </>
                     ) : (
                         <>
-                            {/* A Storno settles the original — there is
+                            {/* A correction settles the original — there is
                                 nothing on it left to pay. */}
                             {invoice.status === "issued" && !cancels ? (
                                 <MarkPaidForm invoiceId={invoice.id} />

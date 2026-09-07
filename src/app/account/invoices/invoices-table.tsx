@@ -18,8 +18,8 @@ export type InvoiceRow = {
     dueAt: Date | null;
     email: string;
     amount: number;
-    /** A Storno is issued like any other invoice but reverses one. */
-    isStorno: boolean;
+    /** A correction is issued like any other invoice but reverses one. */
+    isCorrection: boolean;
 };
 
 const columns: ColumnDef<InvoiceRow, unknown>[] = [
@@ -63,11 +63,11 @@ const columns: ColumnDef<InvoiceRow, unknown>[] = [
     {
         accessorKey: "status",
         header: "Status",
-        // A Storno carries status "issued" like any other invoice; saying so
-        // would read as a second demand for money instead of its reversal.
+        // A correction carries status "issued" like any other invoice; saying
+        // so would read as a second demand for money instead of its reversal.
         cell: ({ row }) =>
-            row.original.isStorno ? (
-                <StatusBadge label="Storno" tone="neutral" />
+            row.original.isCorrection ? (
+                <StatusBadge label="Korrektur" tone="neutral" />
             ) : (
                 <StatusBadge
                     label={INVOICE_STATUS_LABEL[row.original.status]}
