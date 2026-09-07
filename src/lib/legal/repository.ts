@@ -68,7 +68,12 @@ export async function loadLegalDocument(
                     lte(schema.legalDocument.effectiveFrom, new Date()),
                 ),
             )
-            .orderBy(desc(schema.legalDocument.effectiveFrom))
+            // Two versions can share an effective date — the second one
+            // published that day is the one that applies.
+            .orderBy(
+                desc(schema.legalDocument.effectiveFrom),
+                desc(schema.legalDocument.version),
+            )
             .limit(1);
 
         if (!row) {

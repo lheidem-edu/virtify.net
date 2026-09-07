@@ -100,10 +100,22 @@ export default async function Page() {
                 const published = versions.filter(
                     (row) => row.status === "published",
                 );
-                const inForce = published.find(
-                    (row) =>
-                        row.effectiveFrom && row.effectiveFrom <= new Date(),
-                );
+                // The same order the public page resolves in: the latest
+                // effective date, and of two that share one the later
+                // version — otherwise Verwaltung would name a different
+                // Fassung than the one a visitor is reading.
+                const inForce = published
+                    .filter(
+                        (row) =>
+                            row.effectiveFrom &&
+                            row.effectiveFrom <= new Date(),
+                    )
+                    .sort(
+                        (a, b) =>
+                            Number(b.effectiveFrom) - Number(a.effectiveFrom) ||
+                            b.version - a.version,
+                    )
+                    .at(0);
                 const upcoming = published.filter(
                     (row) =>
                         row.effectiveFrom && row.effectiveFrom > new Date(),

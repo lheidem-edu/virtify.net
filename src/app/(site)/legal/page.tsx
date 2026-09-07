@@ -4,6 +4,14 @@ import { LegalSections, renderLegalText } from "@/lib/legal/render";
 import { loadLegalDocument } from "@/lib/legal/repository";
 import { legalValues, loadSettings } from "@/lib/settings";
 
+/**
+ * A version can be published to apply from a future day. Nothing happens on
+ * that day — no save, no request to revalidate — so the page has to come back
+ * for it by itself. An hour of lag on a date that is set in days is close
+ * enough, and it keeps the page static the rest of the time.
+ */
+export const revalidate = 3600;
+
 export async function generateMetadata(): Promise<Metadata> {
     const { site } = await loadSettings();
 
