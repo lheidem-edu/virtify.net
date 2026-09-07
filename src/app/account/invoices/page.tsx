@@ -18,6 +18,7 @@ export default async function Page() {
             dueAt: entry.dueAt,
             email: entry.email,
             amount: entry.amount,
+            isStorno: entry.cancelsInvoiceId !== null,
         }));
 
     return (

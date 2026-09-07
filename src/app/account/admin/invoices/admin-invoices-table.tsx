@@ -10,7 +10,7 @@ import {
     INVOICE_STATUS_LABEL,
     INVOICE_STATUS_TONE,
 } from "@/lib/format";
-import { IssueForm, StateForm } from "./invoice-actions";
+import { IssueForm, MarkPaidForm } from "./invoice-actions";
 
 export type AdminInvoiceRow = {
     id: string;
@@ -20,6 +20,8 @@ export type AdminInvoiceRow = {
     dueAt: Date | null;
     email: string;
     amount: number;
+    /** A Storno settles the invoice it reverses; nothing on it falls due. */
+    isStorno: boolean;
 };
 
 const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
@@ -27,9 +29,12 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
         accessorKey: "number",
         header: "Nummer",
         cell: ({ row }) => (
-            <span className="font-mono">
+            <Link
+                href={`/account/admin/invoices/${row.original.id}`}
+                className="font-mono underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+            >
                 {row.original.number ?? "Entwurf"}
-            </span>
+            </Link>
         ),
     },
     { accessorKey: "email", header: "Konto" },
@@ -70,6 +75,8 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
         filterFn: (row, id, value) => row.getValue(id) === value,
     },
     {
+        // Only what is done in passing lives here; storno, resend and delete
+        // ask for a confirmation and belong on the detail page.
         id: "actions",
         header: "",
         enableSorting: false,
@@ -91,12 +98,10 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
                         >
                             XML
                         </Link>
-                        {row.original.status === "cancelled" ? null : (
-                            <StateForm
-                                invoiceId={row.original.id}
-                                canMarkPaid={row.original.status === "issued"}
-                            />
-                        )}
+                        {row.original.status === "issued" &&
+                        !row.original.isStorno ? (
+                            <MarkPaidForm invoiceId={row.original.id} />
+                        ) : null}
                     </>
                 )}
             </div>

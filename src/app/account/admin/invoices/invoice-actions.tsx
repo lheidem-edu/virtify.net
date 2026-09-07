@@ -2,7 +2,17 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
-import { type InvoiceState, issueInvoice, setInvoiceState } from "./actions";
+import ConfirmAction from "@/lib/components/account/confirm-action";
+import FormStatus from "@/lib/components/account/form-status";
+import {
+    cancelInvoice,
+    deleteInvoice,
+    type InvoiceState,
+    issueInvoice,
+    markInvoicePaid,
+    resendInvoiceMail,
+    unmarkInvoicePaid,
+} from "./actions";
 
 const initialState: InvoiceState = { status: "idle" };
 
@@ -16,9 +26,11 @@ export function IssueForm({ invoiceId }: { invoiceId: string }) {
         <form action={formAction} className="flex flex-col gap-2">
             <input type="hidden" name="invoiceId" value={invoiceId} />
             {state.status === "error" ? (
-                <p className="max-w-xs text-xs leading-5 text-destructive">
-                    {state.message}
-                </p>
+                <FormStatus
+                    tone="error"
+                    message={state.message}
+                    variant="inline"
+                />
             ) : null}
             <Button type="submit" size="sm" disabled={pending}>
                 {pending ? "…" : "Ausstellen und senden"}
@@ -27,43 +39,112 @@ export function IssueForm({ invoiceId }: { invoiceId: string }) {
     );
 }
 
-export function StateForm({
-    invoiceId,
-    canMarkPaid,
-}: {
-    invoiceId: string;
-    canMarkPaid: boolean;
-}) {
-    const [, formAction, pending] = useActionState(
-        setInvoiceState,
+/** Booking a payment is reversible, so it needs no confirmation. */
+export function MarkPaidForm({ invoiceId }: { invoiceId: string }) {
+    const [state, formAction, pending] = useActionState(
+        markInvoicePaid,
         initialState,
     );
 
     return (
-        <form action={formAction} className="flex gap-2">
+        <form action={formAction} className="flex flex-col gap-2">
             <input type="hidden" name="invoiceId" value={invoiceId} />
-            {canMarkPaid ? (
-                <Button
-                    type="submit"
-                    name="action"
-                    value="paid"
-                    variant="outline"
-                    size="sm"
-                    disabled={pending}
-                >
-                    Bezahlt
-                </Button>
+            {state.status === "error" ? (
+                <FormStatus
+                    tone="error"
+                    message={state.message}
+                    variant="inline"
+                />
             ) : null}
             <Button
                 type="submit"
-                name="action"
-                value="cancel"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 disabled={pending}
             >
-                Stornieren
+                {pending ? "…" : "Bezahlt"}
             </Button>
         </form>
+    );
+}
+
+export function UnmarkPaidForm({ invoiceId }: { invoiceId: string }) {
+    const [state, formAction, pending] = useActionState(
+        unmarkInvoicePaid,
+        initialState,
+    );
+
+    return (
+        <form action={formAction} className="flex flex-col gap-2">
+            <input type="hidden" name="invoiceId" value={invoiceId} />
+            {state.status === "error" ? (
+                <FormStatus
+                    tone="error"
+                    message={state.message}
+                    variant="inline"
+                />
+            ) : null}
+            <Button type="submit" variant="ghost" size="sm" disabled={pending}>
+                {pending ? "…" : "Zahlung zurücknehmen"}
+            </Button>
+        </form>
+    );
+}
+
+export function CancelInvoiceAction({
+    invoiceId,
+    number,
+}: {
+    invoiceId: string;
+    number: string;
+}) {
+    return (
+        <ConfirmAction
+            action={cancelInvoice}
+            initialState={initialState}
+            fields={{ invoiceId }}
+            label="Stornieren"
+            title={`Rechnung ${number} stornieren?`}
+            description="Es entsteht eine Stornorechnung mit eigener Nummer und umgekehrten Vorzeichen, die dem Kunden sofort zugestellt wird. Die ursprüngliche Rechnung bleibt erhalten und gilt als aufgehoben."
+            confirmLabel="Stornieren und senden"
+            variant="outline"
+            confirmVariant="destructive"
+        />
+    );
+}
+
+export function DeleteInvoiceAction({ invoiceId }: { invoiceId: string }) {
+    return (
+        <ConfirmAction
+            action={deleteInvoice}
+            initialState={initialState}
+            fields={{ invoiceId }}
+            label="Löschen"
+            title="Entwurf löschen?"
+            description="Der Entwurf und seine Positionen werden entfernt. Eine Nummer wurde noch nicht vergeben, es entsteht also keine Lücke."
+            confirmLabel="Löschen"
+            confirmVariant="destructive"
+        />
+    );
+}
+
+export function ResendMailAction({
+    invoiceId,
+    email,
+}: {
+    invoiceId: string;
+    email: string;
+}) {
+    return (
+        <ConfirmAction
+            action={resendInvoiceMail}
+            initialState={initialState}
+            fields={{ invoiceId }}
+            label="Erneut senden"
+            title="Rechnung erneut senden?"
+            description={`Das unveränderte Dokument geht noch einmal an ${email}. Nummer, Datum und Anschrift bleiben, wie sie sind.`}
+            confirmLabel="Senden"
+            variant="outline"
+        />
     );
 }

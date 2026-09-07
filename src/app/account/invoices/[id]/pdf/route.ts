@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth-session";
 import { renderDocumentPdf } from "@/lib/documents/pdf";
 import { formatRecipient, loadInvoice } from "@/lib/documents/repository";
+import { formatDate } from "@/lib/format";
 
 export async function GET(
     _request: Request,
@@ -20,8 +21,25 @@ export async function GET(
 
     const { invoice, buyer, totals } = loaded;
 
+    // A Storno is recognised by what it points at, exactly as the mail does —
+    // it is an invoice of the same series, only with reversed signs.
+    const original = invoice.cancelsInvoiceId
+        ? ((
+              await loadInvoice(
+                  invoice.cancelsInvoiceId,
+                  session.user.id,
+                  isAdmin,
+              )
+          )?.invoice ?? null)
+        : null;
+
     const pdf = await renderDocumentPdf({
         kind: "invoice",
+        variant:
+            invoice.status === "draft" ? "draft" : original ? "storno" : null,
+        title: original
+            ? `Storno zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
+            : null,
         number: invoice.number ?? "ENTWURF",
         customerNumber: buyer.customerNumber,
         recipient: invoice.recipient ?? formatRecipient(buyer),

@@ -89,8 +89,9 @@ export function formatQuantity(quantity: number, unitCode: string) {
     const amount = quantity.toLocaleString("de-DE", {
         maximumFractionDigits: 2,
     });
+    // A Storno line carries a negative quantity; -1 is still singular.
     const unit =
-        quantity === 1
+        Math.abs(quantity) === 1
             ? UNIT_LABEL[unitCode]
             : (UNIT_LABEL_PLURAL[unitCode] ?? UNIT_LABEL[unitCode]);
 

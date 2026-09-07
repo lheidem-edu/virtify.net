@@ -10,7 +10,7 @@ import {
     OFFER_STATUS_LABEL,
     OFFER_STATUS_TONE,
 } from "@/lib/format";
-import SendForm from "./send-form";
+import { SendOfferAction } from "./offer-actions";
 
 export type AdminOfferRow = {
     id: string;
@@ -28,7 +28,12 @@ const columns: ColumnDef<AdminOfferRow, unknown>[] = [
         accessorKey: "number",
         header: "Nummer",
         cell: ({ row }) => (
-            <span className="font-mono">{row.original.number}</span>
+            <Link
+                href={`/account/admin/offers/${row.original.id}`}
+                className="font-mono underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+            >
+                {row.original.number}
+            </Link>
         ),
     },
     { accessorKey: "title", header: "Bezeichnung" },
@@ -74,7 +79,7 @@ const columns: ColumnDef<AdminOfferRow, unknown>[] = [
                     PDF
                 </Link>
                 {row.original.status === "draft" ? (
-                    <SendForm offerId={row.original.id} />
+                    <SendOfferAction offerId={row.original.id} />
                 ) : null}
             </div>
         ),

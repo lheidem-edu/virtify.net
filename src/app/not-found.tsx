@@ -18,6 +18,7 @@ export default function NotFound() {
                     verschoben.
                 </p>
                 <Button
+                    nativeButton={false}
                     render={<Link href="/" />}
                     variant="outline"
                     size="lg"

@@ -55,6 +55,14 @@ const columns: ColumnDef<ContractRow, unknown>[] = [
         cell: ({ row }) => `${row.original.minimumTermMonths} Monate`,
     },
     {
+        accessorKey: "terminatedTo",
+        header: "Gekündigt zum",
+        cell: ({ row }) => formatDate(row.original.terminatedTo),
+        sortingFn: (a, b) =>
+            (a.original.terminatedTo?.getTime() ?? 0) -
+            (b.original.terminatedTo?.getTime() ?? 0),
+    },
+    {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
