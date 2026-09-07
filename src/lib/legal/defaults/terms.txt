@@ -161,7 +161,7 @@ Die Verbreitung terroristischer Inhalte unter Nutzung der Dienste des Anbieters 
 
 Terroristische Inhalte sind Materialien im Sinne des Art. 2 Nr. 7 der Verordnung (EU) 2021/784 (TCO-VO), insbesondere Materialien, die zur Begehung terroristischer Straftaten anstiften, dazu bestimmen oder anleiten, zur Beteiligung an einer terroristischen Vereinigung bestimmen oder die Begehung einer solchen Straftat androhen.
 
-Meldungen über mutmaßlich terroristische Inhalte sind elektronisch an die Kontaktstelle des Anbieters zu richten: [{{operatorEmail}}](mailto:{{operatorEmail}}) .
+Meldungen über mutmaßlich terroristische Inhalte sind elektronisch an die Kontaktstelle des Anbieters zu richten: [{{operatorEmail}}](mailto:{{operatorEmail}}).
 
 Eine Entfernungsanordnung der zuständigen Behörde setzt der Anbieter spätestens innerhalb einer Stunde nach Erhalt um, sofern die Anordnung keine offensichtlichen Fehler und keine unzureichenden Informationen enthält. Anschließend informiert er die Behörde und den Kunden unverzüglich über die getroffenen Maßnahmen.
 
@@ -179,7 +179,7 @@ Rechtswidrig sind insbesondere Inhalte, die
 - rassistisch, diskriminierend, beleidigend oder gewaltverherrlichend sind oder in sonstiger Weise Persönlichkeitsrechte oder andere Grundrechte verletzen,
 - jugendgefährdend sind.
 
-Der Kunde und Dritte können mutmaßlich rechtswidrige Inhalte jederzeit elektronisch an die Kontaktstelle des Anbieters nach Art. 11 und 12 der Verordnung (EU) 2022/2065 melden: [{{operatorEmail}}](mailto:{{operatorEmail}}) . Die Meldung soll die beanstandeten Inhalte hinreichend genau bezeichnen und begründen.
+Der Kunde und Dritte können mutmaßlich rechtswidrige Inhalte jederzeit elektronisch an die Kontaktstelle des Anbieters nach Art. 11 und 12 der Verordnung (EU) 2022/2065 melden: [{{operatorEmail}}](mailto:{{operatorEmail}}). Die Meldung soll die beanstandeten Inhalte hinreichend genau bezeichnen und begründen.
 
 Der Anbieter prüft eingehende Meldungen sorgfältig, objektiv und verhältnismäßig. Die Prüfung wird von Menschen vorgenommen; automatisierte Mittel werden allenfalls unterstützend eingesetzt.
 
@@ -216,7 +216,7 @@ Der Kunde ist bei der Nutzung der Leistungen selbst für die Einhaltung datensch
 
 Beide Vertragsparteien behandeln vertrauliche Informationen der jeweils anderen Partei vertraulich, auch über das Vertragsende hinaus.
 
-Für die Verarbeitung beim Besuch dieser Website gilt die [Datenschutzerklärung](/privacy) .
+Für die Verarbeitung beim Besuch dieser Website gilt die [Datenschutzerklärung](/privacy).
 
 @section § 17 | Höhere Gewalt | prose
 Ereignisse höherer Gewalt, die der Anbieter nicht zu vertreten hat — insbesondere Naturkatastrophen, Krieg, Terrorakte, Streiks, behördliche Anordnungen sowie großflächige Strom- oder Netzausfälle — befreien die Vertragsparteien für ihre Dauer von den betroffenen Leistungspflichten. Dauert ein solcher Zustand länger als sechs Wochen an, kann jede Vertragspartei den Vertrag außerordentlich kündigen.
@@ -244,7 +244,7 @@ Unternehmern steht kein Widerrufsrecht zu.
 
 Sie haben das Recht, binnen vierzehn Tagen ohne Angabe von Gründen diesen Vertrag zu widerrufen. Die Widerrufsfrist beträgt vierzehn Tage ab dem Tag des Vertragsabschlusses.
 
-Um Ihr Widerrufsrecht auszuüben, müssen Sie uns ( {{operatorName}}, {{operatorStreet}}, {{operatorCity}}, {{operatorCountry}}, E-Mail: [{{operatorEmail}}](mailto:{{operatorEmail}}) ) mittels einer eindeutigen Erklärung, etwa per E-Mail oder Ticket, über Ihren Entschluss, diesen Vertrag zu widerrufen, informieren. Sie können dafür das [Muster-Widerrufsformular (PDF)](/withdrawal-form) verwenden, das jedoch nicht vorgeschrieben ist.
+Um Ihr Widerrufsrecht auszuüben, müssen Sie uns ({{operatorName}}, {{operatorStreet}}, {{operatorCity}}, {{operatorCountry}}, E-Mail: [{{operatorEmail}}](mailto:{{operatorEmail}})) mittels einer eindeutigen Erklärung, etwa per E-Mail oder Ticket, über Ihren Entschluss, diesen Vertrag zu widerrufen, informieren. Sie können dafür das [Muster-Widerrufsformular (PDF)](/withdrawal-form) verwenden, das jedoch nicht vorgeschrieben ist.
 
 Zur Wahrung der Widerrufsfrist reicht es aus, dass Sie die Mitteilung über die Ausübung des Widerrufsrechts vor Ablauf der Widerrufsfrist absenden.
 

@@ -1,42 +1,48 @@
-@title Datenschutzerklärung
+DATENSCHUTZERKLÄRUNG
 
-@intro
-Diese Erklärung informiert dich nach Art. 13 und 14 DSGVO darüber, welche personenbezogenen Daten wir beim Besuch von {{siteName}}, bei der Nutzung des Kundenbereichs und im Rahmen der Vertragsabwicklung verarbeiten.
+Stand: 7. September 2026
+
+Diese Erklärung informiert dich nach Art. 13 und 14 DSGVO darüber, welche personenbezogenen Daten wir beim Besuch von virtify.net, bei der Nutzung des Kundenbereichs und im Rahmen der Vertragsabwicklung verarbeiten.
 
 Welche der nachstehenden Verarbeitungen tatsächlich stattfinden, hängt davon ab, wie du unsere Angebote nutzt. Für personenbezogene Daten, die du selbst auf einer von uns bereitgestellten Instanz verarbeitest, bist du Verantwortlicher — nicht wir.
 
-@section 01 | Verantwortlicher | prose
-{{operatorName}}
-{{operatorStreet}}
-{{operatorCity}}
-{{operatorCountry}}
+01 Verantwortlicher
 
-E-Mail: [{{operatorEmail}}](mailto:{{operatorEmail}})
+Luca Heidemann
+Hermann-Löns-Weg 19
+32832 Augustdorf
+Deutschland
+
+E-Mail: admin@virtify.net
 
 Ein Datenschutzbeauftragter ist nicht bestellt, da die Voraussetzungen des Art. 37 DSGVO und des § 38 BDSG nicht vorliegen.
 
-@section 02 | Grundsätze | prose
+02 Grundsätze
+
 Wir verarbeiten personenbezogene Daten nur, soweit dies für den Betrieb der Internetseite, für die Begründung und Durchführung des Vertragsverhältnisses oder zur Erfüllung gesetzlicher Pflichten erforderlich ist. Eine Verarbeitung zu Werbezwecken findet ohne deine Einwilligung nicht statt.
 
 Die Übertragung zwischen deinem Endgerät und unseren Servern ist durchgehend mit TLS verschlüsselt.
 
-@section 03 | Betrieb und Server-Logfiles | prose
-Diese Internetseite und die bereitgestellten Instanzen laufen auf eigener Hardware von {{siteName}}. Ein externer Hosting-Dienstleister wird nicht als Auftragsverarbeiter eingesetzt.
+03 Betrieb und Server-Logfiles
+
+Diese Internetseite und die bereitgestellten Instanzen laufen auf eigener Hardware von virtify.net. Ein externer Hosting-Dienstleister wird nicht als Auftragsverarbeiter eingesetzt.
 
 Bei jedem Zugriff erfasst der Webserver automatisch Zugriffsdaten in Logdateien:
-- IP-Adresse des anfragenden Endgeräts
-- Datum und Uhrzeit des Zugriffs
-- angeforderte Adresse und verwendete HTTP-Methode
-- HTTP-Statuscode und übertragene Datenmenge
-- Referrer-Adresse, sofern übermittelt
-- Browsertyp und Betriebssystem (User-Agent)
+– IP-Adresse des anfragenden Endgeräts
+– Datum und Uhrzeit des Zugriffs
+– angeforderte Adresse und verwendete HTTP-Methode
+– HTTP-Statuscode und übertragene Datenmenge
+– Referrer-Adresse, sofern übermittelt
+– Browsertyp und Betriebssystem (User-Agent)
 
-Zweck ist der technisch fehlerfreie, sichere und stabile Betrieb sowie die Abwehr und Aufklärung von Angriffen. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; unser berechtigtes Interesse liegt in den genannten Zwecken. Die Logdateien werden spätestens nach {{logRetentionDays}} Tagen gelöscht, sofern sie nicht zur Aufklärung eines konkreten Sicherheitsvorfalls ausnahmsweise länger benötigt werden.
+Zweck ist der technisch fehlerfreie, sichere und stabile Betrieb sowie die Abwehr und Aufklärung von Angriffen. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; unser berechtigtes Interesse liegt in den genannten Zwecken. Die Logdateien werden spätestens nach 14 Tagen gelöscht, sofern sie nicht zur Aufklärung eines konkreten Sicherheitsvorfalls ausnahmsweise länger benötigt werden.
 
-@section 04 | Kontaktaufnahme | prose
+04 Kontaktaufnahme
+
 Wenn du uns per E-Mail oder über ein Kontaktformular schreibst, verarbeiten wir deine Kontaktdaten und den Inhalt der Nachricht, um die Anfrage zu bearbeiten. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO bei vertragsbezogenen Anfragen, im Übrigen Art. 6 Abs. 1 lit. f DSGVO. Die Nachrichten werden gelöscht, sobald der Vorgang abgeschlossen ist und keine gesetzlichen Aufbewahrungsfristen entgegenstehen.
 
-@section 05 | Kundenkonto und Vertragsabwicklung | prose
+05 Kundenkonto und Vertragsabwicklung
+
 Für den Kundenbereich verarbeiten wir die dafür erforderlichen Bestands- und Vertragsdaten: Name, optional Firma, Anschrift, E-Mail-Adresse, optional Umsatzsteuer-Identifikationsnummer und Telefonnummer, das Passwort ausschließlich als kryptografischen Hash, sowie Vertragsgegenstand, Laufzeit, Angebote und Rechnungen.
 
 Aktivierst du die Zwei-Faktor-Authentifizierung, speichern wir zusätzlich das dafür nötige Geheimnis und deine Wiederherstellungscodes. Zur Abwehr automatisierter Anmeldeversuche halten wir außerdem kurzzeitig Zähler vor, die an die anfragende IP-Adresse gebunden sind (Art. 6 Abs. 1 lit. f DSGVO).
@@ -45,12 +51,14 @@ Zweck ist die Begründung, Durchführung und Beendigung des Vertragsverhältniss
 
 Nach Vertragsende werden die Daten gelöscht, sobald sie für die Zwecke nicht mehr erforderlich sind und keine gesetzlichen Aufbewahrungspflichten bestehen.
 
-@section 06 | Angebote und Rechnungen | prose
+06 Angebote und Rechnungen
+
 Angebote und Rechnungen erstellen wir aus deinen Stammdaten und stellen sie dir im Kundenbereich sowie per E-Mail bereit. Rechnungen versenden wir zusätzlich im Format XRechnung, damit du sie maschinell weiterverarbeiten kannst. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Vertragsdurchführung) sowie Art. 6 Abs. 1 lit. c DSGVO (Rechnungsstellung nach § 14 UStG).
 
 Eine ausgestellte Rechnung ist unveränderlich; Korrekturen erfolgen durch Stornierung und Neuausstellung. Name und Anschrift werden zum Zeitpunkt der Ausstellung in das Dokument übernommen und bleiben dort erhalten, auch wenn du deine Stammdaten später änderst — andernfalls würde ein bereits erteilter Beleg nachträglich verändert.
 
-@section 07 | Zahlungsabwicklung | prose
+07 Zahlungsabwicklung
+
 Rechnungen kannst du per Überweisung begleichen oder über einen Zahlungsdienstleister bezahlen. Für die Kartenzahlung setzen wir Stripe Payments Europe, Ltd., Dublin, Irland ein, für die Zahlung mit einem PayPal-Konto PayPal (Europe) S.à r.l. et Cie, S.C.A., Luxemburg. Der Zahlungsvorgang findet auf einer Seite des jeweiligen Anbieters statt; von unserer Seite wirst du dorthin weitergeleitet und anschließend zurückgeführt. Bei einer Überweisung ist kein Zahlungsdienstleister beteiligt.
 
 An Stripe übermitteln wir deinen Namen, deine E-Mail-Adresse, den Rechnungsbetrag, die Rechnungsnummer sowie die internen Kennungen deines Kundenkontos und der Rechnung. An PayPal übermitteln wir den Rechnungsbetrag, die Rechnungsnummer und die interne Kennung der Rechnung.
@@ -63,60 +71,71 @@ Zurück erhalten und speichern wir eine Kennung deines Kundenkontos beim Zahlung
 
 Hinterlegst du für einen Vertrag ein Zahlungsmittel, damit Rechnungen daraus automatisch eingezogen werden, speichern wir außerdem einen Token — eine Zeichenfolge, mit der wir beim Zahlungsdienstleister einen Einzug auslösen können, ohne die Zahlungsdaten selbst zu kennen — sowie eine Bezeichnung zur Anzeige, etwa „VISA •••• 4242“ oder die bei PayPal hinterlegte E-Mail-Adresse. Widerrufst du die Autorisierung im Kundenbereich, verwenden wir den Token ab sofort nicht mehr und beauftragen den Zahlungsdienstleister mit seiner Löschung.
 
-Rechtsgrundlage für die Verarbeitung durch uns ist Art. 6 Abs. 1 lit. b DSGVO (Durchführung des Vertrags). Soweit die Zahlungsdienstleister die Daten darüber hinaus zur Betrugsprävention verarbeiten, stützen sie das auf Art. 6 Abs. 1 lit. f DSGVO. Für den Zahlungsvorgang sind sie eigene Verantwortliche und nicht unsere Auftragsverarbeiter; Näheres steht im Abschnitt „Empfänger“. Es gelten ihre eigenen Datenschutzhinweise: [stripe.com/de/privacy](https://stripe.com/de/privacy) und [paypal.com/de/legalhub/privacy-full](https://www.paypal.com/de/legalhub/privacy-full).
+Rechtsgrundlage für die Verarbeitung durch uns ist Art. 6 Abs. 1 lit. b DSGVO (Durchführung des Vertrags). Soweit die Zahlungsdienstleister die Daten darüber hinaus zur Betrugsprävention verarbeiten, stützen sie das auf Art. 6 Abs. 1 lit. f DSGVO. Für den Zahlungsvorgang sind sie eigene Verantwortliche und nicht unsere Auftragsverarbeiter; Näheres steht im Abschnitt „Empfänger“. Es gelten ihre eigenen Datenschutzhinweise: stripe.com/de/privacy (https://stripe.com/de/privacy) und paypal.com/de/legalhub/privacy-full (https://www.paypal.com/de/legalhub/privacy-full).
 
 Zahlungen sind Buchungsbelege. Die dazu gespeicherten Daten bewahren wir daher gemeinsam mit der zugehörigen Rechnung für die Dauer der handels- und steuerrechtlichen Aufbewahrungsfristen auf (§ 257 HGB, § 147 AO) und beschränken für diese Zeit die Verarbeitung.
 
-@section 08 | Cookies und vergleichbare Techniken | prose
+08 Cookies und vergleichbare Techniken
+
 Für den Aufruf dieser Internetseite werden keine Cookies gesetzt und keine Informationen auf deinem Endgerät gespeichert oder ausgelesen. Es kommen keine Verfahren zur Wiedererkennung von Besuchern und kein Fingerprinting zum Einsatz.
 
 Soweit ein Kundenbereich bereitgestellt wird, werden dort ausschließlich technisch notwendige Cookies zur Sitzungsverwaltung und zum Schutz vor Cross-Site-Request-Forgery eingesetzt. Diese sind für den von dir ausdrücklich gewünschten Dienst unbedingt erforderlich; eine Einwilligung ist dafür nach § 25 Abs. 2 Nr. 2 TDDDG nicht erforderlich. Rechtsgrundlage der anschließenden Verarbeitung ist Art. 6 Abs. 1 lit. b DSGVO.
 
 Ein Cookie-Banner wird deshalb nicht angezeigt.
 
-@section 09 | Keine Analyse, keine Einbindung Dritter | prose
+09 Keine Analyse, keine Einbindung Dritter
+
 Es findet keine Webanalyse und keine Reichweitenmessung statt. Es sind keine Tracking-Dienste, Werbenetzwerke, Social-Media-Plugins, Kartendienste, Video-Einbettungen oder externen Content-Delivery-Networks eingebunden. Schriftarten, Skripte und Stylesheets werden ausschließlich von unserem eigenen Server ausgeliefert.
 
-@section 10 | Externe Verlinkungen | prose
+10 Externe Verlinkungen
+
 Unsere Seiten können Verweise auf Websites Dritter enthalten. Solche Verweise werden ausschließlich als reine Links eingebunden; Inhalte Dritter werden nicht eingebettet. Eine Verbindung zum jeweiligen Anbieter entsteht erst, wenn du einen solchen Link aktiv anklickst. Dabei wird deine IP-Adresse an den Anbieter der Zielseite übertragen. Auf die dortige Verarbeitung haben wir keinen Einfluss; es gelten die Datenschutzhinweise des jeweiligen Anbieters.
 
-@section 11 | Daten auf den von dir genutzten Instanzen | prose
+11 Daten auf den von dir genutzten Instanzen
+
 Für personenbezogene Daten, die du auf einer von uns bereitgestellten Instanz speicherst oder verarbeitest, bist du Verantwortlicher im Sinne des Art. 4 Nr. 7 DSGVO. Wir werden insoweit als Auftragsverarbeiter tätig und verarbeiten diese Daten ausschließlich nach deinen Weisungen. Vor Beginn einer solchen Verarbeitung schließen wir mit dir einen Auftragsverarbeitungsvertrag nach Art. 28 DSGVO.
 
 Dir obliegt es, für die auf der Instanz verarbeiteten Daten die eigenen datenschutzrechtlichen Pflichten zu erfüllen, insbesondere Informationspflichten, Einwilligungen und Betroffenenrechte.
 
-@section 12 | Empfänger | prose
+12 Empfänger
+
 Personenbezogene Daten werden nicht verkauft, nicht vermietet und nicht zu Werbezwecken an Dritte weitergegeben. Eine Offenlegung erfolgt nur, soweit wir gesetzlich dazu verpflichtet sind, soweit dies zur Durchführung des Vertrags erforderlich ist oder soweit du eingewilligt hast.
 
 Soweit wir Dienstleister einsetzen, die personenbezogene Daten ausschließlich nach unseren Weisungen verarbeiten — etwa für den E-Mail-Versand oder Rechenzentrumsleistungen —, geschieht dies auf Grundlage eines Auftragsverarbeitungsvertrags nach Art. 28 DSGVO.
 
 Für die Zahlungsabwicklung gilt das nicht. Stripe Payments Europe, Ltd., Dublin, Irland, und PayPal (Europe) S.à r.l. et Cie, S.C.A., Luxemburg, entscheiden über Zwecke und Mittel der Verarbeitung des Zahlungsvorgangs selbst — unter anderem, weil sie eigene aufsichtsrechtliche Pflichten erfüllen und Betrug verhindern müssen. Sie sind insoweit eigene Verantwortliche im Sinne des Art. 4 Nr. 7 DSGVO und nicht unsere Auftragsverarbeiter; für ihre Verarbeitung gelten ihre eigenen Datenschutzhinweise. Welche Daten wir ihnen übermitteln, steht im Abschnitt „Zahlungsabwicklung“.
 
-@section 13 | Drittlandübermittlung | prose
+13 Drittlandübermittlung
+
 Wir selbst übermitteln keine personenbezogenen Daten in Länder außerhalb der Europäischen Union oder des Europäischen Wirtschaftsraums.
 
 Unsere Zahlungsdienstleister sitzen in Irland und Luxemburg, geben Daten aber an Konzerngesellschaften außerhalb des Europäischen Wirtschaftsraums weiter. Diese Übermittlungen stützen beide auf die Standardvertragsklauseln der Europäischen Kommission (Art. 46 Abs. 2 lit. c DSGVO). Einzelheiten stehen in ihren Datenschutzhinweisen.
 
-@section 14 | Speicherdauer | prose
+14 Speicherdauer
+
 Wir speichern personenbezogene Daten nur so lange, wie es für die jeweiligen Zwecke erforderlich ist. Danach werden sie gelöscht, sofern keine gesetzlichen Aufbewahrungspflichten entgegenstehen. Handels- und steuerrechtliche Aufbewahrungsfristen betragen insbesondere sechs Jahre nach § 257 HGB und zehn Jahre nach § 147 AO; für die Dauer dieser Fristen wird die Verarbeitung eingeschränkt.
 
-@section 15 | Automatisierte Entscheidungsfindung | prose
+15 Automatisierte Entscheidungsfindung
+
 Eine automatisierte Entscheidungsfindung einschließlich Profiling nach Art. 22 DSGVO findet nicht statt.
 
-@section 16 | Deine Rechte | prose
+16 Deine Rechte
+
 Dir stehen uns gegenüber folgende Rechte zu:
-- Auskunft über die zu deiner Person verarbeiteten Daten (Art. 15 DSGVO)
-- Berichtigung unrichtiger oder Vervollständigung unvollständiger Daten (Art. 16 DSGVO)
-- Löschung (Art. 17 DSGVO)
-- Einschränkung der Verarbeitung (Art. 18 DSGVO)
-- Datenübertragbarkeit (Art. 20 DSGVO)
-- Widerspruch gegen Verarbeitungen auf Grundlage von Art. 6 Abs. 1 lit. f DSGVO (Art. 21 DSGVO)
-- Widerruf einer erteilten Einwilligung mit Wirkung für die Zukunft (Art. 7 Abs. 3 DSGVO)
+– Auskunft über die zu deiner Person verarbeiteten Daten (Art. 15 DSGVO)
+– Berichtigung unrichtiger oder Vervollständigung unvollständiger Daten (Art. 16 DSGVO)
+– Löschung (Art. 17 DSGVO)
+– Einschränkung der Verarbeitung (Art. 18 DSGVO)
+– Datenübertragbarkeit (Art. 20 DSGVO)
+– Widerspruch gegen Verarbeitungen auf Grundlage von Art. 6 Abs. 1 lit. f DSGVO (Art. 21 DSGVO)
+– Widerruf einer erteilten Einwilligung mit Wirkung für die Zukunft (Art. 7 Abs. 3 DSGVO)
 
-Zur Ausübung genügt eine formlose Nachricht an [{{operatorEmail}}](mailto:{{operatorEmail}}).
+Zur Ausübung genügt eine formlose Nachricht an admin@virtify.net.
 
-@section 17 | Beschwerderecht | prose
-Unbeschadet anderweitiger Rechtsbehelfe steht dir ein Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde zu (Art. 77 DSGVO). Für uns zuständig ist die Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen in Düsseldorf ([ldi.nrw.de](https://www.ldi.nrw.de)). Du kannst dich auch an die Aufsichtsbehörde deines gewöhnlichen Aufenthaltsorts wenden.
+17 Beschwerderecht
 
-@section 18 | Änderungen dieser Erklärung | prose
+Unbeschadet anderweitiger Rechtsbehelfe steht dir ein Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde zu (Art. 77 DSGVO). Für uns zuständig ist die Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen in Düsseldorf (ldi.nrw.de (https://www.ldi.nrw.de)). Du kannst dich auch an die Aufsichtsbehörde deines gewöhnlichen Aufenthaltsorts wenden.
+
+18 Änderungen dieser Erklärung
+
 Wir passen diese Datenschutzerklärung an, sobald sich die beschriebenen Verarbeitungen ändern — insbesondere mit dem Start des Kundenbereichs. Es gilt jeweils die hier veröffentlichte Fassung.
