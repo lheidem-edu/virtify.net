@@ -11,6 +11,7 @@ import {
     Settings,
     Shield,
     User,
+    UserCog,
     Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,7 +34,6 @@ import { authClient } from "@/lib/auth-client";
 import {
     ACCOUNT_NAV,
     ACCOUNT_SETTINGS_NAV,
-    ADMIN_NAV,
     type NavEntry,
 } from "@/lib/components/account/nav";
 import Wordmark from "@/lib/components/ui/wordmark";
@@ -47,6 +47,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     scale: Scale,
     settings: Settings,
     user: User,
+    "user-cog": UserCog,
     shield: Shield,
     users: Users,
 };
@@ -93,13 +94,7 @@ function NavGroup({
     );
 }
 
-export default function AccountSidebar({
-    email,
-    isAdmin,
-}: {
-    email: string;
-    isAdmin: boolean;
-}) {
+export default function AccountSidebar({ email }: { email: string }) {
     const pathname = usePathname();
     const router = useRouter();
     const [signingOut, setSigningOut] = useState(false);
@@ -131,13 +126,6 @@ export default function AccountSidebar({
                     entries={ACCOUNT_SETTINGS_NAV}
                     pathname={pathname}
                 />
-                {isAdmin ? (
-                    <NavGroup
-                        label="Verwaltung"
-                        entries={ADMIN_NAV}
-                        pathname={pathname}
-                    />
-                ) : null}
             </SidebarContent>
 
             <SidebarFooter className="border-t">

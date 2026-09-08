@@ -6,8 +6,6 @@
         "node": ">=22"
     },
     "scripts": {
-        "admin:grant": "node --env-file-if-exists=.env.local scripts/grant-admin.mjs grant",
-        "admin:revoke": "node --env-file-if-exists=.env.local scripts/grant-admin.mjs revoke",
         "build": "next build --turbopack",
         "db:down": "node scripts/db.mjs down",
         "db:generate": "drizzle-kit generate",
@@ -20,6 +18,7 @@
         "legal:export": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/legal-export.mts",
         "lint": "biome lint",
         "mail:check": "node --env-file-if-exists=.env.local scripts/mail-check.mjs",
+        "staff:add": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/staff-add.mts",
         "start": "node scripts/migrate.mjs && next start"
     },
     "dependencies": {

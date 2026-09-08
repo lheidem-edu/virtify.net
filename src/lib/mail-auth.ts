@@ -115,3 +115,56 @@ export async function sendPasswordResetMail({
         ],
     });
 }
+
+export async function sendStaffInviteMail({
+    to,
+    name,
+    url,
+}: {
+    to: string;
+    name?: string | null;
+    url: string;
+}) {
+    const { site } = await loadSettings();
+    await send({
+        to,
+        context: "staff invite mail",
+        subject: `Zugang zur Verwaltung — ${site.name}`,
+        heading: "Zugang einrichten",
+        intro: [
+            name ? `Hallo ${name},` : "Hallo,",
+            `für dich wurde ein Mitarbeiterzugang zur Verwaltung von ${site.name} angelegt. Vergib über den folgenden Link dein Passwort, danach kannst du dich unter ${site.url}/admin anmelden.`,
+        ],
+        action: { label: "Passwort festlegen", url },
+        outro: [
+            "Der Link ist aus Sicherheitsgründen nur begrenzt gültig; ist er abgelaufen, fordere über „Passwort vergessen“ einen neuen an.",
+            "Der Zugang hat Zugriff auf Kundendaten und ist von einem etwaigen Kundenkonto unter derselben Adresse getrennt. Beim ersten Anmelden richtest du die Zwei-Faktor-Anmeldung ein; ohne sie bleibt die Verwaltung gesperrt.",
+        ],
+    });
+}
+
+export async function sendStaffResetMail({
+    to,
+    name,
+    url,
+}: {
+    to: string;
+    name?: string | null;
+    url: string;
+}) {
+    const { site } = await loadSettings();
+    await send({
+        to,
+        context: "staff password reset mail",
+        subject: `Passwort für die Verwaltung zurücksetzen — ${site.name}`,
+        heading: "Passwort zurücksetzen",
+        intro: [
+            name ? `Hallo ${name},` : "Hallo,",
+            "für deinen Mitarbeiterzugang zur Verwaltung wurde ein neues Passwort angefordert. Das Passwort deines Kundenkontos ist davon nicht betroffen — es sind getrennte Zugänge.",
+        ],
+        action: { label: "Neues Passwort setzen", url },
+        outro: [
+            "Der Link ist aus Sicherheitsgründen nur begrenzt gültig. Wenn die Anfrage nicht von dir stammt, ändert sich nichts — dein bisheriges Passwort bleibt gültig.",
+        ],
+    });
+}

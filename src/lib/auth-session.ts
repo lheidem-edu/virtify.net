@@ -18,17 +18,3 @@ export async function requireSession() {
 
     return session;
 }
-
-/** Guard for the admin area. Unauthenticated users are sent to the login;
- *  authenticated non-admins get a 404 rather than a 403, so the existence of
- *  the area is not confirmed to them. */
-export async function requireAdmin() {
-    const session = await requireSession();
-
-    if (session.user.role !== "admin") {
-        const { notFound } = await import("next/navigation");
-        notFound();
-    }
-
-    return session;
-}

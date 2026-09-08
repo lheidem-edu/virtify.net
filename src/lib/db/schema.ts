@@ -17,6 +17,11 @@ import { createId } from "./id";
  * Drizzle adapter expects. The customer's own master data lives on `user`
  * because one account is one customer — if several logins per customer are
  * ever needed, this is what moves into its own table.
+ *
+ * Every row here is a customer. Employees are a second Better Auth instance
+ * on the staff_* tables further down, with their own credentials — which is
+ * what lets one address be both a customer and an employee without either
+ * side knowing about the other.
  */
 export const user = pgTable("user", {
     id: text("id")
@@ -41,12 +46,6 @@ export const user = pgTable("user", {
     /** Short, human-facing number for documents and support. Assigned on
      *  sign-up; the ULID stays the technical key. */
     customerNumber: integer("customer_number").unique(),
-
-    // Better Auth admin plugin.
-    role: text("role"),
-    banned: boolean("banned").default(false),
-    banReason: text("ban_reason"),
-    banExpires: timestamp("ban_expires"),
 
     // Better Auth two-factor plugin.
     twoFactorEnabled: boolean("two_factor_enabled").default(false),
@@ -137,6 +136,110 @@ export const twoFactor = pgTable(
  * one instance — in memory, a redeploy would reset every lockout.
  */
 export const rateLimit = pgTable("rate_limit", {
+    id: text("id").primaryKey(),
+    key: text("key"),
+    count: integer("count"),
+    lastRequest: bigint("last_request", { mode: "number" }),
+});
+
+/**
+ * The employees' own Better Auth instance, on its own tables. It exists so an
+ * address can be both: kontakt@… as a customer with a Kundennummer and an
+ * invoice history, and kontakt@… as an employee with a password of its own,
+ * its own two-factor secret and its own session cookie. Neither side can
+ * reach the other, and losing one has no effect on the other.
+ *
+ * The columns mirror what the Drizzle adapter expects, table for table — the
+ * only differences from the customer side are the names and what is missing:
+ * no master data, no customer number, nothing to invoice.
+ */
+export const staffUser = pgTable("staff_user", {
+    id: text("id")
+        .primaryKey()
+        .$defaultFn(() => createId("staffuser")),
+    name: text("name").notNull(),
+    email: text("email").notNull().unique(),
+    /** Always true: the invitation is sent to the address and is the only way
+     *  in, so confirming it separately would ask the same question twice. */
+    emailVerified: boolean("email_verified").notNull().default(false),
+    image: text("image"),
+    twoFactorEnabled: boolean("two_factor_enabled").default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const staffSession = pgTable("staff_session", {
+    id: text("id")
+        .primaryKey()
+        .$defaultFn(() => createId("staffsession")),
+    userId: text("user_id")
+        .notNull()
+        .references(() => staffUser.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    expiresAt: timestamp("expires_at").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const staffAccount = pgTable("staff_account", {
+    id: text("id")
+        .primaryKey()
+        .$defaultFn(() => createId("staffaccount")),
+    userId: text("user_id")
+        .notNull()
+        .references(() => staffUser.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at"),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+    scope: text("scope"),
+    idToken: text("id_token"),
+    password: text("password"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const staffVerification = pgTable("staff_verification", {
+    id: text("id")
+        .primaryKey()
+        .$defaultFn(() => createId("staffverification")),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const staffTwoFactor = pgTable(
+    "staff_two_factor",
+    {
+        id: text("id")
+            .primaryKey()
+            .$defaultFn(() => createId("stafftwofactor")),
+        userId: text("user_id")
+            .notNull()
+            .references(() => staffUser.id, { onDelete: "cascade" }),
+        secret: text("secret").notNull(),
+        backupCodes: text("backup_codes").notNull(),
+        verified: boolean("verified").default(true),
+        failedVerificationCount: integer("failed_verification_count").default(
+            0,
+        ),
+        lockedUntil: timestamp("locked_until"),
+    },
+    (table) => [
+        index("staff_two_factor_user_id_idx").on(table.userId),
+        index("staff_two_factor_secret_idx").on(table.secret),
+    ],
+);
+
+/** Separate counters, so a customer's failed sign-ins cannot lock out the
+ *  admin area or the other way round. */
+export const staffRateLimit = pgTable("staff_rate_limit", {
     id: text("id").primaryKey(),
     key: text("key"),
     count: integer("count"),

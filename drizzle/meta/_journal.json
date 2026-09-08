@@ -85,6 +85,20 @@
       "when": 1788799424999,
       "tag": "0011_numerous_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788813393696,
+      "tag": "0012_free_madelyne_pryor",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788814612354,
+      "tag": "0013_funny_grim_reaper",
+      "breakpoints": true
     }
   ]
 }

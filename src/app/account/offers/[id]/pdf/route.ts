@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireSession } from "@/lib/auth-session";
+import { documentViewer } from "@/lib/document-access";
 import { renderDocumentPdf } from "@/lib/documents/pdf";
 import { formatRecipient, loadOffer } from "@/lib/documents/repository";
 
@@ -7,11 +7,10 @@ export async function GET(
     _request: Request,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const session = await requireSession();
+    const { userId, isAdmin } = await documentViewer();
     const { id } = await params;
-    const isAdmin = session.user.role === "admin";
 
-    const loaded = await loadOffer(id, session.user.id, isAdmin);
+    const loaded = await loadOffer(id, userId, isAdmin);
 
     if (!loaded || (!isAdmin && loaded.offer.status === "draft")) {
         notFound();

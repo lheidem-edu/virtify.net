@@ -53,7 +53,9 @@ export default function Page() {
             setError(
                 signInError.status === 403
                     ? "Bitte bestätige zuerst deine E-Mail-Adresse. Den Link findest du in deinem Postfach."
-                    : "E-Mail-Adresse oder Passwort stimmt nicht.",
+                    : signInError.status === 429
+                      ? "Zu viele Versuche. Bitte warte einige Minuten."
+                      : "E-Mail-Adresse oder Passwort stimmt nicht.",
             );
             return;
         }

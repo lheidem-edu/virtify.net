@@ -13,6 +13,26 @@ function ownership(column: PgColumn, userId: string, isAdmin: boolean) {
     return isAdmin ? undefined : eq(column, userId);
 }
 
+/**
+ * Passed where a loader wants a customer id it will not use. An employee has
+ * no row in `user` at all — they are a separate account on the staff tables —
+ * so there is no id to pass, and the admin flag has already lifted the
+ * ownership filter.
+ */
+export const ANY_CUSTOMER = "";
+
+/** The accounts a contract, offer or invoice can be addressed to. */
+export async function listCustomerAccounts() {
+    return db
+        .select({
+            id: schema.user.id,
+            name: schema.user.name,
+            email: schema.user.email,
+        })
+        .from(schema.user)
+        .orderBy(asc(schema.user.email));
+}
+
 export async function listInvoices(userId: string, isAdmin: boolean) {
     const rows = await db
         .select({

@@ -1,7 +1,7 @@
 import "server-only";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { admin, twoFactor } from "better-auth/plugins";
+import { twoFactor } from "better-auth/plugins";
 import { db, schema } from "@/lib/db";
 import { createId } from "@/lib/db/id";
 import { nextCustomerNumber } from "@/lib/documents/numbering";
@@ -102,7 +102,8 @@ export const auth = betterAuth({
         user: {
             create: {
                 // Assigned here rather than lazily, so every account has a
-                // number the moment it exists — including in the customer list.
+                // number the moment it exists — including in the customer
+                // list.
                 before: async (user: Record<string, unknown>) => ({
                     data: {
                         ...user,
@@ -150,7 +151,6 @@ export const auth = betterAuth({
             issuer: site.name,
             otpOptions: { period: 30 },
         }),
-        admin(),
     ],
 });
 
