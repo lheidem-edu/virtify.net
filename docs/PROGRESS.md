@@ -44,9 +44,17 @@ Done:
       a summary, a description, a tag, a success and a 401, and every schema field a description
       — and pin `public/openapi.json` to the live document so it cannot go stale.
 
+- [x] Dockerfile: multi-stage, `output: "standalone"`, migrations before the server binds, a
+      health check against `/api/v1/health`, runs as `node`. Verified by building the image and
+      running it against the dev database — 326 MB, migrations applied, `/`, `/terms`,
+      `/client/login` and `/api/docs` all served, Docker reporting it healthy.
+      `outputFileTracingIncludes` carries the PDF fonts and the legal defaults, which are read
+      from the working directory at runtime and would otherwise be missing from the image.
+
 Still open in this phase:
 
-- [ ] Dockerfile (standalone output) + worker entrypoint stub
+- [ ] Worker entrypoint. Deliberately not a stub: there are no jobs until pg-boss lands in
+      Phase 6, and a container that starts and does nothing is worse than one that is absent.
 - [ ] Playwright (plan defers the e2e suite itself to Phase 11)
 
 ## Phases 1–11
@@ -90,6 +98,13 @@ Still open in this phase:
   operator; a Steuerberater should see a sample invoice before go-live.
 
 ## Decisions taken without asking, open to being overruled
+
+- **The image is built with placeholder secrets.** `next build` imports every route to collect
+  its data, and the auth routes construct their Better Auth instance and their database pool
+  while being imported, so the build cannot run with those variables unset. Nothing connects —
+  `pg` opens no socket until the first query — and the real values are checked at boot by
+  `src/instrumentation.ts`. The alternative is making the pool and the auth instance lazy, which
+  is a wider change than a Dockerfile should carry.
 
 - **npm, not pnpm.** The lockfile is npm's and switching buys nothing.
 - **Prefixed ULIDs in `text`, not bare `char(26)`.** They are already in every table and in every

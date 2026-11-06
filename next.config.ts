@@ -28,6 +28,27 @@ function resolveCommit(): string {
 }
 
 const nextConfig: NextConfig = {
+    /**
+     * Produces .next/standalone — the server plus only the dependencies it
+     * actually reaches — so the container image carries no devDependencies and
+     * no source tree.
+     */
+    output: "standalone",
+
+    /**
+     * Two modules read files from the working directory at runtime rather than
+     * importing them, so the tracer cannot see them and would leave them out
+     * of the standalone build: the invoice PDF's fonts, and the wording a
+     * legal document starts from. Without the fonts an invoice silently falls
+     * back to Helvetica; without the defaults /terms throws.
+     */
+    outputFileTracingIncludes: {
+        "/**": [
+            "./src/server/documents/fonts/**",
+            "./src/server/legal/defaults/**",
+        ],
+    },
+
     env: {
         NEXT_PUBLIC_COMMIT: resolveCommit(),
     },
