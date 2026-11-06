@@ -29,10 +29,12 @@ Done:
 - [x] `src/lib/{documents,payments,legal}` → `src/server/**`; auth, mail and settings →
       `src/server/{auth,mail.ts,settings.ts}`; `src/lib/db` → `src/db`
 
+- [x] `src/db/schema.ts` split into one file per domain plus `_columns.ts` — `ulidPk()`,
+      `ulidFk()`, `money()`, `timestamps()` — applied to all 25 tables. `drizzle-kit generate`
+      reports no schema change, so nothing on disk moved.
+
 Still open in this phase:
 
-- [ ] Split `src/db/schema.ts` into `src/db/schema/*.ts` per domain + `_columns.ts`
-      (`ulidPk()`, `ulidFk()`, `timestamps()`, `money()`)
 - [ ] `src/server/openapi` skeleton: registry, RFC 9457 problem schema, cursor envelope,
       `/api/v1/openapi.json`, Scalar at `/api/docs`
 - [ ] Have `src/server/documents/totals.ts` use `money.ts` (it rounds with `Math.round`, which
@@ -58,6 +60,12 @@ Still open in this phase:
 | 11 Hardening, deploy | not started | |
 
 ## Carried over from before the conversion
+
+- **Timestamps are `timestamp`, not `timestamptz`** (58 columns), against hard rule 9. Postgres
+  stores them without a zone and node-postgres then reads them as the server's local time, so a
+  deployment in another zone would read every date back shifted. Fixing it is one migration that
+  rewrites every timestamp column at once, which wants its own change and a look at the data
+  first; `timestamps()` in `_columns.ts` deliberately matches what is on disk until then.
 
 - Legal texts are editable in the admin area and stored as versions with an effective date.
   **Bug:** on `/admin/legal` a version published with today's date lands in `inForce`, so it never
