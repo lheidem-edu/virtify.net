@@ -58,7 +58,12 @@ describe("calculateTotals", () => {
     });
 
     it("makes a Rechnungskorrektur the exact negation of the invoice", () => {
-        const items = [line(1, 1999), line(12, 499), line(7.5, 1999), line(0.5, 1)];
+        const items = [
+            line(1, 1999),
+            line(12, 499),
+            line(7.5, 1999),
+            line(0.5, 1),
+        ];
         const invoice = calculateTotals(items);
         // A correction negates the quantity, never the price — BR-27 forbids a
         // negative unit price.

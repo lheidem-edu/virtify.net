@@ -19,6 +19,7 @@
         "legal:export": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/legal-export.mts",
         "lint": "biome lint",
         "mail:check": "node --env-file-if-exists=.env.local scripts/mail-check.mjs",
+        "openapi:generate": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/openapi-generate.mts",
         "staff:add": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/staff-add.mts",
         "start": "node scripts/migrate.mjs && next start",
         "test": "vitest run",

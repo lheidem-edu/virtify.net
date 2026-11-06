@@ -1,0 +1,197 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "virtify.net API",
+        "version": "0.1.0",
+        "description": "Die REST-Schnittstelle des Abrechnungsportals von **virtify.net**.\n\n## Authentifizierung\n\nJede Anfrage trägt einen API-Schlüssel im Kopf:\n\n```\nAuthorization: Bearer vfy_…\n```\n\nSchlüssel werden im Kunden- oder Verwaltungsbereich erzeugt, genau einmal\nangezeigt und nur als Hash gespeichert. Ein Kundenschlüssel sieht ausschließlich\ndie Daten seines eigenen Kundenkontos.\n\n## Seitenweise Abfrage\n\nListen werden über einen Cursor geblättert, nicht über einen Offset. Jede Antwort\nenthält `next_cursor` und `has_more`; der Cursor ist die zuletzt gesehene ID.\nDadurch kann sich eine Seite nicht verschieben, während gelesen wird.\n\n## Fehler\n\nFehler folgen RFC 9457 und kommen als `application/problem+json` mit `type`,\n`title`, `status` und `detail`.\n\n## Beträge\n\nAlle Beträge sind ganzzahlige Cent, nie Kommazahlen, und tragen ihre Währung\nneben sich. `1999` bei `EUR` sind 19,99 €.\n\n---\n\nThe billing panel's REST API. Authenticate with an API key as a bearer token,\npage through lists with the opaque `cursor`, read errors as RFC 9457\nproblem documents, and treat every amount as integer minor units.",
+        "contact": {
+            "name": "virtify.net",
+            "url": "https://virtify.net"
+        }
+    },
+    "servers": [
+        {
+            "url": "/",
+            "description": "Diese Instanz"
+        }
+    ],
+    "tags": [
+        {
+            "name": "System",
+            "description": "Erreichbarkeit und Fassung der Schnittstelle."
+        }
+    ],
+    "components": {
+        "securitySchemes": {
+            "ApiKey": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "Ein API-Schlüssel aus dem Kunden- oder Verwaltungsbereich. Er wird genau einmal angezeigt und nur als Hash gespeichert."
+            }
+        },
+        "schemas": {
+            "Problem": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "description": "URI die den Fehlertyp benennt. `about:blank` heißt: der Statuscode sagt schon alles.",
+                        "example": "https://virtify.net/problems/validation-failed"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Kurze, für den Typ stets gleiche Beschreibung.",
+                        "example": "Die Anfrage war nicht gültig."
+                    },
+                    "status": {
+                        "type": "integer",
+                        "minimum": 100,
+                        "maximum": 599,
+                        "description": "Der HTTP-Statuscode, wiederholt im Körper.",
+                        "example": 422
+                    },
+                    "detail": {
+                        "type": "string",
+                        "description": "Was in genau diesem Fall schiefging.",
+                        "example": "`limit` muss zwischen 1 und 100 liegen."
+                    },
+                    "instance": {
+                        "type": "string",
+                        "description": "Die Anfrage, bei der es auftrat.",
+                        "example": "/api/v1/invoices?limit=500"
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {
+                                    "type": "string",
+                                    "example": "limit"
+                                },
+                                "message": {
+                                    "type": "string",
+                                    "example": "Höchstens 100."
+                                }
+                            },
+                            "required": [
+                                "path",
+                                "message"
+                            ]
+                        },
+                        "description": "Feldweise Begründung, wenn die Prüfung einer Eingabe fehlschlug."
+                    }
+                },
+                "required": [
+                    "type",
+                    "title",
+                    "status"
+                ],
+                "description": "Fehlerantwort nach RFC 9457, ausgeliefert als `application/problem+json`."
+            },
+            "Health": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "ok"
+                        ],
+                        "description": "`ok`, sonst antwortet dieser Endpunkt gar nicht."
+                    },
+                    "time": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Serverzeit in UTC, zum Abgleich von Uhren.",
+                        "example": "2026-11-07T08:15:00.000Z"
+                    },
+                    "commit": {
+                        "type": "string",
+                        "description": "Die Revision, aus der dieser Build entstand.",
+                        "example": "2c88137"
+                    }
+                },
+                "required": [
+                    "status",
+                    "time",
+                    "commit"
+                ]
+            }
+        },
+        "parameters": {}
+    },
+    "paths": {
+        "/api/v1/health": {
+            "get": {
+                "tags": [
+                    "System"
+                ],
+                "summary": "Erreichbarkeit prüfen",
+                "description": "Antwortet ohne Authentifizierung und ohne Datenbankzugriff. Gedacht für Health-Checks des Containers und um zu sehen, welche Revision gerade läuft.",
+                "responses": {
+                    "200": {
+                        "description": "Der Dienst läuft.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Health"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "webhooks": {}
+}

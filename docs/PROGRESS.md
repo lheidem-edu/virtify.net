@@ -37,10 +37,15 @@ Done:
       `ulidFk()`, `money()`, `timestamps()` — applied to all 25 tables. `drizzle-kit generate`
       reports no schema change, so nothing on disk moved.
 
+- [x] `src/server/openapi`: registry, RFC 9457 problem schema, cursor-pagination envelope and
+      query, the API-key security scheme, a German/English intro, `GET /api/v1/openapi.json`,
+      Scalar at `/api/docs`, `npm run openapi:generate` → `public/openapi.json`. The first
+      documented endpoint is `GET /api/v1/health`. Tests enforce rule 11 — every operation needs
+      a summary, a description, a tag, a success and a 401, and every schema field a description
+      — and pin `public/openapi.json` to the live document so it cannot go stale.
+
 Still open in this phase:
 
-- [ ] `src/server/openapi` skeleton: registry, RFC 9457 problem schema, cursor envelope,
-      `/api/v1/openapi.json`, Scalar at `/api/docs`
 - [ ] Dockerfile (standalone output) + worker entrypoint stub
 - [ ] Playwright (plan defers the e2e suite itself to Phase 11)
 
