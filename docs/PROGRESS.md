@@ -21,20 +21,23 @@ Done:
 - [x] Vitest (`vitest.config.mts`, `npm run test`), 53 unit tests over the four modules
 - [x] `npm run typecheck` / `format` scripts
 
+- [x] Route restructure: `(site)` → `(marketing)`, `account` → `(client)/client`,
+      `admin` → `(admin)/admin`. `/account/**` now answers 308 to `/client/**`, permanently —
+      every invoice and offer mail ever sent links to the old path.
+- [x] `src/lib/components/*` → `src/components/{shared,client,admin,marketing,legal}`, so no
+      React lives under `src/server`
+- [x] `src/lib/{documents,payments,legal}` → `src/server/**`; auth, mail and settings →
+      `src/server/{auth,mail.ts,settings.ts}`; `src/lib/db` → `src/db`
+
 Still open in this phase:
 
-- [ ] Route restructure: `(site)` → `(marketing)`, `account` → `(client)/client`,
-      `admin` → `(admin)/admin`, with redirects from the old paths (invoice mails link to
-      `/account/invoices/<id>/pdf`, so the redirects are not optional)
-- [ ] Move `src/lib/db/schema.ts` to `src/db/schema/*.ts` per domain + `_columns.ts`
-      (`ulidPk()`, `ulidFk()`, `timestamps()`, `money()`); point `drizzle.config.ts` at it
-- [ ] Move `src/lib/{documents,payments,legal}` to `src/server/**`; move `src/lib/components/*`
-      to `src/components/*` so no React lives under `src/server`
+- [ ] Split `src/db/schema.ts` into `src/db/schema/*.ts` per domain + `_columns.ts`
+      (`ulidPk()`, `ulidFk()`, `timestamps()`, `money()`)
 - [ ] `src/server/openapi` skeleton: registry, RFC 9457 problem schema, cursor envelope,
       `/api/v1/openapi.json`, Scalar at `/api/docs`
-- [ ] Have `src/lib/documents/totals.ts` use `money.ts` (it rounds with `Math.round`, which is
-      not symmetric for the negative quantities a Rechnungskorrektur uses)
-- [ ] Have `src/lib/payments/config.ts` read `env` instead of `process.env`
+- [ ] Have `src/server/documents/totals.ts` use `money.ts` (it rounds with `Math.round`, which
+      is not symmetric for the negative quantities a Rechnungskorrektur uses)
+- [ ] Have `src/server/payments/config.ts` read `env` instead of `process.env`
 - [ ] Dockerfile (standalone output) + worker entrypoint stub
 - [ ] Playwright (plan defers the e2e suite itself to Phase 11)
 
@@ -60,7 +63,12 @@ Still open in this phase:
   **Bug:** on `/admin/legal` a version published with today's date lands in `inForce`, so it never
   offers "Kunden benachrichtigen". The announce action should be offered for the newest published,
   not-yet-announced version.
-- `src/lib/legal/parse.ts` was written for a plain-text legal format and nothing consumes it yet.
+- The AGB name the customer area by its address. The built-in wording in
+  `src/server/legal/defaults/terms.txt` now says `/client`, but two copies do not:
+  **the LaTeX contracts in `~/Developer/tex`, which are the authority, still say `/account`**, and
+  so does any version already published in `legal_document`. The old path redirects, so nothing is
+  broken meanwhile. `legal/*.txt` at the repo root is export, not source — run `npm run
+  legal:export` to refresh it.
 - Operational, not code: `STRIPE_WEBHOOK_SECRET` and `PAYPAL_WEBHOOK_ID` need a public URL;
   PayPal reference transactions need PayPal's written approval before
   `PAYPAL_VAULTING_ENABLED=true`; Stripe receipt mails must be turned off; a real outbound SMTP

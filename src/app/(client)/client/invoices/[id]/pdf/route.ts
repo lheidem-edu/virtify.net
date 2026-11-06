@@ -1,0 +1,64 @@
+import { notFound } from "next/navigation";
+import { formatDate } from "@/lib/format";
+import { documentViewer } from "@/server/documents/access";
+import { renderDocumentPdf } from "@/server/documents/pdf";
+import { formatRecipient, loadInvoice } from "@/server/documents/repository";
+
+export async function GET(
+    _request: Request,
+    { params }: { params: Promise<{ id: string }> },
+) {
+    const { userId, isAdmin } = await documentViewer();
+    const { id } = await params;
+
+    const loaded = await loadInvoice(id, userId, isAdmin);
+
+    // A draft has no number yet and is not a document the customer may see.
+    if (!loaded || (!isAdmin && loaded.invoice.status === "draft")) {
+        notFound();
+    }
+
+    const { invoice, buyer, totals } = loaded;
+
+    // A correction is recognised by what it points at, as the mail does —
+    // it is an invoice of the same series, only with reversed signs.
+    const original = invoice.cancelsInvoiceId
+        ? ((await loadInvoice(invoice.cancelsInvoiceId, userId, isAdmin))
+              ?.invoice ?? null)
+        : null;
+
+    const pdf = await renderDocumentPdf({
+        kind: "invoice",
+        variant:
+            invoice.status === "draft"
+                ? "draft"
+                : original
+                  ? "correction"
+                  : null,
+        title: original
+            ? `Korrektur zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
+            : null,
+        number: invoice.number ?? "ENTWURF",
+        customerNumber: buyer.customerNumber,
+        recipient: invoice.recipient ?? formatRecipient(buyer),
+        issuedAt: invoice.issuedAt ?? new Date(),
+        dueAt: invoice.dueAt,
+        servicePeriod: {
+            start: invoice.servicePeriodStart,
+            end: invoice.servicePeriodEnd,
+        },
+        introText: invoice.introText,
+        note: invoice.note,
+        totals,
+        details: loaded.items.map((item) => item.detail),
+    });
+
+    return new Response(new Uint8Array(pdf), {
+        headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `inline; filename="${(invoice.number ?? id).replace(/[^\w.-]/g, "-")}.pdf"`,
+            // Invoices are personal documents; shared caches must not hold them.
+            "Cache-Control": "private, no-store",
+        },
+    });
+}

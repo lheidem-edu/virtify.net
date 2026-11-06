@@ -1,5 +1,5 @@
 import type Stripe from "stripe";
-import { stripeConfig, stripeEnabled } from "@/lib/payments/config";
+import { stripeConfig, stripeEnabled } from "@/server/payments/config";
 import {
     failPayment,
     firstDelivery,
@@ -9,8 +9,8 @@ import {
     notifyUnmatchedPayment,
     revalidateAfterPayment,
     settlePayment,
-} from "@/lib/payments/settle";
-import { readFeeCents, stripe } from "@/lib/payments/stripe";
+} from "@/server/payments/settle";
+import { readFeeCents, stripe } from "@/server/payments/stripe";
 
 /**
  * Stripe's word on whether money moved. The signature is computed over the

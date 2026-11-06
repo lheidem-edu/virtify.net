@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./tailwind.css";
-import { loadSettings } from "@/lib/settings";
+import { loadSettings } from "@/server/settings";
 
 const inter = Inter({
     subsets: ["latin"],

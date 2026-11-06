@@ -12,10 +12,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { loadLegalDocument } from "@/lib/legal/repository";
-import type { LegalItem, LegalKind } from "@/lib/legal/types";
-import { LEGAL_KIND_LABEL, LEGAL_KINDS } from "@/lib/legal/types";
-import { legalValues, loadSettings } from "@/lib/settings";
+import { loadLegalDocument } from "@/server/legal/repository";
+import type { LegalItem, LegalKind } from "@/server/legal/types";
+import { LEGAL_KIND_LABEL, LEGAL_KINDS } from "@/server/legal/types";
+import { legalValues, loadSettings } from "@/server/settings";
 
 const VALUE = /\{\{(\w+)\}\}/g;
 const MARKUP = /\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*/g;

@@ -1,6 +1,6 @@
 import Link from "next/link";
+import SiteChrome from "@/components/marketing/site-chrome";
 import { Button } from "@/components/ui/button";
-import SiteChrome from "@/lib/components/site/site-chrome";
 
 /** Unmatched routes render inside the public frame, wherever they occurred. */
 export default function NotFound() {

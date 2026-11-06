@@ -1,6 +1,6 @@
-import { captureAndSettle } from "@/lib/payments/collect";
-import { paypalConfig, paypalEnabled } from "@/lib/payments/config";
-import { verifyWebhook } from "@/lib/payments/paypal";
+import { captureAndSettle } from "@/server/payments/collect";
+import { paypalConfig, paypalEnabled } from "@/server/payments/config";
+import { verifyWebhook } from "@/server/payments/paypal";
 import {
     failPayment,
     firstDelivery,
@@ -9,7 +9,7 @@ import {
     notifyUnmatchedPayment,
     revalidateAfterPayment,
     settlePayment,
-} from "@/lib/payments/settle";
+} from "@/server/payments/settle";
 
 /**
  * PayPal's word on whether money moved. There is no signing secret: the

@@ -31,6 +31,28 @@ const nextConfig: NextConfig = {
     env: {
         NEXT_PUBLIC_COMMIT: resolveCommit(),
     },
+    /**
+     * The customer area moved from /account to /client when the portal became
+     * the product. Every invoice and offer mail ever sent links to the old
+     * path — "Rechnung ansehen" points at /account/invoices/<id>/pdf — and the
+     * AGB in force name it too, so the old paths have to keep working for as
+     * long as those documents exist. Permanent, because /account is retired
+     * and nothing will be served there again.
+     */
+    async redirects() {
+        return [
+            {
+                source: "/account",
+                destination: "/client",
+                permanent: true,
+            },
+            {
+                source: "/account/:path*",
+                destination: "/client/:path*",
+                permanent: true,
+            },
+        ];
+    },
 };
 
 export default nextConfig;

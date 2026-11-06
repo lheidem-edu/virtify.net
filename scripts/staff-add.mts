@@ -12,7 +12,7 @@ import {
     createStaffAccount,
     findStaffAccount,
     sendStaffInvite,
-} from "@/lib/staff-accounts";
+} from "@/server/auth/staff-accounts";
 
 const name = process.argv[2]?.trim();
 const email = process.argv[3]?.trim().toLowerCase();
