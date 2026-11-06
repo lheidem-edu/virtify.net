@@ -4,14 +4,14 @@ State of the conversion described in `docs/BUILD_PLAN.md`. Phases are that file'
 numbering. "Existing" means the portal already had it before the conversion started and it
 still has to be reviewed against the phase's requirements, not that the phase is finished.
 
-## Phase 0 — Scaffold · in progress
+## Phase 0 — Scaffold · done
 
-Done:
+`npm run typecheck`, `npm run lint` and `npm run test` (68 tests) are green, the app builds,
+and the container image runs.
 
 - [x] `CLAUDE.md` with the project brief and the recorded deviations from the original plan
 - [x] `docs/BUILD_PLAN.md`, `docs/PROGRESS.md`
-- [x] `src/lib/ulid.ts` — monotonic factory, `isUlid()`, prefixed `createId()`, `zUlid`, `zId()`.
-      `src/lib/db/id.ts` now re-exports it so there is one generator.
+- [x] `src/lib/ulid.ts` — monotonic factory, `isUlid()`, prefixed `createId()`, `zUlid`, `zId()`
 - [x] `src/lib/money.ts` — integer cents: `add`, `subtract`, `multiply`, `percent`, `allocate`
       (largest remainder), `split`, `prorate`, `format`, `toDecimalString`, `parseAmount`
 - [x] `src/lib/crypto.ts` — AES-256-GCM, versioned ciphertext, key fingerprint, keyring with
