@@ -25,10 +25,10 @@ async function accessToken() {
     }
 
     const credentials = Buffer.from(
-        `${paypalConfig.clientId}:${paypalConfig.clientSecret}`,
+        `${paypalConfig().clientId}:${paypalConfig().clientSecret}`,
     ).toString("base64");
 
-    const response = await fetch(`${paypalConfig.base}/v1/oauth2/token`, {
+    const response = await fetch(`${paypalConfig().base}/v1/oauth2/token`, {
         method: "POST",
         headers: {
             Authorization: `Basic ${credentials}`,
@@ -60,7 +60,7 @@ async function call<T>(
     path: string,
     init: { method: string; body?: unknown; requestId?: string },
 ) {
-    const response = await fetch(`${paypalConfig.base}${path}`, {
+    const response = await fetch(`${paypalConfig().base}${path}`, {
         method: init.method,
         headers: {
             Authorization: `Bearer ${await accessToken()}`,
@@ -145,8 +145,8 @@ export async function createInvoiceOrder(input: {
                         brand_name: "virtify.net",
                         locale: "de-DE",
                         user_action: "PAY_NOW",
-                        return_url: `${appUrl()}/account/invoices/${input.invoiceId}/paid?provider=paypal`,
-                        cancel_url: `${appUrl()}/account/invoices`,
+                        return_url: `${appUrl()}/client/invoices/${input.invoiceId}/paid?provider=paypal`,
+                        cancel_url: `${appUrl()}/client/invoices`,
                     },
                 },
             },
@@ -223,8 +223,8 @@ export async function createVaultSetupToken(input: { userId: string }) {
                     experience_context: {
                         brand_name: "virtify.net",
                         locale: "de-DE",
-                        return_url: `${appUrl()}/account/payment-methods?provider=paypal`,
-                        cancel_url: `${appUrl()}/account/payment-methods`,
+                        return_url: `${appUrl()}/client/payment-methods?provider=paypal`,
+                        cancel_url: `${appUrl()}/client/payment-methods`,
                     },
                 },
             },
@@ -317,7 +317,7 @@ export async function verifyWebhook(input: {
     headers: Headers;
     rawBody: string;
 }) {
-    if (!paypalConfig.webhookId) {
+    if (!paypalConfig().webhookId) {
         return false;
     }
 
@@ -333,7 +333,7 @@ export async function verifyWebhook(input: {
                 transmission_id: header("paypal-transmission-id"),
                 transmission_sig: header("paypal-transmission-sig"),
                 transmission_time: header("paypal-transmission-time"),
-                webhook_id: paypalConfig.webhookId,
+                webhook_id: paypalConfig().webhookId,
                 webhook_event: JSON.parse(input.rawBody),
             },
         },

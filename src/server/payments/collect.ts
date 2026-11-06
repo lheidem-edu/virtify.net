@@ -239,7 +239,7 @@ export async function collectIssuedInvoice(invoiceId: string) {
             };
         }
 
-        if (!paypalConfig.vaulting) {
+        if (!paypalConfig().vaulting) {
             throw new Error("paypal vaulting is switched off");
         }
 

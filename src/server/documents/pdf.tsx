@@ -436,7 +436,7 @@ function DocumentPdf(input: DocumentPdfInput & { settings: Settings }) {
                     ) : (
                         <Text style={styles.paragraph}>
                             Annehmen können Sie dieses Angebot in Ihrem
-                            Kundenbereich unter {site.url}/account/offers; mit
+                            Kundenbereich unter {site.url}/client/offers; mit
                             der Annahme kommt der Vertrag zustande.
                         </Text>
                     )}

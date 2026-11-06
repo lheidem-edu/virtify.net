@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     // Without the webhook id nothing can be verified, so every genuine event
     // would be answered "invalid signature". That is a configuration gap and
     // has to say so, the same way the Stripe route does.
-    if (!paypalEnabled() || !paypalConfig.webhookId) {
+    if (!paypalEnabled() || !paypalConfig().webhookId) {
         return new Response("payments are not configured", { status: 503 });
     }
 

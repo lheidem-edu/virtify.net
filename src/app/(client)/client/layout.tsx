@@ -19,7 +19,7 @@ export default async function AccountLayout({
 }) {
     const session = await getSession();
 
-    // Sign-in, registration and password recovery live under /account too but
+    // Sign-in, registration and password recovery live under /client too but
     // must render without the shell — there is nothing to navigate yet.
     if (!session) {
         return <>{children}</>;

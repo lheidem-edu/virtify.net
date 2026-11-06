@@ -1,3 +1,5 @@
+import { add, multiply } from "@/lib/money";
+
 export type LineItem = {
     description: string;
     quantity: number;
@@ -23,10 +25,13 @@ export function calculateTotals(items: LineItem[]): Totals {
     const lines = items.map((item, index) => ({
         ...item,
         position: index + 1,
-        lineTotalCents: Math.round(item.quantity * item.unitPriceCents),
+        // multiply() rounds half away from zero, so a correction line's
+        // negative quantity gives exactly the negation of the line it
+        // reverses. Math.round would round -0.5 to -0 and lose a cent.
+        lineTotalCents: multiply(item.unitPriceCents, item.quantity),
     }));
 
-    const netCents = lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
+    const netCents = add(...lines.map((line) => line.lineTotalCents));
 
     // § 19 UStG: no VAT is charged, so tax is always zero and the gross
     // equals the net. This is the single place that assumption lives.

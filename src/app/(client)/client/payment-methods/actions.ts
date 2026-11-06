@@ -56,7 +56,7 @@ export async function startPaymentMethodSetup(
         };
     }
 
-    if (provider === "paypal" && !paypalConfig.vaulting) {
+    if (provider === "paypal" && !paypalConfig().vaulting) {
         return {
             status: "error",
             message:

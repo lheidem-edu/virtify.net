@@ -15,7 +15,7 @@ export function stripe() {
     }
 
     if (!client) {
-        client = new Stripe(stripeConfig.secretKey, {
+        client = new Stripe(stripeConfig().secretKey, {
             maxNetworkRetries: 2,
             timeout: 20_000,
         });
@@ -87,8 +87,8 @@ export async function createInvoiceCheckout(input: CheckoutInput) {
                 ? { customer: input.stripeCustomerId }
                 : { customer_email: input.customerEmail }),
             locale: "de",
-            success_url: `${appUrl()}/account/invoices/${input.invoiceId}/paid?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${appUrl()}/account/invoices`,
+            success_url: `${appUrl()}/client/invoices/${input.invoiceId}/paid?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${appUrl()}/client/invoices`,
         },
         {
             idempotencyKey: `invoice:${input.invoiceId}:attempt:${input.attempt}`,
@@ -158,8 +158,8 @@ export async function createSetupCheckout(input: {
                 contract_id: input.contractId ?? "",
             },
         },
-        success_url: `${appUrl()}/account/payment-methods?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${appUrl()}/account/payment-methods`,
+        success_url: `${appUrl()}/client/payment-methods?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${appUrl()}/client/payment-methods`,
     });
 
     if (!session.url) {

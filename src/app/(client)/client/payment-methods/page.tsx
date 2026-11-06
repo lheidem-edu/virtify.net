@@ -177,7 +177,7 @@ export default async function Page({
 
     const stripe = stripeEnabled();
     // PayPal only holds a method where reference transactions are approved.
-    const paypal = paypalConfig.vaulting;
+    const paypal = paypalConfig().vaulting;
 
     const methods = await db
         .select({

@@ -29,6 +29,10 @@ Done:
 - [x] `src/lib/{documents,payments,legal}` → `src/server/**`; auth, mail and settings →
       `src/server/{auth,mail.ts,settings.ts}`; `src/lib/db` → `src/db`
 
+- [x] `src/server/documents/totals.ts` goes through `money.ts`, so a correction line is the
+      exact negation of the line it reverses; covered by tests with concrete cents
+- [x] `src/server/payments/config.ts` reads the validated `env`, lazily, so `next build` still
+      runs without secrets
 - [x] `src/db/schema.ts` split into one file per domain plus `_columns.ts` — `ulidPk()`,
       `ulidFk()`, `money()`, `timestamps()` — applied to all 25 tables. `drizzle-kit generate`
       reports no schema change, so nothing on disk moved.
@@ -37,9 +41,6 @@ Still open in this phase:
 
 - [ ] `src/server/openapi` skeleton: registry, RFC 9457 problem schema, cursor envelope,
       `/api/v1/openapi.json`, Scalar at `/api/docs`
-- [ ] Have `src/server/documents/totals.ts` use `money.ts` (it rounds with `Math.round`, which
-      is not symmetric for the negative quantities a Rechnungskorrektur uses)
-- [ ] Have `src/server/payments/config.ts` read `env` instead of `process.env`
 - [ ] Dockerfile (standalone output) + worker entrypoint stub
 - [ ] Playwright (plan defers the e2e suite itself to Phase 11)
 

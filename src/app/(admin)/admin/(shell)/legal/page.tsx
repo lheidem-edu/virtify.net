@@ -80,7 +80,7 @@ export default async function Page() {
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
                     Links schreibst du als{" "}
                     <code className="font-mono text-xs">
-                        [Kundenbereich](/account)
+                        [Kundenbereich](/client)
                     </code>
                     , eine Kennung in Schreibmaschinenschrift mit{" "}
                     <code className="font-mono text-xs">`DE12…`</code>, eine

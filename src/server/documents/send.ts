@@ -72,7 +72,7 @@ export async function sendOfferMail(
                     ? `Es ist gültig bis ${formatDate(offer.validUntil)}.`
                     : "",
                 "",
-                `Annehmen oder ablehnen können Sie es in Ihrem Kundenbereich: ${site.url}/account/offers`,
+                `Annehmen oder ablehnen können Sie es in Ihrem Kundenbereich: ${site.url}/client/offers`,
                 "",
                 "Für Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung und danken Ihnen für die angenehme Zusammenarbeit.",
                 "",
@@ -90,7 +90,7 @@ export async function sendOfferMail(
                 ],
                 action: {
                     label: "Angebot ansehen",
-                    url: `${site.url}/account/offers`,
+                    url: `${site.url}/client/offers`,
                 },
                 rowsTitle: "Eckdaten",
                 rows: [
@@ -211,7 +211,7 @@ export async function sendInvoiceMail(
                 "Mit freundlichen Grüßen",
                 operator.name,
                 "",
-                `Alle Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/account/invoices`,
+                `Alle Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/client/invoices`,
             ].join("\n"),
             html: await renderEmail({
                 preheader: `${label} ${number} über ${formatPrice(totals.grossCents)}.`,
@@ -224,7 +224,7 @@ export async function sendInvoiceMail(
                 ],
                 action: {
                     label: "Rechnungen ansehen",
-                    url: `${site.url}/account/invoices`,
+                    url: `${site.url}/client/invoices`,
                 },
                 rowsTitle: "Eckdaten",
                 rows: [
@@ -357,7 +357,7 @@ export async function sendOfferAcceptedMail(offerId: string, to: string) {
                 "",
                 `wie mit Ihnen besprochen haben wir Ihr Angebot ${offer.number} über ${offer.title} für Sie angenommen. Der Vertrag ist damit zustande gekommen.`,
                 "",
-                `Ihren Vertrag finden Sie in Ihrem Kundenbereich: ${site.url}/account/contracts`,
+                `Ihren Vertrag finden Sie in Ihrem Kundenbereich: ${site.url}/client/contracts`,
                 "",
                 "Sollte die Annahme nicht Ihrem Wunsch entsprechen, teilen Sie uns das bitte umgehend mit.",
                 "",
@@ -373,7 +373,7 @@ export async function sendOfferAcceptedMail(offerId: string, to: string) {
                 ],
                 action: {
                     label: "Vertrag ansehen",
-                    url: `${site.url}/account/contracts`,
+                    url: `${site.url}/client/contracts`,
                 },
                 rowsTitle: "Eckdaten",
                 rows: [
@@ -447,7 +447,7 @@ export async function sendContractTerminationMail(
                 ],
                 action: {
                     label: "Vertrag ansehen",
-                    url: `${site.url}/account/contracts`,
+                    url: `${site.url}/client/contracts`,
                 },
                 rowsTitle: "Eckdaten",
                 rows: [
@@ -499,7 +499,7 @@ export async function sendPaymentReceivedMail(input: {
                 "",
                 `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Die Rechnung ist damit ausgeglichen.`,
                 "",
-                `Ihre Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/account/invoices`,
+                `Ihre Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/client/invoices`,
                 "",
                 "Mit freundlichen Grüßen",
                 operator.name,
@@ -513,7 +513,7 @@ export async function sendPaymentReceivedMail(input: {
                 ],
                 action: {
                     label: "Rechnungen ansehen",
-                    url: `${site.url}/account/invoices`,
+                    url: `${site.url}/client/invoices`,
                 },
                 rowsTitle: "Eckdaten",
                 rows: [

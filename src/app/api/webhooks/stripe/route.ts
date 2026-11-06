@@ -24,7 +24,7 @@ import { readFeeCents, stripe } from "@/server/payments/stripe";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-    if (!stripeEnabled() || !stripeConfig.webhookSecret) {
+    if (!stripeEnabled() || !stripeConfig().webhookSecret) {
         return new Response("payments are not configured", { status: 503 });
     }
 
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
         event = stripe().webhooks.constructEvent(
             body,
             signature ?? "",
-            stripeConfig.webhookSecret,
+            stripeConfig().webhookSecret,
         );
     } catch (error) {
         console.error("[payments] stripe signature rejected:", error);
