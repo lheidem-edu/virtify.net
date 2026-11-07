@@ -1,59 +1,69 @@
 "use server";
 
-import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { db, schema } from "@/db";
-import { requireSession } from "@/server/auth/session";
+import { db } from "@/db";
+import { requestOrigin } from "@/server/audit/request";
+import { getCurrentCustomer } from "@/server/customers/current";
+import { updateCustomer } from "@/server/customers/repository";
+import { customerSelfPatchSchema } from "@/server/customers/schema";
 
 export type ProfileState = {
     status: "idle" | "saved" | "error";
     message?: string;
 };
 
-const FIELDS = [
-    "name",
-    "company",
-    "street",
-    "postalCode",
-    "city",
-    "country",
-    "vatId",
-    "phone",
-] as const;
-
-const MAX_LENGTH = 200;
-
+/**
+ * The customer's own master data. It goes through the same service and the
+ * same audit entry the admin form uses — and through
+ * `customerSelfPatchSchema`, which simply has no `status`, `notes` or
+ * `currency` in it, so there is nothing to forget to strip.
+ */
 export async function updateProfile(
     _previous: ProfileState,
     data: FormData,
 ): Promise<ProfileState> {
-    const session = await requireSession();
+    const { customer, contact, user } = await getCurrentCustomer();
 
-    const values: Record<string, string | null> = {};
-
-    for (const field of FIELDS) {
-        const raw = String(data.get(field) ?? "").trim();
-
-        if (raw.length > MAX_LENGTH) {
-            return {
-                status: "error",
-                message: "Eine der Angaben ist zu lang.",
-            };
-        }
-
-        // Empty means "not provided" rather than an empty string, so the
-        // overview can tell missing data from a blank field.
-        values[field] = raw === "" ? null : raw;
+    if (!contact.canBilling) {
+        return {
+            status: "error",
+            message: "Für dieses Konto darfst du die Stammdaten nicht ändern.",
+        };
     }
 
-    if (!values.name) {
-        return { status: "error", message: "Bitte gib deinen Namen an." };
+    const value = (name: string) => {
+        const raw = data.get(name);
+
+        return typeof raw === "string" ? raw.trim() : "";
+    };
+
+    const parsed = customerSelfPatchSchema.safeParse({
+        kind: value("kind") || undefined,
+        name: value("name"),
+        company: value("company"),
+        street: value("street"),
+        postalCode: value("postalCode"),
+        city: value("city"),
+        country: value("country") || undefined,
+        vatId: value("vatId"),
+        phone: value("phone"),
+    });
+
+    if (!parsed.success) {
+        return {
+            status: "error",
+            message:
+                parsed.error.issues[0]?.message ?? "Bitte prüfe deine Angaben.",
+        };
     }
 
-    await db
-        .update(schema.user)
-        .set({ ...values, name: values.name, updatedAt: new Date() })
-        .where(eq(schema.user.id, session.user.id));
+    await updateCustomer(
+        db,
+        customer.id,
+        parsed.data,
+        { type: "customer", id: user.id, label: contact.email },
+        await requestOrigin(),
+    );
 
     revalidatePath("/client");
     revalidatePath("/client/profile");

@@ -1,19 +1,19 @@
 import PageHeader from "@/components/shared/page-header";
 import type { INVOICE_STATUS_LABEL } from "@/lib/format";
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import { listInvoices } from "@/server/documents/repository";
 import { paypalEnabled, stripeEnabled } from "@/server/payments/config";
 import InvoicesTable from "./invoices-table";
 
 export default async function Page() {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
 
     // Which providers exist is a server-side question; the table only ever
     // sees the two booleans.
     const stripe = stripeEnabled();
     const paypal = paypalEnabled();
 
-    const invoices = (await listInvoices(session.user.id, false))
+    const invoices = (await listInvoices(customer.id, false))
         // Drafts are working state on our side and never shown to customers.
         .filter((entry) => entry.status !== "draft")
         .map((entry) => ({

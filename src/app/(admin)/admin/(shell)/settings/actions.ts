@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import { SETTINGS_ID } from "@/server/settings";
 
 export type SettingsState = {
@@ -43,7 +43,7 @@ export async function saveSettings(
     _previous: SettingsState,
     data: FormData,
 ): Promise<SettingsState> {
-    await requireStaff();
+    await requirePermission("settings.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 

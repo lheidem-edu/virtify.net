@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
 import { createId } from "@/lib/ulid";
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 
 export type DecisionState = {
     status: "idle" | "done" | "error";
@@ -22,7 +22,7 @@ export async function decideOffer(
     _previous: DecisionState,
     data: FormData,
 ): Promise<DecisionState> {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
 
     const offerId = String(data.get("offerId") ?? "");
     const decision = String(data.get("decision") ?? "");
@@ -39,7 +39,7 @@ export async function decideOffer(
                 .where(
                     and(
                         eq(schema.offer.id, offerId),
-                        eq(schema.offer.userId, session.user.id),
+                        eq(schema.offer.customerId, customer.id),
                     ),
                 )
                 .for("update");
@@ -79,7 +79,7 @@ export async function decideOffer(
             await tx.insert(schema.contract).values({
                 id: contractId,
                 number: contractId,
-                userId: row.userId,
+                customerId: row.customerId,
                 title: row.title,
                 status: "provisioning",
                 minimumTermMonths: row.minimumTermMonths,

@@ -5,7 +5,7 @@ import PageHeader from "@/components/shared/page-header";
 import { db, schema } from "@/db";
 import { formatDate } from "@/lib/format";
 import { createId } from "@/lib/ulid";
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import { paypalConfig, stripeEnabled } from "@/server/payments/config";
 import { createVaultPaymentToken } from "@/server/payments/paypal";
 import { readStoredMethod } from "@/server/payments/stripe";
@@ -33,7 +33,7 @@ const PROVIDER_LABEL: Record<string, string> = {
  * rather than duplicating.
  */
 async function storeMethod(
-    userId: string,
+    customerId: string,
     provider: "stripe" | "paypal",
     token: string,
     label: string,
@@ -44,7 +44,7 @@ async function storeMethod(
             .insert(schema.paymentMethod)
             .values({
                 id: createId("paymentmethod"),
-                userId,
+                customerId,
                 provider,
                 token,
                 label,
@@ -55,7 +55,7 @@ async function storeMethod(
                 // Never across accounts: without this, presenting a token that
                 // belongs to somebody else would revive their withdrawn
                 // authorisation and hand it to whoever asked.
-                setWhere: eq(schema.paymentMethod.userId, userId),
+                setWhere: eq(schema.paymentMethod.customerId, customerId),
             })
             .returning({ id: schema.paymentMethod.id });
 
@@ -76,7 +76,7 @@ async function storeMethod(
             .where(
                 and(
                     eq(schema.contract.id, contractId),
-                    eq(schema.contract.userId, userId),
+                    eq(schema.contract.customerId, customerId),
                     inArray(schema.contract.status, ["provisioning", "active"]),
                 ),
             );
@@ -87,7 +87,7 @@ async function storeMethod(
  * Both providers return the customer to this page with their own parameters.
  * Returns what to tell the customer, or null when this is an ordinary visit.
  */
-async function consumeReturn(userId: string, query: Query) {
+async function consumeReturn(customerId: string, query: Query) {
     const sessionId = single(query.session_id);
     const approvalTokenId = single(query.approval_token_id);
     const fromPaypal = single(query.provider) === "paypal" && approvalTokenId;
@@ -104,7 +104,7 @@ async function consumeReturn(userId: string, query: Query) {
         .where(
             and(
                 eq(schema.paymentSetup.id, sessionId ?? approvalTokenId ?? ""),
-                eq(schema.paymentSetup.userId, userId),
+                eq(schema.paymentSetup.customerId, customerId),
             ),
         )
         .returning({ id: schema.paymentSetup.id });
@@ -125,7 +125,7 @@ async function consumeReturn(userId: string, query: Query) {
             // A second lock, from the other side: the SetupIntent carries the
             // account it was created for, so a session that names a different
             // one is not stored whatever the query string claims.
-            if (stored?.userId && stored.userId !== userId) {
+            if (stored?.customerId && stored.customerId !== customerId) {
                 throw new Error("setup belongs to another account");
             }
 
@@ -133,7 +133,7 @@ async function consumeReturn(userId: string, query: Query) {
             // old return URL, or opening one that belongs to nothing.
             if (stored) {
                 await storeMethod(
-                    userId,
+                    customerId,
                     "stripe",
                     stored.token,
                     stored.label,
@@ -144,7 +144,7 @@ async function consumeReturn(userId: string, query: Query) {
             const stored = await createVaultPaymentToken(approvalTokenId);
 
             await storeMethod(
-                userId,
+                customerId,
                 "paypal",
                 stored.token,
                 stored.label,
@@ -164,10 +164,10 @@ export default async function Page({
 }: {
     searchParams: Promise<Query>;
 }) {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
     const query = await searchParams;
 
-    const outcome = await consumeReturn(session.user.id, query);
+    const outcome = await consumeReturn(customer.id, query);
 
     // The provider's parameters are single-use, so they are swapped for a
     // plain result flag — reloading must not try to redeem an approval twice.
@@ -189,7 +189,7 @@ export default async function Page({
         .from(schema.paymentMethod)
         .where(
             and(
-                eq(schema.paymentMethod.userId, session.user.id),
+                eq(schema.paymentMethod.customerId, customer.id),
                 isNull(schema.paymentMethod.revokedAt),
             ),
         )
@@ -203,7 +203,7 @@ export default async function Page({
             paymentMethodId: schema.contract.paymentMethodId,
         })
         .from(schema.contract)
-        .where(eq(schema.contract.userId, session.user.id));
+        .where(eq(schema.contract.customerId, customer.id));
 
     const result = single(query.result);
 

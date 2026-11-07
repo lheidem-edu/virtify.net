@@ -1,6 +1,6 @@
 import PageHeader from "@/components/shared/page-header";
 import type { INVOICE_STATUS_LABEL } from "@/lib/format";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import { billingPeriod } from "@/server/documents/contract-term";
 import { dateInputValue } from "@/server/documents/line-items";
 import {
@@ -19,7 +19,7 @@ export default async function Page({
 }: {
     searchParams: Promise<{ contract?: string }>;
 }) {
-    await requireStaff();
+    await requirePermission("billing.read");
     const { contract: contractId } = await searchParams;
 
     const accounts = await listCustomerAccounts();
@@ -37,7 +37,7 @@ export default async function Page({
     const period = billingPeriod(new Date());
     const prefill: InvoicePrefill | undefined = loaded
         ? {
-              userId: loaded.contract.userId,
+              customerId: loaded.contract.customerId,
               contractId: loaded.contract.id,
               items: [
                   {

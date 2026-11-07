@@ -4,4 +4,5 @@
  * builder imports it so the document can never be built from a half-filled
  * registry.
  */
+import "./customers";
 import "./health";

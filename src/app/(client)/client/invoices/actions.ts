@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import { loadInvoice } from "@/server/documents/repository";
 import { closeOpenAttempts } from "@/server/payments/collect";
 import { paypalEnabled, stripeEnabled } from "@/server/payments/config";
@@ -20,7 +20,7 @@ export async function startInvoicePayment(
     _previous: PayState,
     data: FormData,
 ): Promise<PayState> {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -40,7 +40,7 @@ export async function startInvoicePayment(
 
     // The loader constrains the query to this account, so a foreign invoice
     // comes back as null rather than as a refusal that confirms it exists.
-    const loaded = await loadInvoice(invoiceId, session.user.id, false);
+    const loaded = await loadInvoice(invoiceId, customer.id, false);
 
     if (!loaded) {
         return { status: "error", message: "Diese Rechnung gibt es nicht." };
@@ -84,7 +84,7 @@ export async function startInvoicePayment(
                       invoiceNumber: invoice.number ?? invoice.id,
                       amountCents: totals.grossCents,
                       customerEmail: buyer.email,
-                      stripeCustomerId: buyer.stripeCustomerId ?? undefined,
+                      stripeCustomerId: customer.stripeCustomerId ?? undefined,
                       attempt,
                   })
                 : await createInvoiceOrder({
@@ -96,7 +96,7 @@ export async function startInvoicePayment(
 
         await recordAttempt({
             invoiceId: invoice.id,
-            userId: session.user.id,
+            customerId: customer.id,
             provider,
             providerRef: checkout.id,
             amountCents: totals.grossCents,

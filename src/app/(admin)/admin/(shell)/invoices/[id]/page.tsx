@@ -20,7 +20,7 @@ import {
     INVOICE_STATUS_LABEL,
     INVOICE_STATUS_TONE,
 } from "@/lib/format";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import { dateInputValue } from "@/server/documents/line-items";
 import {
     ANY_CUSTOMER,
@@ -85,7 +85,7 @@ export default async function Page({
 }: {
     params: Promise<{ id: string }>;
 }) {
-    await requireStaff();
+    await requirePermission("billing.read");
     const { id } = await params;
 
     const loaded = await loadInvoice(id, ANY_CUSTOMER, true);
@@ -474,7 +474,7 @@ export default async function Page({
                         }))}
                         invoice={{
                             id: invoice.id,
-                            userId: invoice.userId,
+                            customerId: invoice.customerId,
                             contractId: invoice.contractId ?? "",
                             introText: invoice.introText ?? "",
                             note: invoice.note ?? "",

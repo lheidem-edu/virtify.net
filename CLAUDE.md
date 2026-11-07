@@ -37,6 +37,7 @@ The build is planned in phases: see `docs/BUILD_PLAN.md`, state in `docs/PROGRES
 | `id char(26)` bare ULID | `text` `prefix_ULID` | Already in every table and in every stored Stripe/PayPal reference. The prefix is constant per table, so ULID cursor pagination still works. |
 | ESLint + Prettier | Biome | Already configured, one tool instead of two. |
 | `react-hook-form` | server actions + `useActionState` | No client form library in the repo; forms post to server actions. |
+| Middleware for `/admin/**`, `/client/**` | layout + guard helpers | The guards already refuse server-side against the database on every request. Middleware could only check that a cookie is present. |
 | Postgres 17 | Postgres 18 | Dev container already runs 18. |
 
 ## Project layout
@@ -54,7 +55,8 @@ src/
     schema/              # one file per domain, re-exported from index.ts
     schema/_columns.ts   # shared helpers: ulidPk(), ulidFk(), timestamps(), money()
   server/                # domain logic, NO React here
-    billing/  tax/  payments/  provisioning/  tickets/  jobs/  openapi/  audit/
+    customers/  auth/  api/  api-keys/  audit/  documents/  payments/
+    billing/  tax/  provisioning/  tickets/  jobs/  openapi/
   lib/                   # money, crypto, ulid, env, utils — framework-free
   components/            # shadcn (components/ui, not linted) + shared app UI
 ```
@@ -77,8 +79,17 @@ Server actions and `/api/v1` routes call the **same** service functions.
    Invoice numbers are gapless and sequential, assigned at finalization inside a transaction
    (`document_counter` + `SELECT … FOR UPDATE`). Drafts have no number.
 4. **All multi-step writes run in a DB transaction.**
-5. **Authorization on every query.** Client-area code always scopes by the session's user/customer.
-   API keys are scoped. Never trust an ID from the client.
+5. **Authorization on every query.** Three guards, and nothing else is allowed to decide:
+   - `getCurrentCustomer()` (`src/server/customers/current.ts`) is the only way client-area code
+     learns which rows it may touch. No page under `(client)` takes a customer id from the
+     request.
+   - `requirePermission("billing.write")` guards pages and server actions under `(admin)`;
+     `assertStaffPermission()` is its throwing form for services. The permission catalogue is
+     `src/server/auth/permissions.ts` — a string that is not in it is a type error.
+   - `authenticate(request, permission)` guards `/api/v1`. A key is never more than its owner: a
+     customer key sees that customer, a staff key sees what its owner's roles grant *today*.
+
+   A caller who may not see a row is told 404, never 403 — 403 confirms the id exists.
 6. **Secrets at rest are encrypted** (AES-256-GCM, key from `APP_ENCRYPTION_KEY`): server API
    tokens, gateway credentials, Graph secrets, service passwords. Use `src/lib/crypto.ts`.
 7. **Webhooks and jobs are idempotent.** Store provider event IDs and dedupe.
@@ -118,7 +129,12 @@ npm run db:up | db:generate | db:migrate | db:reset
 npm run test | test:watch               # Vitest
 npm run lint | format | typecheck
 npm run openapi:generate                # writes public/openapi.json (also served live)
+npm run seed -- "Name" mail@example.net # Super Admin role + employee + 3 demo customers
 ```
+
+`npm run test` covers both suites. `tests/unit` is pure; `tests/integration` creates, migrates
+and drops its own database on the server `npm run db:up` starts, and skips with a loud warning
+when none is reachable.
 
 ## Workflow for Claude
 

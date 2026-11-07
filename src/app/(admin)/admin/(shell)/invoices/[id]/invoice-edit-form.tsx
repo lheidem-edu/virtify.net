@@ -17,7 +17,7 @@ const initialState: InvoiceState = { status: "idle" };
 
 export type InvoiceDraft = {
     id: string;
-    userId: string;
+    customerId: string;
     contractId: string;
     introText: string;
     note: string;
@@ -53,10 +53,10 @@ export default function InvoiceEditForm({
             ) : null}
 
             <SelectField
-                id="userId"
+                id="customerId"
                 label="Konto"
                 required
-                defaultValue={invoice.userId}
+                defaultValue={invoice.customerId}
                 options={accounts.map((account) => ({
                     value: account.id,
                     label: account.name

@@ -5,11 +5,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { createId } from "@/lib/ulid";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import {
     parseDate,
     parsePositivePriceToCents,
 } from "@/server/documents/line-items";
+import { loadBuyer } from "@/server/documents/repository";
 import { sendContractTerminationMail } from "@/server/documents/send";
 
 export type ContractState = {
@@ -54,17 +55,17 @@ export async function createContract(
     _previous: ContractState,
     data: FormData,
 ): Promise<ContractState> {
-    await requireStaff();
+    await requirePermission("contracts.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
-    const userId = read("userId");
+    const customerId = read("customerId");
     const title = read("title");
     const status = read("status");
     const cents = parsePositivePriceToCents(read("monthlyPrice"));
     const minimumTermMonths = Number.parseInt(read("minimumTermMonths"), 10);
 
-    if (!userId || !title) {
+    if (!customerId || !title) {
         return {
             status: "error",
             message: "Konto und Bezeichnung sind Pflicht.",
@@ -99,7 +100,7 @@ export async function createContract(
     try {
         await db.insert(schema.contract).values({
             id,
-            userId,
+            customerId,
             // The visible number is the id itself, so support requests and
             // database rows always name the same thing.
             number: id,
@@ -136,7 +137,7 @@ export async function updateContract(
     _previous: ContractState,
     data: FormData,
 ): Promise<ContractState> {
-    await requireStaff();
+    await requirePermission("contracts.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -258,7 +259,7 @@ export async function terminateContract(
     _previous: ContractState,
     data: FormData,
 ): Promise<ContractState> {
-    await requireStaff();
+    await requirePermission("contracts.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -299,10 +300,7 @@ export async function terminateContract(
                 })
                 .where(eq(schema.contract.id, contractId));
 
-            const [buyer] = await tx
-                .select()
-                .from(schema.user)
-                .where(eq(schema.user.id, row.userId));
+            const buyer = await loadBuyer(row.customerId, tx);
 
             recipientEmail = buyer.email;
         });
@@ -355,7 +353,7 @@ export async function reactivateContract(
     _previous: ContractState,
     data: FormData,
 ): Promise<ContractState> {
-    await requireStaff();
+    await requirePermission("contracts.write");
 
     const contractId = String(data.get("contractId") ?? "");
 
@@ -408,7 +406,7 @@ export async function deleteContract(
     _previous: ContractState,
     data: FormData,
 ): Promise<ContractState> {
-    await requireStaff();
+    await requirePermission("contracts.write");
 
     const contractId = String(data.get("contractId") ?? "");
 

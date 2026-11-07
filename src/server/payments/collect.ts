@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { paypalConfig } from "@/server/payments/config";
 import {
@@ -162,9 +162,15 @@ export async function collectIssuedInvoice(invoiceId: string) {
         .select({
             invoiceId: schema.invoice.id,
             number: schema.invoice.number,
-            userId: schema.invoice.userId,
-            email: schema.user.email,
-            stripeCustomerId: schema.user.stripeCustomerId,
+            customerId: schema.invoice.customerId,
+            stripeCustomerId: schema.customer.stripeCustomerId,
+            // Where to write when the collection fails: the account's owner.
+            email: sql<string>`(
+                select c.email from ${schema.customerContact} c
+                where c.customer_id = ${schema.customer}."id"
+                order by case when c.role = 'owner' then 0 else 1 end, c.id
+                limit 1
+            )`,
             methodId: schema.paymentMethod.id,
             provider: schema.paymentMethod.provider,
             token: schema.paymentMethod.token,
@@ -178,7 +184,10 @@ export async function collectIssuedInvoice(invoiceId: string) {
             schema.paymentMethod,
             eq(schema.contract.paymentMethodId, schema.paymentMethod.id),
         )
-        .innerJoin(schema.user, eq(schema.invoice.userId, schema.user.id))
+        .innerJoin(
+            schema.customer,
+            eq(schema.invoice.customerId, schema.customer.id),
+        )
         .where(
             and(
                 eq(schema.invoice.id, invoiceId),
@@ -216,7 +225,7 @@ export async function collectIssuedInvoice(invoiceId: string) {
             // is no checkout session in this flow.
             await recordAttempt({
                 invoiceId,
-                userId: row.userId,
+                customerId: row.customerId,
                 provider: "stripe",
                 providerRef: prepared.id,
                 amountCents,
@@ -252,7 +261,7 @@ export async function collectIssuedInvoice(invoiceId: string) {
 
         await recordAttempt({
             invoiceId,
-            userId: row.userId,
+            customerId: row.customerId,
             provider: "paypal",
             providerRef: capture.orderId,
             amountCents,

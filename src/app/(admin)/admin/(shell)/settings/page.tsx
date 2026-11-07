@@ -1,10 +1,10 @@
 import PageHeader from "@/components/shared/page-header";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import { loadSettings } from "@/server/settings";
 import SettingsForm from "./settings-form";
 
 export default async function Page() {
-    await requireStaff();
+    await requirePermission("settings.write");
 
     const { site, operator, bank, policy } = await loadSettings();
 

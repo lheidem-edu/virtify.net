@@ -1,5 +1,17 @@
 {
     "$schema": "https://biomejs.dev/schemas/2.2.0/schema.json",
+    "files": {
+        "includes": [
+            "**",
+            "!.next/**",
+            "!node_modules/**",
+            "!tsconfig.tsbuildinfo",
+            "!next-env.d.ts",
+            "!drizzle/**",
+            "!public/openapi.json",
+            "!components.json"
+        ]
+    },
     "formatter": {
         "enabled": true,
         "indentStyle": "space",

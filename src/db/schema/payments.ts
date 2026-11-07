@@ -1,7 +1,7 @@
 import { index, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { money, timestamps, ulidFk, ulidPk } from "./_columns";
-import { user } from "./auth";
 import { contract } from "./contracts";
+import { customer } from "./customers";
 import { invoice } from "./invoices";
 
 /**
@@ -20,9 +20,9 @@ export const paymentMethod = pgTable(
     "payment_method",
     {
         id: ulidPk("paymentmethod"),
-        userId: ulidFk("user_id")
+        customerId: ulidFk("customer_id")
             .notNull()
-            .references(() => user.id, { onDelete: "restrict" }),
+            .references(() => customer.id, { onDelete: "restrict" }),
         provider: paymentProvider("provider").notNull(),
         /** Unique so the same authorisation cannot be stored twice. */
         token: text("token").notNull().unique(),
@@ -44,7 +44,7 @@ export const paymentMethod = pgTable(
 
         ...timestamps(),
     },
-    (table) => [index("payment_method_user_id_idx").on(table.userId)],
+    (table) => [index("payment_method_customer_id_idx").on(table.customerId)],
 );
 
 export const paymentStatus = pgEnum("payment_status", [
@@ -69,9 +69,9 @@ export const payment = pgTable(
         invoiceId: ulidFk("invoice_id")
             .notNull()
             .references(() => invoice.id, { onDelete: "restrict" }),
-        userId: ulidFk("user_id")
+        customerId: ulidFk("customer_id")
             .notNull()
-            .references(() => user.id, { onDelete: "restrict" }),
+            .references(() => customer.id, { onDelete: "restrict" }),
         provider: paymentProvider("provider").notNull(),
         status: paymentStatus("status").notNull().default("pending"),
 
@@ -111,9 +111,9 @@ export const payment = pgTable(
 export const paymentSetup = pgTable("payment_setup", {
     /** The provider's own id: a Checkout Session or a PayPal setup token. */
     id: text("id").primaryKey(),
-    userId: ulidFk("user_id")
+    customerId: ulidFk("customer_id")
         .notNull()
-        .references(() => user.id, { onDelete: "cascade" }),
+        .references(() => customer.id, { onDelete: "cascade" }),
     provider: paymentProvider("provider").notNull(),
     /** The contract the setup was started from, if it was started from one. */
     contractId: ulidFk("contract_id").references(() => contract.id, {

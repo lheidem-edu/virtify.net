@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import SelectField from "@/components/shared/select-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,9 +35,9 @@ const FIELDS = [
     },
     {
         id: "country",
-        label: "Land",
+        label: "Land (zwei Buchstaben, z. B. DE)",
         required: false,
-        autoComplete: "country-name",
+        autoComplete: "country",
     },
     {
         id: "vatId",
@@ -55,9 +56,9 @@ const FIELDS = [
 const initialState: ProfileState = { status: "idle" };
 
 export default function ProfileForm({
-    user,
+    customer,
 }: {
-    user: Record<(typeof FIELDS)[number]["id"], string>;
+    customer: Record<(typeof FIELDS)[number]["id"], string> & { kind: string };
 }) {
     const [state, formAction, pending] = useActionState(
         updateProfile,
@@ -77,13 +78,24 @@ export default function ProfileForm({
                 </p>
             ) : null}
 
+            <SelectField
+                id="kind"
+                name="kind"
+                label="Ich bin"
+                defaultValue={customer.kind}
+                options={[
+                    { value: "private", label: "Privatperson" },
+                    { value: "company", label: "Firma" },
+                ]}
+            />
+
             {FIELDS.map((field) => (
                 <div key={field.id} className="space-y-3">
                     <Label htmlFor={field.id}>{field.label}</Label>
                     <Input
                         id={field.id}
                         name={field.id}
-                        defaultValue={user[field.id]}
+                        defaultValue={customer[field.id]}
                         required={field.required}
                         autoComplete={field.autoComplete}
                         maxLength={200}

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
 import { formatPrice } from "@/lib/format";
@@ -34,7 +34,7 @@ export async function nextAttempt(invoiceId: string) {
 
 export async function recordAttempt(input: {
     invoiceId: string;
-    userId: string;
+    customerId: string;
     provider: Provider;
     providerRef: string;
     amountCents: number;
@@ -45,7 +45,7 @@ export async function recordAttempt(input: {
     await db.insert(schema.payment).values({
         id,
         invoiceId: input.invoiceId,
-        userId: input.userId,
+        customerId: input.customerId,
         provider: input.provider,
         providerRef: input.providerRef,
         amountCents: input.amountCents,
@@ -153,9 +153,19 @@ export async function settlePayment(input: {
 
             if (!paidTo) {
                 const [buyer] = await tx
-                    .select({ email: schema.user.email })
-                    .from(schema.user)
-                    .where(eq(schema.user.id, attempt.userId));
+                    .select({ email: schema.customerContact.email })
+                    .from(schema.customerContact)
+                    .where(
+                        eq(
+                            schema.customerContact.customerId,
+                            attempt.customerId,
+                        ),
+                    )
+                    .orderBy(
+                        sql`case when ${schema.customerContact.role} = 'owner' then 0 else 1 end`,
+                        asc(schema.customerContact.id),
+                    )
+                    .limit(1);
 
                 paidTo = buyer?.email ?? null;
             }

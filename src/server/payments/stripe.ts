@@ -112,26 +112,26 @@ export async function createInvoiceCheckout(input: CheckoutInput) {
 }
 
 /** The Customer a stored payment method has to hang from. */
-export async function ensureStripeCustomer(user: {
+export async function ensureStripeCustomer(account: {
     id: string;
     name: string;
     email: string;
     stripeCustomerId: string | null;
 }) {
-    if (user.stripeCustomerId) {
-        return user.stripeCustomerId;
+    if (account.stripeCustomerId) {
+        return account.stripeCustomerId;
     }
 
-    const customer = await stripe().customers.create(
+    const created = await stripe().customers.create(
         {
-            name: user.name,
-            email: user.email,
-            metadata: { user_id: user.id },
+            name: account.name,
+            email: account.email,
+            metadata: { customer_id: account.id },
         },
-        { idempotencyKey: `customer:${user.id}` },
+        { idempotencyKey: `customer:${account.id}` },
     );
 
-    return customer.id;
+    return created.id;
 }
 
 /**
@@ -140,7 +140,7 @@ export async function ensureStripeCustomer(user: {
  * dashboard, which is exactly what we want.
  */
 export async function createSetupCheckout(input: {
-    userId: string;
+    customerId: string;
     stripeCustomerId: string;
     contractId?: string | null;
 }) {
@@ -154,7 +154,7 @@ export async function createSetupCheckout(input: {
         locale: "de",
         setup_intent_data: {
             metadata: {
-                user_id: input.userId,
+                customer_id: input.customerId,
                 contract_id: input.contractId ?? "",
             },
         },
@@ -203,7 +203,7 @@ export async function readStoredMethod(sessionId: string) {
         label,
         contractId: intent.metadata?.contract_id || null,
         /** Written by createSetupCheckout, so the return can be checked. */
-        userId: intent.metadata?.user_id || null,
+        customerId: intent.metadata?.customer_id || null,
     };
 }
 

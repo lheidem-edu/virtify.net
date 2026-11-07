@@ -9,7 +9,10 @@ import {
     sendPasswordResetMail,
     sendVerificationMail,
 } from "@/server/auth/mail";
-import { nextCustomerNumber } from "@/server/documents/numbering";
+import {
+    createCustomerForUser,
+    customerForUser,
+} from "@/server/customers/repository";
 
 function secret() {
     const value = process.env.BETTER_AUTH_SECRET;
@@ -68,16 +71,8 @@ export const auth = betterAuth({
     },
 
     user: {
-        additionalFields: {
-            customerNumber: { type: "number", required: false, input: false },
-            company: { type: "string", required: false, input: true },
-            street: { type: "string", required: false, input: true },
-            postalCode: { type: "string", required: false, input: true },
-            city: { type: "string", required: false, input: true },
-            country: { type: "string", required: false, input: true },
-            vatId: { type: "string", required: false, input: true },
-            phone: { type: "string", required: false, input: true },
-        },
+        // No master data here any more: a login is a login. Company, address
+        // and VAT ID belong to the billing account — see src/db/schema/customers.ts.
         changeEmail: {
             enabled: true,
             // The address only changes once the new one is confirmed, so a
@@ -104,15 +99,26 @@ export const auth = betterAuth({
     databaseHooks: {
         user: {
             create: {
-                // Assigned here rather than lazily, so every account has a
-                // number the moment it exists — including in the customer
-                // list.
-                before: async (user: Record<string, unknown>) => ({
-                    data: {
-                        ...user,
-                        customerNumber: await nextCustomerNumber(),
-                    },
-                }),
+                /**
+                 * Every login gets a billing account the moment it exists.
+                 * Doing it here rather than in the registration action means
+                 * a login created by any other route — a seed, a later
+                 * invitation flow — still has one, and a login that can sign
+                 * in but owns nothing never happens.
+                 */
+                after: async (created: {
+                    id: string;
+                    name: string;
+                    email: string;
+                }) => {
+                    await db.transaction(async (tx) => {
+                        const existing = await customerForUser(tx, created.id);
+
+                        if (!existing) {
+                            await createCustomerForUser(tx, created);
+                        }
+                    });
+                },
             },
         },
     },

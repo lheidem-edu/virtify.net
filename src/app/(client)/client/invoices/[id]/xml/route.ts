@@ -8,10 +8,10 @@ export async function GET(
     _request: Request,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const { userId, isAdmin } = await documentViewer();
+    const { customerId, isAdmin } = await documentViewer();
     const { id } = await params;
 
-    const loaded = await loadInvoice(id, userId, isAdmin);
+    const loaded = await loadInvoice(id, customerId, isAdmin);
 
     // XRechnung describes an issued invoice; a draft has no number to carry.
     if (

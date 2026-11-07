@@ -8,8 +8,8 @@ import {
     timestamp,
 } from "drizzle-orm/pg-core";
 import { money, timestamps, ulidFk, ulidPk } from "./_columns";
-import { user } from "./auth";
 import { contract } from "./contracts";
+import { customer } from "./customers";
 
 /**
  * Rechnungen and their Korrekturen, plus the gapless counters that number them.
@@ -29,9 +29,9 @@ export const invoiceStatus = pgEnum("invoice_status", [
  */
 export const invoice = pgTable("invoice", {
     id: ulidPk("invoice"),
-    userId: ulidFk("user_id")
+    customerId: ulidFk("customer_id")
         .notNull()
-        .references(() => user.id, { onDelete: "restrict" }),
+        .references(() => customer.id, { onDelete: "restrict" }),
     contractId: ulidFk("contract_id").references(() => contract.id, {
         onDelete: "set null",
     }),

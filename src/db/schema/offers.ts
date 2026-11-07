@@ -7,8 +7,8 @@ import {
     timestamp,
 } from "drizzle-orm/pg-core";
 import { money, timestamps, ulidFk, ulidPk } from "./_columns";
-import { user } from "./auth";
 import { contract } from "./contracts";
+import { customer } from "./customers";
 
 /**
  * Angebote — what a contract is made from before it is signed.
@@ -31,9 +31,9 @@ export const offerStatus = pgEnum("offer_status", [
  */
 export const offer = pgTable("offer", {
     id: ulidPk("offer"),
-    userId: ulidFk("user_id")
+    customerId: ulidFk("customer_id")
         .notNull()
-        .references(() => user.id, { onDelete: "restrict" }),
+        .references(() => customer.id, { onDelete: "restrict" }),
     number: text("number").notNull().unique(),
     title: text("title").notNull(),
     status: offerStatus("status").notNull().default("draft"),

@@ -5,7 +5,7 @@ import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { db, schema } from "@/db";
 import { formatPrice } from "@/lib/format";
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import { loadInvoice } from "@/server/documents/repository";
 import {
     captureAndSettle,
@@ -78,11 +78,11 @@ export default async function Page({
     params: Promise<{ id: string }>;
     searchParams: Promise<Query>;
 }) {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
     const { id } = await params;
     const query = await searchParams;
 
-    const loaded = await loadInvoice(id, session.user.id, false);
+    const loaded = await loadInvoice(id, customer.id, false);
 
     // Ownership lives in the query: someone else's invoice is simply not here.
     if (!loaded || loaded.invoice.status === "draft") {
@@ -94,7 +94,7 @@ export default async function Page({
     if (invoice.status !== "paid") {
         await settleOnReturn(invoice.id, query);
         invoice =
-            (await loadInvoice(invoice.id, session.user.id, false))?.invoice ??
+            (await loadInvoice(invoice.id, customer.id, false))?.invoice ??
             invoice;
     }
 

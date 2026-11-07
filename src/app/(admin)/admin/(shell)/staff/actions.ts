@@ -9,7 +9,7 @@ import {
     removeStaffAccount,
     sendStaffInvite,
 } from "@/server/auth/staff-accounts";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 
 /**
  * Employee accounts. They live on their own tables with their own passwords,
@@ -28,7 +28,7 @@ export async function inviteStaff(
     _previous: StaffState,
     data: FormData,
 ): Promise<StaffState> {
-    await requireStaff();
+    await requirePermission("staff.manage");
 
     const name = String(data.get("name") ?? "").trim();
     const email = String(data.get("email") ?? "")
@@ -82,7 +82,7 @@ export async function resendInvite(
     _previous: StaffState,
     data: FormData,
 ): Promise<StaffState> {
-    await requireStaff();
+    await requirePermission("staff.manage");
 
     const [target] = await db
         .select({ email: schema.staffUser.email })
@@ -114,7 +114,7 @@ export async function removeStaff(
     _previous: StaffState,
     data: FormData,
 ): Promise<StaffState> {
-    const session = await requireStaff();
+    const session = await requirePermission("staff.manage");
 
     const userId = String(data.get("userId") ?? "");
 

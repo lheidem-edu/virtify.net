@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
     bigint,
     boolean,
@@ -6,6 +7,7 @@ import {
     pgTable,
     text,
     timestamp,
+    uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { timestamps, ulidFk, ulidPk } from "./_columns";
 
@@ -104,3 +106,51 @@ export const staffRateLimit = pgTable("staff_rate_limit", {
     count: integer("count"),
     lastRequest: bigint("last_request", { mode: "number" }),
 });
+
+/**
+ * RBAC. A role is a named bundle of permission strings; an employee holds any
+ * number of roles and may do anything any of them grants.
+ *
+ * The strings themselves are not a table: the catalogue of what exists lives
+ * in src/server/auth/permissions.ts, so a typo is a type error rather than a
+ * row nobody notices. What the database holds is which of them were granted.
+ */
+export const staffRole = pgTable("staff_role", {
+    id: ulidPk("staffrole"),
+    name: text("name").notNull().unique(),
+    description: text("description"),
+    /** Permission strings. `*` grants everything, `billing.*` a domain. */
+    permissions: text("permissions")
+        .array()
+        .notNull()
+        .default(sql`'{}'::text[]`),
+    /**
+     * Seeded roles. "Super Admin" is one: it cannot be deleted or have its
+     * permissions taken away, because an account that can edit roles could
+     * otherwise lock every employee out of the panel for good.
+     */
+    isSystem: boolean("is_system").notNull().default(false),
+    ...timestamps(),
+});
+
+export const staffRoleAssignment = pgTable(
+    "staff_role_assignment",
+    {
+        id: ulidPk("staffroleassignment"),
+        staffUserId: ulidFk("staff_user_id")
+            .notNull()
+            .references(() => staffUser.id, { onDelete: "cascade" }),
+        roleId: ulidFk("role_id")
+            .notNull()
+            .references(() => staffRole.id, { onDelete: "cascade" }),
+        ...timestamps(),
+    },
+    (table) => [
+        uniqueIndex("staff_role_assignment_user_role_idx").on(
+            table.staffUserId,
+            table.roleId,
+        ),
+    ],
+);
+
+export type StaffRole = typeof staffRole.$inferSelect;

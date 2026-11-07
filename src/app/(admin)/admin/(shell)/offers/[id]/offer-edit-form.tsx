@@ -24,7 +24,7 @@ export default function OfferEditForm({
     offerId: string;
     accounts: { id: string; name: string | null; email: string }[];
     offer: {
-        userId: string;
+        customerId: string;
         title: string;
         introText: string | null;
         note: string | null;
@@ -54,7 +54,7 @@ export default function OfferEditForm({
             ) : null}
 
             <SelectField
-                id="userId"
+                id="customerId"
                 label="Konto"
                 options={accounts.map((account) => ({
                     value: account.id,
@@ -62,7 +62,7 @@ export default function OfferEditForm({
                         ? `${account.email} — ${account.name}`
                         : account.email,
                 }))}
-                defaultValue={offer.userId}
+                defaultValue={offer.customerId}
                 required
             />
 

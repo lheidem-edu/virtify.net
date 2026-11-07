@@ -3,12 +3,14 @@
 import {
     FileSignature,
     FileText,
+    KeyRound,
     LayoutDashboard,
     LogOut,
     Receipt,
     Scale,
     Settings,
     Shield,
+    ShieldCheck,
     User,
     UserCog,
     Users,
@@ -47,6 +49,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     shield: Shield,
     "user-cog": UserCog,
     users: Users,
+    key: KeyRound,
+    "shield-check": ShieldCheck,
 };
 
 function NavGroup({

@@ -1,6 +1,6 @@
 import "server-only";
-import { requireSession } from "@/server/auth/session";
 import { getStaffSession } from "@/server/auth/staff-session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import { ANY_CUSTOMER } from "@/server/documents/repository";
 
 /**
@@ -17,10 +17,10 @@ export async function documentViewer() {
     const staff = await getStaffSession();
 
     if (staff) {
-        return { userId: ANY_CUSTOMER, isAdmin: true as const };
+        return { customerId: ANY_CUSTOMER, isAdmin: true as const };
     }
 
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
 
-    return { userId: session.user.id, isAdmin: false as const };
+    return { customerId: customer.id, isAdmin: false as const };
 }

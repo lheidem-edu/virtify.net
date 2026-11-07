@@ -1,8 +1,8 @@
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import ProfileForm from "./profile-form";
 
 export default async function Page() {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
 
     return (
         <>
@@ -18,15 +18,16 @@ export default async function Page() {
 
             <section className="px-6 py-16 md:px-10 md:py-20">
                 <ProfileForm
-                    user={{
-                        name: session.user.name ?? "",
-                        company: session.user.company ?? "",
-                        street: session.user.street ?? "",
-                        postalCode: session.user.postalCode ?? "",
-                        city: session.user.city ?? "",
-                        country: session.user.country ?? "",
-                        vatId: session.user.vatId ?? "",
-                        phone: session.user.phone ?? "",
+                    customer={{
+                        kind: customer.kind,
+                        name: customer.name,
+                        company: customer.company ?? "",
+                        street: customer.street ?? "",
+                        postalCode: customer.postalCode ?? "",
+                        city: customer.city ?? "",
+                        country: customer.country ?? "",
+                        vatId: customer.vatId ?? "",
+                        phone: customer.phone ?? "",
                     }}
                 />
             </section>

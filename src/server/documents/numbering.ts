@@ -48,11 +48,12 @@ export async function nextNumber(tx: Tx, kind: DocumentKind, at: Date) {
 }
 
 /**
- * Assigns the next customer number. Runs on sign-up, before the row is
- * written, so every account has one from the start.
+ * Assigns the next customer number. Takes the executor rather than reaching
+ * for the pool, so the number is reserved in the same transaction that
+ * writes the account it belongs to — a rolled-back sign-up must not burn one.
  */
-export async function nextCustomerNumber() {
-    const [row] = await db
+export async function nextCustomerNumber(tx: Tx | typeof db = db) {
+    const [row] = await tx
         .insert(schema.documentCounter)
         .values({ scope: "customer", value: CUSTOMER_NUMBER_START + 1 })
         .onConflictDoUpdate({

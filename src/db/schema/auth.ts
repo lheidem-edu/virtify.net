@@ -11,9 +11,16 @@ import { timestamps, ulidFk, ulidPk } from "./_columns";
 
 /**
  * Better Auth's own tables for customers. Column names follow what the Drizzle
- * adapter expects. Every row on `user` is a customer: one login is one customer,
- * and the master data sits there rather than in a table of its own. Employees are
- * a second Better Auth instance entirely — see ./staff.ts.
+ * adapter expects.
+ *
+ * A row here is a *login*, nothing more: a name, an address to sign in with
+ * and a password. Who it may bill for is `customer_contact` in ./customers.ts,
+ * and the master data — company, address, VAT ID, customer number, the
+ * gateway identities — sits on `customer`. Before Phase 1 all of it was on
+ * this table, which meant a company could have exactly one person able to see
+ * its invoices.
+ *
+ * Employees are a second Better Auth instance entirely — see ./staff.ts.
  */
 
 export const user = pgTable("user", {
@@ -23,27 +30,8 @@ export const user = pgTable("user", {
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
 
-    // Master data. Empty until the customer fills it in after registering.
-    company: text("company"),
-    street: text("street"),
-    postalCode: text("postal_code"),
-    city: text("city"),
-    country: text("country"),
-    vatId: text("vat_id"),
-    phone: text("phone"),
-    /** EN 16931 BT-10. Public buyers supply a Leitweg-ID; otherwise the
-     *  customer number is used so the mandatory field is always populated. */
-    buyerReference: text("buyer_reference"),
-    /** Short, human-facing number for documents and support. Assigned on
-     *  sign-up; the ULID stays the technical key. */
-    customerNumber: integer("customer_number").unique(),
-
     // Better Auth two-factor plugin.
     twoFactorEnabled: boolean("two_factor_enabled").default(false),
-
-    /** Provider-side identity, created the first time a method is stored. */
-    stripeCustomerId: text("stripe_customer_id").unique(),
-    paypalCustomerId: text("paypal_customer_id").unique(),
 
     ...timestamps(),
 });

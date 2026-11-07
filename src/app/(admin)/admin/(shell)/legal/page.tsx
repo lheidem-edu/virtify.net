@@ -4,7 +4,7 @@ import PageHeader from "@/components/shared/page-header";
 import StatusBadge from "@/components/shared/status-badge";
 import { db, schema } from "@/db";
 import { formatDate } from "@/lib/format";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import { itemsToText } from "@/server/legal/items";
 import { loadSectionRows } from "@/server/legal/repository";
 import {
@@ -35,7 +35,7 @@ function suggestedDate() {
 }
 
 export default async function Page() {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const rows = await db
         .select()

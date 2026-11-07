@@ -4,7 +4,7 @@ import { and, asc, desc, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
 import { createId } from "@/lib/ulid";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import { parseDate } from "@/server/documents/line-items";
 import { sendLegalChangeMail } from "@/server/documents/send";
 import { textToItems } from "@/server/legal/items";
@@ -43,7 +43,7 @@ export async function createDraft(
     _previous: LegalState,
     data: FormData,
 ): Promise<LegalState> {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const kind = String(data.get("kind") ?? "");
 
@@ -121,7 +121,7 @@ export async function saveDocument(
     _previous: LegalState,
     data: FormData,
 ): Promise<LegalState> {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -170,7 +170,7 @@ export async function saveSection(
     _previous: LegalState,
     data: FormData,
 ): Promise<LegalState> {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -218,7 +218,7 @@ export async function addSection(
     _previous: LegalState,
     data: FormData,
 ): Promise<LegalState> {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const documentId = String(data.get("documentId") ?? "");
 
@@ -266,7 +266,7 @@ export async function deleteSection(
     _previous: LegalState,
     data: FormData,
 ): Promise<LegalState> {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const sectionId = String(data.get("sectionId") ?? "");
 
@@ -297,7 +297,7 @@ export async function moveSection(
     _previous: LegalState,
     data: FormData,
 ): Promise<LegalState> {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const sectionId = String(data.get("sectionId") ?? "");
     const up = String(data.get("direction") ?? "") === "up";
@@ -379,7 +379,7 @@ export async function publishDocument(
     _previous: LegalState,
     data: FormData,
 ): Promise<LegalState> {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const documentId = String(data.get("documentId") ?? "");
     const effectiveFrom = parseDate(String(data.get("effectiveFrom") ?? ""));
@@ -442,7 +442,7 @@ export async function discardDraft(
     _previous: LegalState,
     data: FormData,
 ): Promise<LegalState> {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const documentId = String(data.get("documentId") ?? "");
 
@@ -482,7 +482,7 @@ export async function announceDocument(
     _previous: LegalState,
     data: FormData,
 ): Promise<LegalState> {
-    await requireStaff();
+    await requirePermission("legal.write");
 
     const documentId = String(data.get("documentId") ?? "");
 
@@ -511,7 +511,10 @@ export async function announceDocument(
     const recipients = await db
         .selectDistinct({ email: schema.user.email })
         .from(schema.user)
-        .innerJoin(schema.contract, eq(schema.contract.userId, schema.user.id))
+        .innerJoin(
+            schema.contract,
+            eq(schema.contract.customerId, schema.user.id),
+        )
         .where(ne(schema.contract.status, "ended"));
 
     let failed = 0;

@@ -4,37 +4,86 @@ import type { PgColumn } from "drizzle-orm/pg-core";
 import { db, schema } from "@/db";
 import { calculateTotals } from "@/server/documents/totals";
 
+/** A pool connection or an open transaction — a loader works in either. */
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 /**
- * Every loader takes the viewer's id and an admin flag. Non-admins are always
- * constrained to their own rows in the query itself, so a missing check in a
- * page cannot widen what comes back.
+ * Every loader takes the viewer's customer id and an admin flag. Non-admins
+ * are always constrained to their own rows in the query itself, so a missing
+ * check in a page cannot widen what comes back.
  */
-function ownership(column: PgColumn, userId: string, isAdmin: boolean) {
-    return isAdmin ? undefined : eq(column, userId);
+function ownership(column: PgColumn, customerId: string, isAdmin: boolean) {
+    return isAdmin ? undefined : eq(column, customerId);
 }
 
 /**
  * Passed where a loader wants a customer id it will not use. An employee has
- * no row in `user` at all — they are a separate account on the staff tables —
- * so there is no id to pass, and the admin flag has already lifted the
+ * no customer account at all — they are a separate login on the staff tables
+ * — so there is no id to pass, and the admin flag has already lifted the
  * ownership filter.
  */
 export const ANY_CUSTOMER = "";
 
+/**
+ * The address a document goes to. An account's addresses live on its
+ * contacts, so the owner's is the one a document is sent to; the subquery
+ * keeps that one fact in one place instead of a join every list repeats.
+ */
+const ownerEmail = sql<string>`(
+    select c.email from ${schema.customerContact} c
+    where c.customer_id = ${schema.customer}."id"
+    order by case when c.role = 'owner' then 0 else 1 end, c.id
+    limit 1
+)`;
+
 /** The accounts a contract, offer or invoice can be addressed to. */
-export async function listCustomerAccounts() {
-    return db
+export async function listCustomerAccounts(executor: Executor = db) {
+    return executor
         .select({
-            id: schema.user.id,
-            name: schema.user.name,
-            email: schema.user.email,
+            id: schema.customer.id,
+            name: schema.customer.name,
+            company: schema.customer.company,
+            customerNumber: schema.customer.customerNumber,
+            email: ownerEmail,
         })
-        .from(schema.user)
-        .orderBy(asc(schema.user.email));
+        .from(schema.customer)
+        .where(isNull(schema.customer.deletedAt))
+        .orderBy(asc(schema.customer.customerNumber));
 }
 
-export async function listInvoices(userId: string, isAdmin: boolean) {
-    const rows = await db
+/**
+ * The buyer a document is addressed to, in the shape the freeze and the XML
+ * expect. The address is the account's; the e-mail is its owner contact's,
+ * because an account has no address of its own to be reached at.
+ */
+export async function loadBuyer(customerId: string, executor: Executor = db) {
+    const [row] = await executor
+        .select({
+            id: schema.customer.id,
+            name: schema.customer.name,
+            company: schema.customer.company,
+            street: schema.customer.street,
+            postalCode: schema.customer.postalCode,
+            city: schema.customer.city,
+            country: schema.customer.country,
+            vatId: schema.customer.vatId,
+            buyerReference: schema.customer.buyerReference,
+            customerNumber: schema.customer.customerNumber,
+            email: ownerEmail,
+        })
+        .from(schema.customer)
+        .where(eq(schema.customer.id, customerId))
+        .limit(1);
+
+    return row;
+}
+
+export async function listInvoices(
+    customerId: string,
+    isAdmin: boolean,
+    executor: Executor = db,
+) {
+    const rows = await executor
         .select({
             id: schema.invoice.id,
             number: schema.invoice.number,
@@ -45,13 +94,16 @@ export async function listInvoices(userId: string, isAdmin: boolean) {
             recipient: schema.invoice.recipient,
             contractId: schema.invoice.contractId,
             cancelsInvoiceId: schema.invoice.cancelsInvoiceId,
-            email: schema.user.email,
+            email: ownerEmail,
             /** Non-null when the contract behind the invoice carries a stored
              *  method, i.e. issuing it will collect the amount by itself. */
             collectedFrom: schema.paymentMethod.label,
         })
         .from(schema.invoice)
-        .innerJoin(schema.user, eq(schema.invoice.userId, schema.user.id))
+        .innerJoin(
+            schema.customer,
+            eq(schema.invoice.customerId, schema.customer.id),
+        )
         .leftJoin(
             schema.contract,
             eq(schema.invoice.contractId, schema.contract.id),
@@ -65,10 +117,15 @@ export async function listInvoices(userId: string, isAdmin: boolean) {
                 isNull(schema.paymentMethod.revokedAt),
             ),
         )
-        .where(ownership(schema.invoice.userId, userId, isAdmin))
+        .where(ownership(schema.invoice.customerId, customerId, isAdmin))
         .orderBy(desc(schema.invoice.createdAt));
 
-    return withTotals(rows, schema.invoiceItem.invoiceId, schema.invoiceItem);
+    return withTotals(
+        rows,
+        schema.invoiceItem.invoiceId,
+        schema.invoiceItem,
+        executor,
+    );
 }
 
 /**
@@ -79,6 +136,7 @@ async function withTotals<T extends { id: string }>(
     rows: T[],
     _key: unknown,
     table: typeof schema.invoiceItem | typeof schema.offerItem,
+    executor: Executor = db,
 ) {
     if (rows.length === 0) {
         return rows.map((row) => ({ ...row, amount: 0 }));
@@ -89,7 +147,7 @@ async function withTotals<T extends { id: string }>(
             ? schema.invoiceItem.invoiceId
             : schema.offerItem.offerId;
 
-    const sums = await db
+    const sums = await executor
         .select({
             parentId: parent,
             amount: sql<number>`coalesce(sum(${table.quantity} * ${table.unitPriceCents}), 0)::int`,
@@ -110,16 +168,17 @@ async function withTotals<T extends { id: string }>(
 
 export async function loadInvoice(
     id: string,
-    userId: string,
+    customerId: string,
     isAdmin: boolean,
+    executor: Executor = db,
 ) {
-    const [row] = await db
+    const [row] = await executor
         .select()
         .from(schema.invoice)
         .where(
             and(
                 eq(schema.invoice.id, id),
-                ownership(schema.invoice.userId, userId, isAdmin),
+                ownership(schema.invoice.customerId, customerId, isAdmin),
             ),
         );
 
@@ -127,16 +186,13 @@ export async function loadInvoice(
         return null;
     }
 
-    const items = await db
+    const items = await executor
         .select()
         .from(schema.invoiceItem)
         .where(eq(schema.invoiceItem.invoiceId, id))
         .orderBy(asc(schema.invoiceItem.position));
 
-    const [buyer] = await db
-        .select()
-        .from(schema.user)
-        .where(eq(schema.user.id, row.userId));
+    const buyer = await loadBuyer(row.customerId, executor);
 
     return { invoice: row, items, buyer, totals: calculateTotals(items) };
 }
@@ -152,10 +208,11 @@ export async function loadInvoice(
  */
 export async function loadInvoicePayments(
     invoiceId: string,
-    userId: string,
+    customerId: string,
     isAdmin: boolean,
+    executor: Executor = db,
 ) {
-    return db
+    return executor
         .select({
             id: schema.payment.id,
             provider: schema.payment.provider,
@@ -183,7 +240,7 @@ export async function loadInvoicePayments(
         .where(
             and(
                 eq(schema.payment.invoiceId, invoiceId),
-                ownership(schema.invoice.userId, userId, isAdmin),
+                ownership(schema.invoice.customerId, customerId, isAdmin),
             ),
         )
         .orderBy(desc(schema.payment.createdAt));
@@ -194,10 +251,10 @@ export async function loadInvoicePayments(
  * left out: a withdrawn authorisation is not something to collect from, so it
  * must not read as one in an overview.
  */
-export async function listStoredMethods() {
-    const rows = await db
+export async function listStoredMethods(executor: Executor = db) {
+    const rows = await executor
         .select({
-            userId: schema.paymentMethod.userId,
+            customerId: schema.paymentMethod.customerId,
             provider: schema.paymentMethod.provider,
             label: schema.paymentMethod.label,
             createdAt: schema.paymentMethod.createdAt,
@@ -207,19 +264,23 @@ export async function listStoredMethods() {
         .orderBy(desc(schema.paymentMethod.createdAt));
 
     // Newest first above, so the first row seen for an account wins.
-    const byUser = new Map<string, (typeof rows)[number]>();
+    const byCustomer = new Map<string, (typeof rows)[number]>();
 
     for (const row of rows) {
-        if (!byUser.has(row.userId)) {
-            byUser.set(row.userId, row);
+        if (!byCustomer.has(row.customerId)) {
+            byCustomer.set(row.customerId, row);
         }
     }
 
-    return byUser;
+    return byCustomer;
 }
 
-export async function listOffers(userId: string, isAdmin: boolean) {
-    const rows = await db
+export async function listOffers(
+    customerId: string,
+    isAdmin: boolean,
+    executor: Executor = db,
+) {
+    const rows = await executor
         .select({
             id: schema.offer.id,
             number: schema.offer.number,
@@ -229,24 +290,37 @@ export async function listOffers(userId: string, isAdmin: boolean) {
             sentAt: schema.offer.sentAt,
             monthlyPriceCents: schema.offer.monthlyPriceCents,
             contractId: schema.offer.contractId,
-            email: schema.user.email,
+            email: ownerEmail,
         })
         .from(schema.offer)
-        .innerJoin(schema.user, eq(schema.offer.userId, schema.user.id))
-        .where(ownership(schema.offer.userId, userId, isAdmin))
+        .innerJoin(
+            schema.customer,
+            eq(schema.offer.customerId, schema.customer.id),
+        )
+        .where(ownership(schema.offer.customerId, customerId, isAdmin))
         .orderBy(desc(schema.offer.createdAt));
 
-    return withTotals(rows, schema.offerItem.offerId, schema.offerItem);
+    return withTotals(
+        rows,
+        schema.offerItem.offerId,
+        schema.offerItem,
+        executor,
+    );
 }
 
-export async function loadOffer(id: string, userId: string, isAdmin: boolean) {
-    const [row] = await db
+export async function loadOffer(
+    id: string,
+    customerId: string,
+    isAdmin: boolean,
+    executor: Executor = db,
+) {
+    const [row] = await executor
         .select()
         .from(schema.offer)
         .where(
             and(
                 eq(schema.offer.id, id),
-                ownership(schema.offer.userId, userId, isAdmin),
+                ownership(schema.offer.customerId, customerId, isAdmin),
             ),
         );
 
@@ -254,22 +328,23 @@ export async function loadOffer(id: string, userId: string, isAdmin: boolean) {
         return null;
     }
 
-    const items = await db
+    const items = await executor
         .select()
         .from(schema.offerItem)
         .where(eq(schema.offerItem.offerId, id))
         .orderBy(asc(schema.offerItem.position));
 
-    const [buyer] = await db
-        .select()
-        .from(schema.user)
-        .where(eq(schema.user.id, row.userId));
+    const buyer = await loadBuyer(row.customerId, executor);
 
     return { offer: row, items, buyer, totals: calculateTotals(items) };
 }
 
-export async function listContracts(userId: string, isAdmin: boolean) {
-    return db
+export async function listContracts(
+    customerId: string,
+    isAdmin: boolean,
+    executor: Executor = db,
+) {
+    return executor
         .select({
             id: schema.contract.id,
             number: schema.contract.number,
@@ -279,11 +354,14 @@ export async function listContracts(userId: string, isAdmin: boolean) {
             minimumTermMonths: schema.contract.minimumTermMonths,
             monthlyPriceCents: schema.contract.monthlyPriceCents,
             terminatedTo: schema.contract.terminatedTo,
-            email: schema.user.email,
+            email: ownerEmail,
         })
         .from(schema.contract)
-        .innerJoin(schema.user, eq(schema.contract.userId, schema.user.id))
-        .where(ownership(schema.contract.userId, userId, isAdmin))
+        .innerJoin(
+            schema.customer,
+            eq(schema.contract.customerId, schema.customer.id),
+        )
+        .where(ownership(schema.contract.customerId, customerId, isAdmin))
         .orderBy(desc(schema.contract.createdAt));
 }
 
@@ -296,16 +374,17 @@ export async function listContracts(userId: string, isAdmin: boolean) {
  */
 export async function loadContract(
     id: string,
-    userId: string,
+    customerId: string,
     isAdmin: boolean,
+    executor: Executor = db,
 ) {
-    const [row] = await db
+    const [row] = await executor
         .select()
         .from(schema.contract)
         .where(
             and(
                 eq(schema.contract.id, id),
-                ownership(schema.contract.userId, userId, isAdmin),
+                ownership(schema.contract.customerId, customerId, isAdmin),
             ),
         );
 
@@ -313,12 +392,9 @@ export async function loadContract(
         return null;
     }
 
-    const [buyer] = await db
-        .select()
-        .from(schema.user)
-        .where(eq(schema.user.id, row.userId));
+    const buyer = await loadBuyer(row.customerId, executor);
 
-    const invoices = await db
+    const invoices = await executor
         .select({
             id: schema.invoice.id,
             number: schema.invoice.number,
@@ -330,7 +406,7 @@ export async function loadContract(
         .where(eq(schema.invoice.contractId, id))
         .orderBy(desc(schema.invoice.createdAt));
 
-    const [offer] = await db
+    const [offer] = await executor
         .select({
             id: schema.offer.id,
             number: schema.offer.number,
@@ -344,7 +420,7 @@ export async function loadContract(
     // Loaded even when revoked: the page has to be able to say that the
     // authorisation was withdrawn, not silently show none.
     const [method] = row.paymentMethodId
-        ? await db
+        ? await executor
               .select({
                   id: schema.paymentMethod.id,
                   provider: schema.paymentMethod.provider,
@@ -363,6 +439,7 @@ export async function loadContract(
             invoices,
             schema.invoiceItem.invoiceId,
             schema.invoiceItem,
+            executor,
         ),
         offer: offer ?? null,
         paymentMethod: method ?? null,
@@ -451,4 +528,26 @@ export function formatRecipient(buyer: {
     ]
         .filter(Boolean)
         .join("\n");
+}
+
+/**
+ * Every stored method of one account, revoked ones included — the customer's
+ * detail page has to be able to say that an authorisation was withdrawn, not
+ * silently show none.
+ */
+export async function loadStoredMethodsFor(
+    customerId: string,
+    executor: Executor = db,
+) {
+    return executor
+        .select({
+            id: schema.paymentMethod.id,
+            provider: schema.paymentMethod.provider,
+            label: schema.paymentMethod.label,
+            revokedAt: schema.paymentMethod.revokedAt,
+            createdAt: schema.paymentMethod.createdAt,
+        })
+        .from(schema.paymentMethod)
+        .where(eq(schema.paymentMethod.customerId, customerId))
+        .orderBy(desc(schema.paymentMethod.createdAt));
 }

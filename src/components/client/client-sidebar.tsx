@@ -4,6 +4,7 @@ import {
     CreditCard,
     FileSignature,
     FileText,
+    KeyRound,
     LayoutDashboard,
     LogOut,
     Receipt,
@@ -50,6 +51,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     "user-cog": UserCog,
     shield: Shield,
     users: Users,
+    key: KeyRound,
 };
 
 function NavGroup({

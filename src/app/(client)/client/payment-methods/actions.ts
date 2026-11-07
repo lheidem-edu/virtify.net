@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import {
     createTransport,
     logMailError,
@@ -37,7 +37,7 @@ export async function startPaymentMethodSetup(
     _previous: PaymentMethodState,
     data: FormData,
 ): Promise<PaymentMethodState> {
-    const session = await requireSession();
+    const { customer, contact } = await getCurrentCustomer();
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -71,7 +71,7 @@ export async function startPaymentMethodSetup(
             .where(
                 and(
                     eq(schema.contract.id, contractId),
-                    eq(schema.contract.userId, session.user.id),
+                    eq(schema.contract.customerId, customer.id),
                 ),
             );
 
@@ -87,36 +87,36 @@ export async function startPaymentMethodSetup(
 
     try {
         if (provider === "stripe") {
-            const [row] = await db
-                .select()
-                .from(schema.user)
-                .where(eq(schema.user.id, session.user.id));
-
-            const stripeCustomerId = await ensureStripeCustomer(row);
+            const stripeCustomerId = await ensureStripeCustomer({
+                id: customer.id,
+                name: customer.company || customer.name,
+                email: contact.email,
+                stripeCustomerId: customer.stripeCustomerId,
+            });
 
             // Keep the customer id on our side: the next setup and every
             // collection has to reach the same Stripe customer.
-            if (row.stripeCustomerId !== stripeCustomerId) {
+            if (customer.stripeCustomerId !== stripeCustomerId) {
                 await db
-                    .update(schema.user)
+                    .update(schema.customer)
                     .set({ stripeCustomerId, updatedAt: new Date() })
-                    .where(eq(schema.user.id, session.user.id));
+                    .where(eq(schema.customer.id, customer.id));
             }
 
             const setup = await createSetupCheckout({
-                userId: session.user.id,
+                customerId: customer.id,
                 stripeCustomerId,
                 contractId: contractId || undefined,
             });
 
-            await recordSetup(setup.id, session.user.id, "stripe", contractId);
+            await recordSetup(setup.id, customer.id, "stripe", contractId);
             url = setup.url;
         } else {
             const setup = await createVaultSetupToken({
-                userId: session.user.id,
+                customerId: customer.id,
             });
 
-            await recordSetup(setup.id, session.user.id, "paypal", contractId);
+            await recordSetup(setup.id, customer.id, "paypal", contractId);
             url = setup.url;
         }
     } catch (error) {
@@ -140,13 +140,13 @@ export async function startPaymentMethodSetup(
  */
 async function recordSetup(
     id: string,
-    userId: string,
+    customerId: string,
     provider: "stripe" | "paypal",
     contractId: string,
 ) {
     await db
         .insert(schema.paymentSetup)
-        .values({ id, userId, provider, contractId: contractId || null })
+        .values({ id, customerId, provider, contractId: contractId || null })
         .onConflictDoNothing();
 }
 
@@ -160,7 +160,7 @@ export async function removePaymentMethod(
     _previous: PaymentMethodState,
     data: FormData,
 ): Promise<PaymentMethodState> {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -172,7 +172,7 @@ export async function removePaymentMethod(
         .where(
             and(
                 eq(schema.paymentMethod.id, methodId),
-                eq(schema.paymentMethod.userId, session.user.id),
+                eq(schema.paymentMethod.customerId, customer.id),
                 isNull(schema.paymentMethod.revokedAt),
             ),
         );
@@ -214,7 +214,7 @@ export async function removePaymentMethod(
                 .where(
                     and(
                         eq(schema.contract.paymentMethodId, methodId),
-                        eq(schema.contract.userId, session.user.id),
+                        eq(schema.contract.customerId, customer.id),
                     ),
                 );
         });
@@ -306,7 +306,7 @@ export async function setContractCollection(
     _previous: PaymentMethodState,
     data: FormData,
 ): Promise<PaymentMethodState> {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
@@ -330,7 +330,7 @@ export async function setContractCollection(
                 .where(
                     and(
                         eq(schema.contract.id, contractId),
-                        eq(schema.contract.userId, session.user.id),
+                        eq(schema.contract.customerId, customer.id),
                     ),
                 )
                 .for("update");
@@ -366,7 +366,7 @@ export async function setContractCollection(
                 .where(
                     and(
                         eq(schema.paymentMethod.id, methodId),
-                        eq(schema.paymentMethod.userId, session.user.id),
+                        eq(schema.paymentMethod.customerId, customer.id),
                         isNull(schema.paymentMethod.revokedAt),
                     ),
                 );

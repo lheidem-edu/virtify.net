@@ -19,6 +19,7 @@ export const ACCOUNT_NAV = [
 
 export const ACCOUNT_SETTINGS_NAV = [
     { href: "/client/profile", label: "Stammdaten", icon: "user" },
+    { href: "/client/api-keys", label: "API-Schlüssel", icon: "key" },
     { href: "/client/security", label: "Sicherheit", icon: "shield" },
 ] as const;
 
@@ -28,12 +29,14 @@ export const ADMIN_NAV = [
     { href: "/admin/offers", label: "Angebote", icon: "file-signature" },
     { href: "/admin/invoices", label: "Rechnungen", icon: "receipt" },
     { href: "/admin/legal", label: "Rechtstexte", icon: "scale" },
+    { href: "/admin/api-keys", label: "API-Schlüssel", icon: "key" },
     { href: "/admin/settings", label: "Einstellungen", icon: "settings" },
 ] as const;
 
 /** The employee's own account, not the business. */
 export const ADMIN_SETTINGS_NAV = [
     { href: "/admin/staff", label: "Mitarbeiter", icon: "user-cog" },
+    { href: "/admin/roles", label: "Rollen", icon: "shield-check" },
     { href: "/admin/two-factor", label: "Sicherheit", icon: "shield" },
 ] as const;
 

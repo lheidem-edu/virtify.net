@@ -45,7 +45,7 @@ export default function ContractForm({
                 </p>
             ) : (
                 <SelectField
-                    id="userId"
+                    id="customerId"
                     label="Konto"
                     placeholder="Bitte wählen"
                     required

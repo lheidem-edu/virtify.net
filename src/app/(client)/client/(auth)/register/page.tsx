@@ -1,61 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import AuthShell from "@/components/shared/auth-shell";
+import FormStatus from "@/components/shared/form-status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authClient } from "@/lib/auth-client";
+import { type RegisterState, registerAccount } from "./actions";
 
 const MIN_PASSWORD_LENGTH = 12;
 
+const initial: RegisterState = { status: "idle" };
+
 export default function Page() {
-    const [pending, setPending] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [sentTo, setSentTo] = useState<string | null>(null);
+    const [state, formAction, pending] = useActionState(
+        registerAccount,
+        initial,
+    );
+    const [isCompany, setIsCompany] = useState(false);
 
-    async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-        event.preventDefault();
-        setPending(true);
-        setError(null);
-
-        const data = new FormData(event.currentTarget);
-        const email = String(data.get("email") ?? "").trim();
-        const password = String(data.get("password") ?? "");
-
-        if (password.length < MIN_PASSWORD_LENGTH) {
-            setPending(false);
-            setError(
-                `Das Passwort muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein.`,
-            );
-            return;
-        }
-
-        const { error: signUpError } = await authClient.signUp.email({
-            email,
-            password,
-            name: String(data.get("name") ?? "").trim(),
-        });
-
-        setPending(false);
-
-        if (signUpError) {
-            setError(
-                signUpError.message ??
-                    "Die Registrierung hat nicht geklappt. Bitte versuche es später erneut.",
-            );
-            return;
-        }
-
-        setSentTo(email);
-    }
-
-    if (sentTo) {
+    if (state.status === "sent") {
         return (
             <AuthShell
                 title="Fast geschafft"
-                intro={`Wir haben dir eine E-Mail an ${sentTo} geschickt. Bestätige darin deine Adresse, danach kannst du dich anmelden.`}
+                intro={`Wir haben dir eine E-Mail an ${state.email} geschickt. Bestätige darin deine Adresse, danach kannst du dich anmelden.`}
                 footer={
                     <p>
                         Nichts angekommen? Sieh im Spam-Ordner nach oder{" "}
@@ -80,7 +49,7 @@ export default function Page() {
     return (
         <AuthShell
             title="Konto anlegen"
-            intro="Du brauchst nur eine E-Mail-Adresse und ein Passwort. Deine Stammdaten trägst du danach im Profil nach."
+            intro="Nur das Nötigste. Anschrift und weitere Angaben trägst du danach in deinen Stammdaten nach."
             footer={
                 <p>
                     Schon ein Konto?{" "}
@@ -93,17 +62,85 @@ export default function Page() {
                 </p>
             }
         >
-            <form onSubmit={handleSubmit} className="space-y-6">
-                {error ? (
-                    <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm leading-6 text-destructive">
-                        {error}
-                    </p>
+            <form action={formAction} className="space-y-6">
+                {state.status === "error" ? (
+                    <FormStatus tone="error" message={state.message} />
                 ) : null}
+
+                <fieldset className="space-y-3">
+                    <legend className="text-sm text-foreground">
+                        Ich melde mich an als
+                    </legend>
+                    <div className="flex gap-6 text-sm">
+                        <label className="flex items-center gap-2">
+                            <input
+                                type="radio"
+                                name="kind"
+                                value="private"
+                                defaultChecked
+                                onChange={() => setIsCompany(false)}
+                            />
+                            Privatperson
+                        </label>
+                        <label className="flex items-center gap-2">
+                            <input
+                                type="radio"
+                                name="kind"
+                                value="company"
+                                onChange={() => setIsCompany(true)}
+                            />
+                            Firma
+                        </label>
+                    </div>
+                </fieldset>
 
                 <div className="space-y-3">
                     <Label htmlFor="name">Name</Label>
                     <Input id="name" name="name" autoComplete="name" required />
                 </div>
+
+                {isCompany ? (
+                    <>
+                        <div className="space-y-3">
+                            <Label htmlFor="company">Firma</Label>
+                            <Input
+                                id="company"
+                                name="company"
+                                autoComplete="organization"
+                                required
+                            />
+                        </div>
+                        <div className="space-y-3">
+                            <Label htmlFor="vatId">USt-IdNr. (optional)</Label>
+                            <Input
+                                id="vatId"
+                                name="vatId"
+                                autoComplete="off"
+                                placeholder="DE123456789"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Wir berechnen nach § 19 UStG keine Umsatzsteuer.
+                                Die Nummer nehmen wir für deine Unterlagen auf.
+                            </p>
+                        </div>
+                    </>
+                ) : null}
+
+                <div className="space-y-3">
+                    <Label htmlFor="country">Land</Label>
+                    <Input
+                        id="country"
+                        name="country"
+                        autoComplete="country"
+                        defaultValue="DE"
+                        maxLength={2}
+                        required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                        Zwei Buchstaben nach ISO 3166-1, z. B. DE oder AT.
+                    </p>
+                </div>
+
                 <div className="space-y-3">
                     <Label htmlFor="email">E-Mail-Adresse</Label>
                     <Input

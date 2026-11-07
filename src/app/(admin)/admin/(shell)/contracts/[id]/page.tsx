@@ -21,7 +21,7 @@ import {
     OFFER_STATUS_LABEL,
     OFFER_STATUS_TONE,
 } from "@/lib/format";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import {
     earliestTerminationDate,
     minimumTermEnd,
@@ -62,7 +62,7 @@ export default async function Page({
 }: {
     params: Promise<{ id: string }>;
 }) {
-    await requireStaff();
+    await requirePermission("contracts.read");
     const { id } = await params;
 
     const loaded = await loadContract(id, ANY_CUSTOMER, true);

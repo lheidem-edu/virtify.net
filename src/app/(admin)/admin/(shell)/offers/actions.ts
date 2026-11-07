@@ -5,14 +5,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { createId } from "@/lib/ulid";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import {
     parseDate,
     parsePositivePriceToCents,
     readLineItems,
 } from "@/server/documents/line-items";
 import { nextNumber } from "@/server/documents/numbering";
-import { formatRecipient } from "@/server/documents/repository";
+import { formatRecipient, loadBuyer } from "@/server/documents/repository";
 import {
     sendOfferAcceptedMail,
     sendOfferMail,
@@ -41,17 +41,17 @@ export async function createOffer(
     _previous: OfferState,
     data: FormData,
 ): Promise<OfferState> {
-    await requireStaff();
+    await requirePermission("offers.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
-    const userId = read("userId");
+    const customerId = read("customerId");
     const title = read("title");
     const items = readLineItems(data);
     const monthlyCents = parsePositivePriceToCents(read("monthlyPrice") || "0");
     const minimumTermMonths = Number.parseInt(read("minimumTermMonths"), 10);
 
-    if (!userId || !title) {
+    if (!customerId || !title) {
         return { status: "error", message: "Konto und Titel sind Pflicht." };
     }
 
@@ -85,7 +85,7 @@ export async function createOffer(
 
             await tx.insert(schema.offer).values({
                 id,
-                userId,
+                customerId,
                 number,
                 title,
                 status: "draft",
@@ -133,18 +133,18 @@ export async function updateOffer(
     _previous: OfferState,
     data: FormData,
 ): Promise<OfferState> {
-    await requireStaff();
+    await requirePermission("offers.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
     const offerId = String(data.get("offerId") ?? "");
-    const userId = read("userId");
+    const customerId = read("customerId");
     const title = read("title");
     const items = readLineItems(data);
     const monthlyCents = parsePositivePriceToCents(read("monthlyPrice") || "0");
     const minimumTermMonths = Number.parseInt(read("minimumTermMonths"), 10);
 
-    if (!userId || !title) {
+    if (!customerId || !title) {
         return { status: "error", message: "Konto und Titel sind Pflicht." };
     }
 
@@ -185,7 +185,7 @@ export async function updateOffer(
             await tx
                 .update(schema.offer)
                 .set({
-                    userId,
+                    customerId,
                     title,
                     introText: read("introText") || null,
                     minimumTermMonths,
@@ -243,7 +243,7 @@ export async function deleteOffer(
     _previous: OfferState,
     data: FormData,
 ): Promise<OfferState> {
-    await requireStaff();
+    await requirePermission("offers.write");
 
     const offerId = String(data.get("offerId") ?? "");
 
@@ -287,7 +287,7 @@ export async function sendOffer(
     _previous: OfferState,
     data: FormData,
 ): Promise<OfferState> {
-    await requireStaff();
+    await requirePermission("offers.write");
 
     const offerId = String(data.get("offerId") ?? "");
 
@@ -306,10 +306,7 @@ export async function sendOffer(
                 throw new Error("not-draft");
             }
 
-            const [buyer] = await tx
-                .select()
-                .from(schema.user)
-                .where(eq(schema.user.id, row.userId));
+            const buyer = await loadBuyer(row.customerId, tx);
 
             const sentAt = new Date();
 
@@ -366,7 +363,7 @@ export async function resendOfferMail(
     _previous: OfferState,
     data: FormData,
 ): Promise<OfferState> {
-    await requireStaff();
+    await requirePermission("offers.write");
 
     const offerId = String(data.get("offerId") ?? "");
 
@@ -382,10 +379,7 @@ export async function resendOfferMail(
         };
     }
 
-    const [buyer] = await db
-        .select()
-        .from(schema.user)
-        .where(eq(schema.user.id, row.userId));
+    const buyer = await loadBuyer(row.customerId, db);
 
     try {
         await sendOfferMail(offerId, buyer.email, buyer.name);
@@ -410,7 +404,7 @@ export async function withdrawOffer(
     _previous: OfferState,
     data: FormData,
 ): Promise<OfferState> {
-    await requireStaff();
+    await requirePermission("offers.write");
 
     const offerId = String(data.get("offerId") ?? "");
     const notify = String(data.get("notify") ?? "") === "yes";
@@ -429,10 +423,7 @@ export async function withdrawOffer(
                 throw new Error("not-sent");
             }
 
-            const [buyer] = await tx
-                .select()
-                .from(schema.user)
-                .where(eq(schema.user.id, row.userId));
+            const buyer = await loadBuyer(row.customerId, tx);
 
             const decidedAt = new Date();
 
@@ -494,7 +485,7 @@ export async function setOfferDecision(
     _previous: OfferState,
     data: FormData,
 ): Promise<OfferState> {
-    await requireStaff();
+    await requirePermission("offers.write");
 
     const offerId = String(data.get("offerId") ?? "");
     const decision = String(data.get("decision") ?? "").trim();
@@ -565,7 +556,7 @@ export async function acceptOfferForCustomer(
     _previous: OfferState,
     data: FormData,
 ): Promise<OfferState> {
-    await requireStaff();
+    await requirePermission("offers.write");
 
     const offerId = String(data.get("offerId") ?? "");
     const notify = String(data.get("notify") ?? "") === "yes";
@@ -590,10 +581,7 @@ export async function acceptOfferForCustomer(
                 throw new Error("expired");
             }
 
-            const [buyer] = await tx
-                .select()
-                .from(schema.user)
-                .where(eq(schema.user.id, row.userId));
+            const buyer = await loadBuyer(row.customerId, tx);
 
             const contractId = createId("contract");
             const decidedAt = new Date();
@@ -601,7 +589,7 @@ export async function acceptOfferForCustomer(
             await tx.insert(schema.contract).values({
                 id: contractId,
                 number: contractId,
-                userId: row.userId,
+                customerId: row.customerId,
                 title: row.title,
                 status: "provisioning",
                 minimumTermMonths: row.minimumTermMonths,

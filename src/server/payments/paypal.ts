@@ -205,13 +205,13 @@ function readCapture(order: Order) {
  * and without that approval every charge fails with
  * MERCHANT_NOT_ENABLED_FOR_REFERENCE_TRANSACTION.
  */
-export async function createVaultSetupToken(input: { userId: string }) {
+export async function createVaultSetupToken(input: { customerId: string }) {
     const setup = await call<{
         id: string;
         links?: { rel: string; href: string }[];
     }>("/v3/vault/setup-tokens", {
         method: "POST",
-        requestId: `vault:${input.userId}:${Date.now()}`,
+        requestId: `vault:${input.customerId}:${Date.now()}`,
         body: {
             payment_source: {
                 paypal: {

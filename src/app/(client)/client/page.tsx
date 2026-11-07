@@ -1,7 +1,7 @@
 import { FileSignature, FileText, Receipt } from "lucide-react";
 import Link from "next/link";
 import PageHeader from "@/components/shared/page-header";
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import {
     listContracts,
     listInvoices,
@@ -12,13 +12,13 @@ const CARD =
     "flex flex-col gap-3 rounded-lg border p-6 transition-colors hover:border-ring";
 
 export default async function Page() {
-    const session = await requireSession();
-    const userId = session.user.id;
+    const { customer, user } = await getCurrentCustomer();
+    const customerId = customer.id;
 
     const [contracts, offers, invoices] = await Promise.all([
-        listContracts(userId, false),
-        listOffers(userId, false),
-        listInvoices(userId, false),
+        listContracts(customerId, false),
+        listOffers(customerId, false),
+        listInvoices(customerId, false),
     ]);
 
     const openOffers = offers.filter((entry) => entry.status === "sent");
@@ -31,8 +31,8 @@ export default async function Page() {
         (entry) => entry.status === "active" || entry.status === "provisioning",
     );
 
-    const user = session.user;
-    const addressMissing = !user.street || !user.postalCode || !user.city;
+    const addressMissing =
+        !customer.street || !customer.postalCode || !customer.city;
 
     const cards = [
         {

@@ -5,9 +5,15 @@ const selectClass =
 
 export default function CustomerSelect({
     accounts,
-    id = "userId",
+    id = "customerId",
 }: {
-    accounts: { id: string; name: string | null; email: string }[];
+    accounts: {
+        id: string;
+        name: string | null;
+        company: string | null;
+        customerNumber: number;
+        email: string;
+    }[];
     id?: string;
 }) {
     if (accounts.length === 0) {
@@ -23,7 +29,7 @@ export default function CustomerSelect({
             <Label htmlFor={id}>Konto</Label>
             <select
                 id={id}
-                name="userId"
+                name="customerId"
                 required
                 defaultValue=""
                 className={selectClass}
@@ -33,8 +39,8 @@ export default function CustomerSelect({
                 </option>
                 {accounts.map((account) => (
                     <option key={account.id} value={account.id}>
-                        {account.email}
-                        {account.name ? ` — ${account.name}` : ""}
+                        {account.customerNumber} —{" "}
+                        {account.company || account.name} ({account.email})
                     </option>
                 ))}
             </select>

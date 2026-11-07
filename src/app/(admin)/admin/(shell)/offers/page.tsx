@@ -1,6 +1,6 @@
 import PageHeader from "@/components/shared/page-header";
 import type { OFFER_STATUS_LABEL } from "@/lib/format";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import {
     ANY_CUSTOMER,
     listCustomerAccounts,
@@ -10,7 +10,7 @@ import AdminOffersTable from "./admin-offers-table";
 import OfferForm from "./offer-form";
 
 export default async function Page() {
-    await requireStaff();
+    await requirePermission("offers.read");
 
     const accounts = await listCustomerAccounts();
 

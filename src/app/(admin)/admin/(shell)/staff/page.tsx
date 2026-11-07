@@ -2,11 +2,11 @@ import PageHeader from "@/components/shared/page-header";
 import StatusBadge from "@/components/shared/status-badge";
 import { formatDate } from "@/lib/format";
 import { listStaffAccounts } from "@/server/auth/staff-accounts";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import { InviteForm, RemoveAction, ResendAction } from "./staff-actions";
 
 export default async function Page() {
-    const session = await requireStaff();
+    const session = await requirePermission("staff.manage");
 
     const staff = await listStaffAccounts();
 

@@ -65,6 +65,12 @@ export function buildSpec() {
                 name: "System",
                 description: "Erreichbarkeit und Fassung der Schnittstelle.",
             },
+            {
+                name: "Kunden",
+                description:
+                    "Kundenkonten: Stammdaten, Status und Kundennummer. " +
+                    "Ein Kundenschlüssel sieht hier ausschließlich das eigene Konto.",
+            },
         ],
     });
 }

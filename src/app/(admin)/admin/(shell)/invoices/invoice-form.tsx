@@ -23,7 +23,7 @@ export type ContractOption = {
 
 /** What `?contract=` fills in — the whole form, not just the link. */
 export type InvoicePrefill = {
-    userId: string;
+    customerId: string;
     contractId: string;
     items: LineItemValue[];
     servicePeriodStart: string;
@@ -68,11 +68,11 @@ export default function InvoiceForm({
                 </p>
             ) : (
                 <SelectField
-                    id="userId"
+                    id="customerId"
                     label="Konto"
                     required
                     placeholder="Bitte wählen"
-                    defaultValue={prefill?.userId}
+                    defaultValue={prefill?.customerId}
                     options={accounts.map((account) => ({
                         value: account.id,
                         label: account.name

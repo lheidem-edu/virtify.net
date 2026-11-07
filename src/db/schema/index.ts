@@ -3,8 +3,11 @@
  * keeps working and Drizzle sees the whole schema in one object.
  */
 
+export * from "./api-keys";
+export * from "./audit";
 export * from "./auth";
 export * from "./contracts";
+export * from "./customers";
 export * from "./invoices";
 export * from "./legal";
 export * from "./offers";

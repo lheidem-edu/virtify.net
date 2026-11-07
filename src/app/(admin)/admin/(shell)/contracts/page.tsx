@@ -1,6 +1,6 @@
 import PageHeader from "@/components/shared/page-header";
 import type { CONTRACT_STATUS_LABEL } from "@/lib/format";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import { earliestTerminationDate } from "@/server/documents/contract-term";
 import { dateInputValue } from "@/server/documents/line-items";
 import {
@@ -12,7 +12,7 @@ import AdminContractsTable from "./admin-contracts-table";
 import ContractForm from "./contract-form";
 
 export default async function Page() {
-    await requireStaff();
+    await requirePermission("contracts.read");
 
     const accounts = await listCustomerAccounts();
 

@@ -5,10 +5,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { createId } from "@/lib/ulid";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import { parseDate, readLineItems } from "@/server/documents/line-items";
 import { nextNumber } from "@/server/documents/numbering";
-import { formatRecipient, freezeBuyer } from "@/server/documents/repository";
+import {
+    formatRecipient,
+    freezeBuyer,
+    loadBuyer,
+} from "@/server/documents/repository";
 import { sendInvoiceMail } from "@/server/documents/send";
 import { collectIssuedInvoice } from "@/server/payments/collect";
 import { loadSettings } from "@/server/settings";
@@ -35,18 +39,18 @@ export type InvoiceState = {
 async function assertContractBelongsTo(
     tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
     contractId: string | null,
-    userId: string,
+    customerId: string,
 ) {
     if (!contractId) {
         return;
     }
 
     const [contract] = await tx
-        .select({ userId: schema.contract.userId })
+        .select({ customerId: schema.contract.customerId })
         .from(schema.contract)
         .where(eq(schema.contract.id, contractId));
 
-    if (contract?.userId !== userId) {
+    if (contract?.customerId !== customerId) {
         throw new Error("contract-mismatch");
     }
 }
@@ -55,14 +59,14 @@ export async function createInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requireStaff();
+    await requirePermission("billing.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
-    const userId = read("userId");
+    const customerId = read("customerId");
     const items = readLineItems(data);
 
-    if (!userId) {
+    if (!customerId) {
         return { status: "error", message: "Kein Konto ausgewählt." };
     }
 
@@ -78,11 +82,11 @@ export async function createInvoice(
     try {
         await db.transaction(async (tx) => {
             const contractId = read("contractId") || null;
-            await assertContractBelongsTo(tx, contractId, userId);
+            await assertContractBelongsTo(tx, contractId, customerId);
 
             await tx.insert(schema.invoice).values({
                 id,
-                userId,
+                customerId,
                 contractId,
                 status: "draft",
                 introText: read("introText") || null,
@@ -133,15 +137,15 @@ export async function updateInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requireStaff();
+    await requirePermission("billing.write");
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
     const invoiceId = String(data.get("invoiceId") ?? "");
-    const userId = read("userId");
+    const customerId = read("customerId");
     const items = readLineItems(data);
 
-    if (!userId) {
+    if (!customerId) {
         return { status: "error", message: "Kein Konto ausgewählt." };
     }
 
@@ -165,12 +169,12 @@ export async function updateInvoice(
             }
 
             const contractId = read("contractId") || null;
-            await assertContractBelongsTo(tx, contractId, userId);
+            await assertContractBelongsTo(tx, contractId, customerId);
 
             await tx
                 .update(schema.invoice)
                 .set({
-                    userId,
+                    customerId,
                     contractId,
                     introText: read("introText") || null,
                     note: read("note") || null,
@@ -229,7 +233,7 @@ export async function duplicateInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requireStaff();
+    await requirePermission("billing.write");
 
     const invoiceId = String(data.get("invoiceId") ?? "");
     const copyId = createId("invoice");
@@ -257,7 +261,7 @@ export async function duplicateInvoice(
 
             await tx.insert(schema.invoice).values({
                 id: copyId,
-                userId: row.userId,
+                customerId: row.customerId,
                 contractId: row.contractId,
                 status: "draft",
                 introText: row.introText,
@@ -320,7 +324,7 @@ export async function deleteInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requireStaff();
+    await requirePermission("billing.write");
 
     const invoiceId = String(data.get("invoiceId") ?? "");
 
@@ -368,7 +372,7 @@ export async function issueInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requireStaff();
+    await requirePermission("billing.write");
 
     const invoiceId = String(data.get("invoiceId") ?? "");
     const { policy } = await loadSettings();
@@ -390,10 +394,7 @@ export async function issueInvoice(
                 throw new Error("not-draft");
             }
 
-            const [buyer] = await tx
-                .select()
-                .from(schema.user)
-                .where(eq(schema.user.id, row.userId));
+            const buyer = await loadBuyer(row.customerId, tx);
 
             if (row.contractId) {
                 const [linked] = await tx
@@ -515,7 +516,7 @@ export async function markInvoicePaid(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requireStaff();
+    await requirePermission("billing.write");
 
     const invoiceId = String(data.get("invoiceId") ?? "");
 
@@ -562,7 +563,7 @@ export async function unmarkInvoicePaid(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requireStaff();
+    await requirePermission("billing.write");
 
     const invoiceId = String(data.get("invoiceId") ?? "");
 
@@ -620,7 +621,7 @@ export async function cancelInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requireStaff();
+    await requirePermission("billing.write");
 
     const invoiceId = String(data.get("invoiceId") ?? "");
     const correctionId = createId("invoice");
@@ -661,17 +662,14 @@ export async function cancelInvoice(
                 .where(eq(schema.invoiceItem.invoiceId, invoiceId))
                 .orderBy(asc(schema.invoiceItem.position));
 
-            const [buyer] = await tx
-                .select()
-                .from(schema.user)
-                .where(eq(schema.user.id, row.userId));
+            const buyer = await loadBuyer(row.customerId, tx);
 
             const issuedAt = new Date();
             const number = await nextNumber(tx, "invoice", issuedAt);
 
             await tx.insert(schema.invoice).values({
                 id: correctionId,
-                userId: row.userId,
+                customerId: row.customerId,
                 contractId: row.contractId,
                 number,
                 status: "issued",
@@ -777,7 +775,7 @@ export async function resendInvoiceMail(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requireStaff();
+    await requirePermission("billing.write");
 
     const invoiceId = String(data.get("invoiceId") ?? "");
 
@@ -797,10 +795,7 @@ export async function resendInvoiceMail(
             throw new Error("not-issued");
         }
 
-        const [buyer] = await db
-            .select()
-            .from(schema.user)
-            .where(eq(schema.user.id, row.userId));
+        const buyer = await loadBuyer(row.customerId, db);
 
         await sendInvoiceMail(invoiceId, buyer.email, buyer.name);
     } catch (error) {

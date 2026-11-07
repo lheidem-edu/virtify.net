@@ -2,15 +2,15 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import PageHeader from "@/components/shared/page-header";
 import { db, schema } from "@/db";
 import type { CONTRACT_STATUS_LABEL } from "@/lib/format";
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import { listContracts } from "@/server/documents/repository";
 import ContractsTable from "./contracts-table";
 
 export default async function Page() {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
 
     const [contracts, methods, collection] = await Promise.all([
-        listContracts(session.user.id, false),
+        listContracts(customer.id, false),
         db
             .select({
                 id: schema.paymentMethod.id,
@@ -19,7 +19,7 @@ export default async function Page() {
             .from(schema.paymentMethod)
             .where(
                 and(
-                    eq(schema.paymentMethod.userId, session.user.id),
+                    eq(schema.paymentMethod.customerId, customer.id),
                     isNull(schema.paymentMethod.revokedAt),
                 ),
             )
@@ -33,7 +33,7 @@ export default async function Page() {
                 paymentMethodId: schema.contract.paymentMethodId,
             })
             .from(schema.contract)
-            .where(eq(schema.contract.userId, session.user.id)),
+            .where(eq(schema.contract.customerId, customer.id)),
     ]);
 
     const byContract = new Map(

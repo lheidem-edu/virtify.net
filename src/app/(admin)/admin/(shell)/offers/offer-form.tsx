@@ -15,7 +15,13 @@ const initialState: OfferState = { status: "idle" };
 export default function OfferForm({
     accounts,
 }: {
-    accounts: { id: string; name: string | null; email: string }[];
+    accounts: {
+        id: string;
+        name: string | null;
+        company: string | null;
+        customerNumber: number;
+        email: string;
+    }[];
 }) {
     const [state, formAction, pending] = useActionState(
         createOffer,

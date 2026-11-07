@@ -1,6 +1,13 @@
 import "server-only";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
+import { db } from "@/db";
+import {
+    hasPermission,
+    type Permission,
+    permissionsForStaff,
+} from "@/server/auth/permissions";
 import { staffAuth } from "@/server/auth/staff-auth";
 
 /**
@@ -38,6 +45,40 @@ export async function requireStaffSession() {
 
     if (!session) {
         redirect("/admin/login");
+    }
+
+    return session;
+}
+
+/**
+ * The permissions of the employee making this request, read once however
+ * often a page asks. `cache` is per request, so a page that guards three
+ * sections does not run three queries.
+ */
+export const currentStaffPermissions = cache(async (): Promise<string[]> => {
+    const session = await requireStaff();
+
+    return permissionsForStaff(db, session.user.id);
+});
+
+export async function currentStaffCan(needed: Permission): Promise<boolean> {
+    return hasPermission(await currentStaffPermissions(), needed);
+}
+
+/**
+ * The guard for a page or a server action. Refusal is a redirect rather than
+ * an exception: a page would otherwise render the error boundary, and an
+ * employee who opened a section they may not see should be told so, not shown
+ * a stack trace.
+ *
+ * Services keep their own check — `assertStaffPermission` in
+ * ./permissions.ts — because this one only knows about the current request.
+ */
+export async function requirePermission(needed: Permission) {
+    const session = await requireStaff();
+
+    if (!hasPermission(await currentStaffPermissions(), needed)) {
+        redirect(`/admin/denied?permission=${encodeURIComponent(needed)}`);
     }
 
     return session;

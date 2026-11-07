@@ -87,7 +87,9 @@ export function cursorPage<T extends ZodType>(item: T, refId: string) {
     return registry.register(
         refId,
         z.object({
-            data: z.array(item),
+            data: z.array(item).openapi({
+                description: "Die Zeilen dieser Seite, in ID-Reihenfolge.",
+            }),
             next_cursor: z.string().nullable().openapi({
                 description:
                     "An die nächste Anfrage als `cursor` weitergeben; `null` auf der letzten Seite.",

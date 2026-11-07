@@ -20,7 +20,7 @@ import {
     OFFER_STATUS_LABEL,
     OFFER_STATUS_TONE,
 } from "@/lib/format";
-import { requireStaff } from "@/server/auth/staff-session";
+import { requirePermission } from "@/server/auth/staff-session";
 import {
     ANY_CUSTOMER,
     loadContract,
@@ -59,7 +59,7 @@ export default async function Page({
 }: {
     params: Promise<{ id: string }>;
 }) {
-    await requireStaff();
+    await requirePermission("offers.read");
     const { id } = await params;
 
     const loaded = await loadOffer(id, ANY_CUSTOMER, true);
@@ -296,7 +296,7 @@ export default async function Page({
                         offerId={offer.id}
                         accounts={accounts}
                         offer={{
-                            userId: offer.userId,
+                            customerId: offer.customerId,
                             title: offer.title,
                             introText: offer.introText,
                             note: offer.note,

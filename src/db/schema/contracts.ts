@@ -1,7 +1,7 @@
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { integer, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { money, timestamps, ulidFk, ulidPk } from "./_columns";
-import { user } from "./auth";
+import { customer } from "./customers";
 import { paymentMethod } from "./payments";
 
 /**
@@ -18,9 +18,9 @@ export const contractStatus = pgEnum("contract_status", [
 
 export const contract = pgTable("contract", {
     id: ulidPk("contract"),
-    userId: ulidFk("user_id")
+    customerId: ulidFk("customer_id")
         .notNull()
-        .references(() => user.id, { onDelete: "restrict" }),
+        .references(() => customer.id, { onDelete: "restrict" }),
 
     /** Human-facing number, shown to the customer and used in correspondence. */
     number: text("number").notNull().unique(),

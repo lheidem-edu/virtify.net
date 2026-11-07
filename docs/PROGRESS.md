@@ -57,11 +57,115 @@ Still open in this phase:
       Phase 6, and a container that starts and does nothing is worse than one that is absent.
 - [ ] Playwright (plan defers the e2e suite itself to Phase 11)
 
-## Phases 1–11
+## Phase 1 — Auth, RBAC, customers · done
+
+`npm run typecheck`, `npm run lint` and `npm run test` (123 tests) are green, the app builds,
+and `/api/v1/customers` answers correctly against the dev database.
+
+**The customer is no longer the login.** Until now one `user` row *was* one customer: the
+password and the master data sat on the same row, so a company could have exactly one person
+able to see its invoices. Migration `0014` splits them.
+
+- [x] `customer` — the billing account: customer number, `kind` (Firma | Privatperson), name,
+      company, address, country, `vat_id` + `vat_id_validated_at`, phone, Käuferreferenz,
+      currency, language, status (active | suspended | closed), internal notes, the Stripe and
+      PayPal identities, `deleted_at` for rule 10.
+- [x] `customer_contact` — which login may act for which account, with `role` (owner | contact)
+      and the three sub-permissions (billing, technical, tickets) plus the address Phase 7 will
+      match incoming mail against. One login can hold several; the owner wins.
+- [x] `contract`, `offer`, `invoice`, `payment`, `payment_method` and `payment_setup` point at
+      `customer_id`. `user` keeps only name, address, password and 2FA.
+- [x] Migration `0014` backfills in one transaction: one customer and one owner contact per
+      existing login, new ids derived from the login's ULID so the mapping is a substring;
+      accounts without a customer number get one counted on from the highest in use; the
+      sign-up counter is moved past it. Verified against the dev database — 8 invoices,
+      2 contracts, 1 offer and 2 payment methods re-addressed, nothing orphaned.
+- [x] `getCurrentCustomer()` (`src/server/customers/current.ts`) is the only way client-area
+      code learns which rows it may touch, and no page in `(client)` takes a customer id from
+      the request any more.
+- [x] The document loaders take the executor as an argument instead of reaching for the pool,
+      which is what CLAUDE.md asks for and what makes them testable.
+
+**Staff RBAC.**
+
+- [x] `staff_role` (name, `text[]` of permission strings, `is_system`) + `staff_role_assignment`.
+      The catalogue of what may be granted is TypeScript (`src/server/auth/permissions.ts`), so
+      a typo is a type error rather than a check that silently never passes.
+- [x] `hasPermission()` accepts the permission itself, `domain.*` and `*`.
+      `assertStaffPermission()` throws for services; `requirePermission()` redirects to
+      `/admin/denied` for pages and server actions. Every page and action under
+      `/admin/{customers,contracts,offers,invoices,legal,settings,staff}` now names what it needs.
+- [x] "Super Admin" is seeded by the migration with `*` and given to every employee that
+      already existed — anything else would have locked the operator out of their own
+      installation the moment the migration ran. It cannot be narrowed or deleted, and the last
+      holder cannot be stripped of it.
+- [x] `/admin/roles`: create roles, tick permissions, assign them to employees.
+
+**Audit log.** `audit_log` + `audit(tx, entry)`, written inside the transaction it describes,
+recording only the fields that changed. Wired into customer create/update, API-key create and
+revoke, and every role change. The customer detail page shows the trail.
+
+**API keys.** `api_key`, hashed with `hashToken()`, `vfy_` plus eight characters kept in clear
+so a key can be recognised. A database check constraint enforces exactly one owner. Create and
+revoke in `/admin/api-keys` and `/client/api-keys`; shown once. A staff key is bounded twice —
+by its scopes and by what its owner's roles grant *today*, so taking a role away shrinks the
+key with it. A customer key can never carry more than `CUSTOMER_SCOPES`.
+
+**First documented endpoints.** `GET`/`POST /api/v1/customers` and
+`GET`/`PATCH /api/v1/customers/{id}`, registered under `src/server/openapi/paths/customers.ts`,
+with the `Kunden` tag. A key that may not see a row is told 404, not 403 — 403 would confirm
+the id exists.
+
+**Client area.** Registration asks Firma or Privatperson, country and an optional USt-IdNr. and
+runs server-side, so the login and the billing account are created together; the profile edits
+the customer through the same service and the same audit entry the admin form uses.
+
+**Seed.** `npm run seed -- "Name" address@example.net` — Super Admin role, one employee holding
+it, three demo customers. Idempotent, and it refuses to add demo data to a database that
+already has customers.
+
+**Tests (55 new).** `tests/integration/` runs against a throwaway database it creates, migrates
+and drops per run; with no server reachable the suite skips with a loud warning rather than
+failing on a machine without Docker.
+
+- scoping: a customer's loaders return their own rows only; loading another account's invoice,
+  offer or contract by id returns null; an employee sees both; cursor pagination neither repeats
+  nor skips; a soft-deleted account is invisible; an unchanged save writes no audit row.
+- permissions: wildcards, domain wildcards, near-miss prefixes, a role being narrowed, the
+  Super Admin guards.
+- API keys: a staff key narrowed to its owner's roles, a customer key to its own account, a
+  revoked key, an expired key, one customer revoking another's key, the one-owner constraint.
+- the four endpoints end to end through the real handlers: 401 without a key, 403 for a scope
+  the owner lacks, 404 for another account, 422 with the field named, and `status`/`notes`
+  ignored on a customer key.
+
+Decided in this phase, open to being overruled:
+
+- **No Next.js middleware for `/admin/**` and `/client/**`.** The plan asks for one; the layouts
+  and `requireStaff()` / `getCurrentCustomer()` already refuse server-side on every request,
+  against the database. A middleware could only check that a cookie is present, which is a
+  weaker gate in front of a stronger one.
+- **One account per login, for now.** `customer_contact` allows several and the resolver prefers
+  the owner, but there is no account switcher — that waits for Phase 9. Nothing creates a second
+  contact yet.
+- **`npm run lint` walked `.next`** and crashed Biome with a stack overflow whenever a build had
+  been run. `biome.json` now excludes the build output; the gate runs again.
+- **The admin sidebar still shows every link.** Hiding one is a convenience, never the access
+  control, and `/admin/denied` says which permission is missing. Filtering the nav by permission
+  is cosmetic and was left out.
+
+Still open in this phase:
+
+- [ ] Contacts are read-only in the admin area: the table and the sub-permissions exist, but
+      there is no UI to invite a second login onto an account or to change what it may do.
+- [ ] Existing accounts carry `Deutschland` rather than `DE` in `country`. Phase 3's tax
+      determination needs ISO codes; new input is validated and upper-cased, the two rows on the
+      dev database are not.
+
+## Phases 2–11
 
 | Phase | State | Notes |
 |---|---|---|
-| 1 Auth, RBAC, customers | existing, partial | Better Auth for clients and staff separately, TOTP, verification, reset, staff invites. Missing: `customers`/`customer_contacts` as their own tables (today a customer *is* a user), permission strings, `audit_log`, API keys, `/api/v1/customers`. |
 | 2 Product catalog | not started | No `products`, pricing matrix, config options or coupons. The storefront sells nothing yet. |
 | 3 Tax + invoicing | existing, partial | Invoices draft → issued → paid → corrected, gapless numbering via `document_counter` with `FOR UPDATE`, DIN 5008 PDF, XRechnung CII, Rechnungskorrektur. Missing: `TaxStrategy` interface (§ 19 is hardcoded in `totals.ts`), `tax_mode_history`, per-line tax snapshots, the immutability trigger, the § 19 threshold monitor, PDF storage behind an interface, GiroCode. |
 | 4 Cart, checkout, orders | not started | `contract` and `offer` exist and are created by hand in the admin area; there is no cart, no self-service order. |

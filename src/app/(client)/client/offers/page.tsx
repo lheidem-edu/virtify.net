@@ -1,13 +1,13 @@
 import PageHeader from "@/components/shared/page-header";
 import type { OFFER_STATUS_LABEL } from "@/lib/format";
-import { requireSession } from "@/server/auth/session";
+import { getCurrentCustomer } from "@/server/customers/current";
 import { listOffers } from "@/server/documents/repository";
 import OffersTable from "./offers-table";
 
 export default async function Page() {
-    const session = await requireSession();
+    const { customer } = await getCurrentCustomer();
 
-    const offers = (await listOffers(session.user.id, false))
+    const offers = (await listOffers(customer.id, false))
         .filter((entry) => entry.status !== "draft")
         .map((entry) => ({
             id: entry.id,
