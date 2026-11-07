@@ -41,7 +41,13 @@ export default async function Page() {
     await requirePermission("catalog.read");
 
     const groups = await listGroups(db, { includeHidden: true });
-    const products = await listProducts(db, { limit: 100 });
+    // Soft-deleted products are listed here and nowhere else: this is the
+    // only screen from which a deletion can be undone, and the row goes on
+    // holding its slug until it is.
+    const products = await listProducts(db, {
+        limit: 100,
+        includeDeleted: true,
+    });
     const pricing = await listPricing(
         db,
         products.data.map((row) => row.id),
@@ -204,17 +210,24 @@ export default async function Page() {
                                                     : "kein Preis"}
                                             </td>
                                             <td className="px-4 py-3">
-                                                <StatusBadge
-                                                    label={labelFor(
-                                                        PRODUCT_STATUSES,
-                                                        row.status,
-                                                    )}
-                                                    tone={
-                                                        STATUS_TONE[
-                                                            row.status
-                                                        ] ?? "neutral"
-                                                    }
-                                                />
+                                                {row.deletedAt ? (
+                                                    <StatusBadge
+                                                        label="Gelöscht"
+                                                        tone="warning"
+                                                    />
+                                                ) : (
+                                                    <StatusBadge
+                                                        label={labelFor(
+                                                            PRODUCT_STATUSES,
+                                                            row.status,
+                                                        )}
+                                                        tone={
+                                                            STATUS_TONE[
+                                                                row.status
+                                                            ] ?? "neutral"
+                                                        }
+                                                    />
+                                                )}
                                             </td>
                                         </tr>
                                     );

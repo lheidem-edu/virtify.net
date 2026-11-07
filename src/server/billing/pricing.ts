@@ -1,5 +1,5 @@
 import type { BillingCycle } from "@/db/schema/catalog";
-import { add, multiply, percent, subtract } from "@/lib/money";
+import { add, basisPoints, format, multiply, subtract } from "@/lib/money";
 
 /**
  * The one price function.
@@ -229,19 +229,30 @@ export function checkCoupon(
  * What the coupon takes off `base`. Never more than `base` itself: a 20 €
  * code against a 15 € order is a 15 € discount, not a 5 € payout.
  *
+ * `budget` is what is left of a fixed coupon's amount after the recurring
+ * side has taken its share. A percentage has no budget — 15 % off is 15 %
+ * off each side — but a fixed amount does: "10 € Rabatt, gilt auch für die
+ * Einrichtung" is a code worth 10 €, not one worth 10 € twice. Without this
+ * a 10 € code against 20 €/Monat + 15 € Einrichtung took 20 € off while
+ * labelling itself "10,00 €" in the very same quote.
+ *
  * A percentage is rounded half away from zero to whole cents by
- * `money.percent`, so 15 % of 19,99 € is 3,00 € and not 2,9985 € carried
+ * `money.basisPoints`, so 15 % of 19,99 € is 3,00 € and not 2,9985 € carried
  * around as a float until an invoice disagrees with the cart.
  */
-function discountOn(base: number, coupon: QuoteCoupon): number {
-    if (base <= 0) {
+function discountOn(
+    base: number,
+    coupon: QuoteCoupon,
+    budget = Number.POSITIVE_INFINITY,
+): number {
+    if (base <= 0 || budget <= 0) {
         return 0;
     }
 
     const raw =
         coupon.kind === "percent"
-            ? percent(base, (coupon.percentBasisPoints ?? 0) / 100)
-            : (coupon.amountCents ?? 0);
+            ? basisPoints(base, coupon.percentBasisPoints ?? 0)
+            : Math.min(coupon.amountCents ?? 0, budget);
 
     return Math.max(0, Math.min(base, raw));
 }
@@ -362,8 +373,17 @@ export function calculateQuote(input: QuoteInput): Quote {
     const recurringDiscountCents = applied
         ? discountOn(recurringGrossCents, applied)
         : 0;
+
+    // A fixed coupon spends one amount across both sides; a percentage
+    // applies its rate to each. See discountOn.
     const setupDiscountCents = applied?.appliesToSetupFee
-        ? discountOn(setupGrossCents, applied)
+        ? discountOn(
+              setupGrossCents,
+              applied,
+              applied.kind === "fixed"
+                  ? subtract(applied.amountCents ?? 0, recurringDiscountCents)
+                  : Number.POSITIVE_INFINITY,
+          )
         : 0;
 
     if (applied && recurringDiscountCents > 0) {
@@ -458,17 +478,16 @@ export function calculateQuote(input: QuoteInput): Quote {
 /** "25 %" or "5,00 €" — what the code is worth, for a line's label. */
 export function couponLabel(coupon: QuoteCoupon): string {
     if (coupon.kind === "percent") {
-        const basisPoints = coupon.percentBasisPoints ?? 0;
+        const rate = coupon.percentBasisPoints ?? 0;
 
-        return `${(basisPoints / 100).toLocaleString("de-DE", {
+        return `${(rate / 100).toLocaleString("de-DE", {
             maximumFractionDigits: 2,
         })} %`;
     }
 
-    return `${((coupon.amountCents ?? 0) / 100).toLocaleString("de-DE", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    })} ${coupon.currency ?? "EUR"}`;
+    // money.format, so the customer reads "5,00 €" and not "5,00 EUR". It is
+    // the same formatter the invoice uses.
+    return format(coupon.amountCents ?? 0);
 }
 
 /** How long it runs, in words, for the small print under the discount line. */

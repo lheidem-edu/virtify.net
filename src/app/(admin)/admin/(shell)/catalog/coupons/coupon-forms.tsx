@@ -278,9 +278,29 @@ export function CouponForm({
                                     className="size-4"
                                 />
                                 {product.name}
+                                <input
+                                    type="hidden"
+                                    name="knownProductIds"
+                                    value={product.id}
+                                />
                             </label>
                         ))}
                     </div>
+                    {/*
+                        What the coupon is restricted to today, so the action
+                        can tell an unticked box from a product this form
+                        never showed — one past the hundredth, or one that has
+                        been deleted. Dropping such a restriction would widen
+                        the coupon to the whole catalog.
+                    */}
+                    {coupon.productIds.map((id) => (
+                        <input
+                            key={id}
+                            type="hidden"
+                            name="existingProductIds"
+                            value={id}
+                        />
+                    ))}
                 </fieldset>
             ) : null}
 

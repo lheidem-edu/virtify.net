@@ -39,6 +39,27 @@ export type ConfiguratorProps = {
 
 type Selection = { valueId: string; quantity: number };
 
+/**
+ * When the renewal price starts applying.
+ *
+ * "Danach je Zeitraum" is a lie above a discount line that says "für 3
+ * Abrechnungszeiträume": periods two and three are discounted too, and the
+ * renewal figure is the undiscounted one. `discount_periods` says how long
+ * the first price holds — 0 for no coupon, n for n periods, null for every
+ * period — so the label can name the period the renewal actually starts in.
+ */
+function renewalLabel(totals: { discount_periods: number | null }): string {
+    const periods = totals.discount_periods;
+
+    if (periods === null || periods === 0) {
+        return "Danach je Zeitraum";
+    }
+
+    return periods === 1
+        ? "Ab dem zweiten Zeitraum"
+        : `Ab dem ${periods + 1}. Zeitraum`;
+}
+
 function defaults(options: OptionView[]): Record<string, Selection> {
     const chosen: Record<string, Selection> = {};
 
@@ -332,7 +353,7 @@ export default function Configurator({
                             </div>
                             {quote.totals.cycle !== "onetime" ? (
                                 <div className="flex items-baseline justify-between gap-4 text-zinc-500">
-                                    <dt>Danach je Zeitraum</dt>
+                                    <dt>{renewalLabel(quote.totals)}</dt>
                                     <dd className="tabular-nums">
                                         {formatPrice(
                                             quote.totals.renewal_cents,
@@ -342,7 +363,9 @@ export default function Configurator({
                             ) : null}
                             {quote.totals.trial_days > 0 ? (
                                 <div className="text-xs text-zinc-500">
-                                    {quote.totals.trial_days} Tage kostenlos.
+                                    {quote.totals.trial_days === 1
+                                        ? "Ein Tag kostenlos."
+                                        : `${quote.totals.trial_days} Tage kostenlos.`}{" "}
                                     Die erste laufende Abrechnung über{" "}
                                     {formatPrice(
                                         quote.totals.first_period_cents,

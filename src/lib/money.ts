@@ -58,9 +58,36 @@ export function multiply(cents: number, factor: number): number {
     return roundHalfUp(cents * factor);
 }
 
+/**
+ * A rate in basis points: 1900 is 19 %, 1550 is 15,5 %. Exact.
+ *
+ * The one division happens last, on an integer numerator, so an amount whose
+ * share lands exactly on half a cent really is a half and gets rounded up.
+ * `cents * rate / 100` with a float `rate` does not: `29 / 100` is
+ * `0.28999999999999998`, so 29 % of 7,50 € comes out as 217.49999999999997
+ * and `Math.round` takes it down to 2,17 € instead of 2,18 €. That is one
+ * cent, on 228 of the first half-million whole-percent/amount pairs, in the
+ * function the VAT layer will call on every invoice line.
+ */
+export function basisPoints(cents: number, rate: number): number {
+    assertInteger(cents);
+
+    if (!Number.isSafeInteger(rate)) {
+        throw new Error(`Rate must be whole basis points: ${rate}`);
+    }
+
+    return roundHalfUp((cents * rate) / 10_000);
+}
+
 /** A percentage of an amount, e.g. `percent(10_00, 19)` → `190`. */
 export function percent(cents: number, rate: number): number {
-    return multiply(cents, rate / 100);
+    if (!Number.isFinite(rate)) {
+        throw new Error(`Cannot apply rate ${rate}`);
+    }
+
+    // A percentage carries at most two decimals in this product, so it is
+    // exactly a whole number of basis points once scaled.
+    return basisPoints(cents, roundHalfUp(rate * 100));
 }
 
 export function negate(cents: number): number {

@@ -153,15 +153,28 @@ export const productPricingInputSchema = z.object({
 
 export type ProductPricingInput = z.infer<typeof productPricingInputSchema>;
 
-export const configOptionInputSchema = z.object({
-    name: z.string().trim().min(1, "Der Name ist erforderlich.").max(MAX),
-    description: optionalText(1000),
-    type: configOptionTypeSchema.default("select"),
-    required: z.boolean().default(false),
-    sortOrder: z.number().int().min(0).max(10_000).default(0),
-    minQuantity: z.number().int().min(0).max(9999).default(0),
-    maxQuantity: z.number().int().min(0).max(9999).default(10),
-});
+export const configOptionInputSchema = z
+    .object({
+        name: z.string().trim().min(1, "Der Name ist erforderlich.").max(MAX),
+        description: optionalText(1000),
+        type: configOptionTypeSchema.default("select"),
+        required: z.boolean().default(false),
+        sortOrder: z.number().int().min(0).max(10_000).default(0),
+        minQuantity: z.number().int().min(0).max(9999).default(0),
+        maxQuantity: z.number().int().min(0).max(9999).default(10),
+    })
+    .superRefine((value, ctx) => {
+        // An option whose minimum is above its maximum cannot be satisfied,
+        // and `quoteProduct` refuses every quantity for it — which makes the
+        // whole product unquotable, from a form that accepted the numbers.
+        if (value.minQuantity > value.maxQuantity) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["maxQuantity"],
+                message: "Das Maximum liegt unter dem Minimum.",
+            });
+        }
+    });
 
 export type ConfigOptionInput = z.infer<typeof configOptionInputSchema>;
 

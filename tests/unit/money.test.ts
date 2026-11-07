@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     add,
     allocate,
+    basisPoints,
     format,
     multiply,
     negate,
@@ -59,6 +60,43 @@ describe("arithmetic", () => {
         expect(percent(1999, 19)).toBe(380); // 379.81 → 380
         expect(percent(1999, 0)).toBe(0);
         expect(percent(-1999, 19)).toBe(-380);
+
+        // Exactly half a cent has to go up. `cents * (rate / 100)` got these
+        // wrong: 29 / 100 is 0.28999999999999998, so 217,5 arrived as
+        // 217,49999999999997 and Math.round took it down.
+        expect(percent(750, 29)).toBe(218); // 217,50
+        expect(percent(330, 35)).toBe(116); // 115,50
+        expect(percent(165, 70)).toBe(116); // 115,50
+        expect(percent(50, 29)).toBe(15); // 14,50
+    });
+
+    it("takes a rate in basis points, exactly", () => {
+        expect(basisPoints(1000, 1900)).toBe(190);
+        expect(basisPoints(1999, 1550)).toBe(310); // 309,845
+        expect(basisPoints(750, 2900)).toBe(218); // 217,50
+        expect(basisPoints(-750, 2900)).toBe(-218);
+        expect(basisPoints(1999, 0)).toBe(0);
+        expect(() => basisPoints(1999, 19.5)).toThrow(/basis points/);
+
+        // No whole-percent rate on any amount up to 100,00 € disagrees with
+        // exact arithmetic. Before, 228 pairs under 50,00 € did.
+        const wrong: string[] = [];
+
+        for (let rate = 1; rate <= 100; rate += 1) {
+            for (let cents = 1; cents <= 10_000; cents += 1) {
+                const exact = Math.round((cents * rate) / 100 + Number.EPSILON);
+                const half = (cents * rate) % 100 === 50;
+
+                if (
+                    basisPoints(cents, rate * 100) !==
+                    (half ? Math.ceil((cents * rate) / 100) : exact)
+                ) {
+                    wrong.push(`${rate}% of ${cents}`);
+                }
+            }
+        }
+
+        expect(wrong).toEqual([]);
     });
 });
 

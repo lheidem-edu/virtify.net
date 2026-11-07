@@ -26,6 +26,7 @@ import {
 import { ModuleConfigError, UnknownModuleError } from "@/server/provisioning";
 import type { CatalogState } from "../actions";
 import { cents, flag, integer, optional, text } from "../form";
+import { CYCLES, labelFor } from "../labels";
 
 export type { CatalogState };
 
@@ -162,7 +163,7 @@ export async function savePricing(
                 if (text(data, `price-${cycle}-${currency}`) !== "") {
                     return {
                         status: "error",
-                        message: `Der Preis für ${cycle} in ${currency} ist keine Zahl.`,
+                        message: `Der Preis für „${labelFor(CYCLES, cycle)}“ in ${currency} ist keine Zahl.`,
                     };
                 }
 
@@ -349,22 +350,36 @@ export async function saveOptionValues(
 
         for (const cycle of cycles) {
             for (const currency of currencies) {
-                const price =
-                    cents(data, `value-${index}-price-${cycle}-${currency}`) ??
-                    0;
-                const setup =
-                    cents(data, `value-${index}-setup-${cycle}-${currency}`) ??
-                    0;
+                const priceField = `value-${index}-price-${cycle}-${currency}`;
+                const setupField = `value-${index}-setup-${cycle}-${currency}`;
+                const price = cents(data, priceField);
+                const setup = cents(data, setupField);
 
-                if (price === 0 && setup === 0) {
+                // Empty means no surcharge. A field that was filled in but
+                // cannot be read is an error, not a zero — the pricing matrix
+                // above guards exactly this, and storing 0 here would wipe the
+                // surcharge the operator was trying to correct.
+                for (const [field, value] of [
+                    [priceField, price],
+                    [setupField, setup],
+                ] as const) {
+                    if (value === null && text(data, field) !== "") {
+                        return {
+                            status: "error",
+                            message: `„${text(data, `value-${index}-name`)}“: „${text(data, field)}“ ist keine Zahl.`,
+                        };
+                    }
+                }
+
+                if ((price ?? 0) === 0 && (setup ?? 0) === 0) {
                     continue;
                 }
 
                 pricing.push({
                     cycle: cycle as (typeof billingCycleSchema.options)[number],
                     currency,
-                    priceCents: price,
-                    setupFeeCents: setup,
+                    priceCents: price ?? 0,
+                    setupFeeCents: setup ?? 0,
                 });
             }
         }

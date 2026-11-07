@@ -32,7 +32,9 @@ export default async function Page({
     await requirePermission("catalog.read");
 
     const { id } = await params;
-    const product = await getProduct(db, id);
+    // Including the soft-deleted ones: this page carries the restore button,
+    // so refusing to load a deleted product would make the deletion final.
+    const product = await getProduct(db, id, { includeDeleted: true });
 
     if (!product) {
         notFound();
@@ -48,13 +50,25 @@ export default async function Page({
     const trail = await auditTrail(db, product.id, 20);
 
     const currencies = [...CATALOG_CURRENCIES];
-    // Only the cycles this product is actually sold in: an add-on's surcharge
-    // has to attach to a price, and a column for a cycle with no price would
-    // be a surcharge on nothing.
+    // The cycles this product is sold in: an add-on's surcharge has to attach
+    // to a price, and a column for a cycle with no price would be a surcharge
+    // on nothing.
+    //
+    // Plus every cycle an option value already carries a surcharge for, even
+    // if the product no longer prices it. Saving the values replaces all of
+    // their pricing rows, so a column the form does not render is a surcharge
+    // the form silently deletes — drop the annual price from the matrix, edit
+    // the options, put the annual price back, and the annual surcharges are
+    // gone without anyone being told.
     const cycles = currencies.flatMap((currency) =>
         cyclesOffered(detail.pricing, currency),
     );
-    const distinctCycles = [...new Set(cycles)];
+    const priced = new Set(
+        detail.options.flatMap(({ values }) =>
+            values.flatMap(({ pricing }) => pricing.map((row) => row.cycle)),
+        ),
+    );
+    const distinctCycles = [...new Set([...cycles, ...priced])];
 
     return (
         <>

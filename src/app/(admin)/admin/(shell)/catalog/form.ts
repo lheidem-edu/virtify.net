@@ -46,15 +46,50 @@ export function cents(data: FormData, name: string): number | null {
     return value === "" ? null : parseAmount(value);
 }
 
-/** `<input type="date">` writes `YYYY-MM-DD`; read it as midnight UTC. */
-export function date(data: FormData, name: string): Date | null {
+/**
+ * `<input type="date">` writes `YYYY-MM-DD`.
+ *
+ * `end` decides which instant of that day the operator meant. A coupon
+ * "gültig bis 31.12." is valid *through* the 31st, so its validUntil is the
+ * last instant of that day; read as midnight it would refuse the code for
+ * the whole of the day it was supposed to cover. A validFrom is the first
+ * instant of its day.
+ *
+ * Both in Europe/Berlin, because that is the calendar the operator is
+ * looking at when they pick the date — midnight UTC is 01:00 or 02:00 here,
+ * so a UTC boundary is an hour or two of the wrong day at each end.
+ */
+export function date(data: FormData, name: string, end = false): Date | null {
     const value = text(data, name);
 
     if (!value) {
         return null;
     }
 
-    const parsed = new Date(`${value}T00:00:00.000Z`);
+    const parsed = new Date(
+        `${value}T${end ? "23:59:59.999" : "00:00:00.000"}${berlinOffset(value)}`,
+    );
 
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** `+01:00` or `+02:00` for a `YYYY-MM-DD`, whichever Berlin was on that day. */
+function berlinOffset(day: string): string {
+    const noon = new Date(`${day}T12:00:00.000Z`);
+
+    if (Number.isNaN(noon.getTime())) {
+        return "Z";
+    }
+
+    const name = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Europe/Berlin",
+        timeZoneName: "longOffset",
+    })
+        .formatToParts(noon)
+        .find((part) => part.type === "timeZoneName")?.value;
+
+    // "GMT+01:00" → "+01:00"; "GMT" itself would mean no offset at all.
+    const offset = name?.replace("GMT", "") ?? "";
+
+    return offset === "" ? "Z" : offset;
 }

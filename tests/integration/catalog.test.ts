@@ -507,7 +507,7 @@ describe.skipIf(!available)("the catalog", () => {
         expect(result.totals.dueTodayCents).toBe(1499 + 1000);
     });
 
-    it("says so when the code does not exist, without changing the price", async () => {
+    it("says the code does not apply, without changing the price", async () => {
         const product = await loadProduct();
         const ram = (
             await repository.loadProductDetail(db, product)
@@ -529,7 +529,9 @@ describe.skipIf(!available)("the catalog", () => {
         });
 
         expect(result.coupon).toBeNull();
-        expect(result.couponError).toBe("Diesen Gutscheincode gibt es nicht.");
+        expect(result.couponError).toBe(
+            "Dieser Gutscheincode gilt für diese Bestellung nicht.",
+        );
         expect(result.totals.firstPeriodCents).toBe(1999);
     });
 
@@ -575,9 +577,118 @@ describe.skipIf(!available)("the catalog", () => {
         expect(raw.deletedAt).not.toBeNull();
         expect(raw.status).toBe("retired");
 
+        // The admin has to be able to reach it, or the restore below is a
+        // button on a page that 404s and the deletion is in fact permanent.
+        expect(
+            await repository.getProduct(db, doomed.id, {
+                includeDeleted: true,
+            }),
+        ).not.toBeNull();
+
+        expect(
+            (
+                await repository.listProducts(db, {
+                    limit: 100,
+                    includeDeleted: true,
+                })
+            ).data.map((row) => row.id),
+        ).toContain(doomed.id);
+
         await repository.restoreProduct(db, doomed.id, system);
 
         expect(await repository.getProduct(db, doomed.id)).not.toBeNull();
+    });
+
+    it("refuses an option whose minimum is above its maximum", async () => {
+        const { configOptionInputSchema } = await import(
+            "@/server/catalog/schema"
+        );
+
+        const refused = configOptionInputSchema.safeParse({
+            name: "Zusätzliche IPv4",
+            type: "quantity",
+            minQuantity: 5,
+            maxQuantity: 2,
+        });
+
+        expect(refused.success).toBe(false);
+        expect(refused.error?.issues[0]?.message).toBe(
+            "Das Maximum liegt unter dem Minimum.",
+        );
+
+        // Without the refusal the option is saveable and then every quote for
+        // the product throws, because no quantity can satisfy it.
+        expect(
+            configOptionInputSchema.safeParse({
+                name: "Zusätzliche IPv4",
+                type: "quantity",
+                minQuantity: 0,
+                maxQuantity: 2,
+            }).success,
+        ).toBe(true);
+    });
+
+    it("gives every unusable coupon code the same answer", async () => {
+        const expired = await repository.createCoupon(
+            db,
+            {
+                code: "ABGELAUFEN",
+                description: null,
+                kind: "percent",
+                percentBasisPoints: 1000,
+                amountCents: null,
+                currency: null,
+                duration: "once",
+                durationPeriods: null,
+                appliesToSetupFee: false,
+                productIds: [],
+                cycles: [],
+                validFrom: null,
+                validUntil: new Date("2020-01-01T00:00:00.000Z"),
+                maxRedemptions: null,
+                active: true,
+            },
+            system,
+        );
+
+        expect(expired.code).toBe("ABGELAUFEN");
+
+        const product = await loadProduct();
+        const ram = (
+            await repository.loadProductDetail(db, product)
+        )?.options.find((entry) => entry.option.name === "Arbeitsspeicher");
+        const eight = ram?.values.find((entry) => entry.value.name === "8 GB");
+
+        const answers = await Promise.all(
+            ["ABGELAUFEN", "GIBTESNICHT"].map(async (code) => {
+                const { quote: result } = await quote.quoteProduct(
+                    db,
+                    product,
+                    {
+                        cycle: "monthly",
+                        currency: "EUR",
+                        quantity: 1,
+                        options: [
+                            {
+                                optionId: ram?.option.id ?? "",
+                                valueId: eight?.value.id ?? "",
+                                quantity: 1,
+                            },
+                        ],
+                        couponCode: code,
+                    },
+                );
+
+                return result.couponError;
+            }),
+        );
+
+        // A code that exists and one that does not must be indistinguishable
+        // from an unauthenticated endpoint, or it is a way to enumerate them.
+        expect(answers[0]).toBe(answers[1]);
+        expect(answers[0]).toBe(
+            "Dieser Gutscheincode gilt für diese Bestellung nicht.",
+        );
     });
 
     it("renumbers groups when one is moved", async () => {

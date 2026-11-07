@@ -46,6 +46,16 @@ function basisPoints(data: FormData): number | null {
     return Number.isFinite(value) ? Math.round(value * 100) : null;
 }
 
+/** Every non-empty string the form sent under `name`. */
+function strings(data: FormData, name: string): string[] {
+    return data
+        .getAll(name)
+        .filter(
+            (value): value is string =>
+                typeof value === "string" && value !== "",
+        );
+}
+
 function read(data: FormData) {
     const kind = optional(data, "kind") === "fixed" ? "fixed" : "percent";
 
@@ -63,20 +73,24 @@ function read(data: FormData) {
                 ? integer(data, "durationPeriods", 0) || null
                 : null,
         appliesToSetupFee: flag(data, "appliesToSetupFee"),
-        productIds: data
-            .getAll("productIds")
-            .filter(
-                (value): value is string =>
-                    typeof value === "string" && value !== "",
-            ),
-        cycles: data
-            .getAll("cycles")
-            .filter(
-                (value): value is string =>
-                    typeof value === "string" && value !== "",
-            ),
+        // `knownProductIds` is every product the form rendered a checkbox
+        // for. A restriction to a product the form could not show — one past
+        // the hundredth, or one that has since been deleted — is kept rather
+        // than dropped: an empty `productIds` means "every product", so
+        // losing one silently turns a product-specific coupon into a
+        // catalog-wide one.
+        productIds: [
+            ...new Set([
+                ...strings(data, "productIds"),
+                ...strings(data, "existingProductIds").filter(
+                    (id) => !strings(data, "knownProductIds").includes(id),
+                ),
+            ]),
+        ],
+        cycles: strings(data, "cycles"),
         validFrom: date(data, "validFrom"),
-        validUntil: date(data, "validUntil"),
+        // Through the end of that day, not from its first second. See form.ts.
+        validUntil: date(data, "validUntil", true),
         maxRedemptions: integer(data, "maxRedemptions", 0) || null,
         active: flag(data, "active"),
     };

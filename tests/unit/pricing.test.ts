@@ -304,7 +304,7 @@ describe("coupons", () => {
             }),
         );
 
-        // 10 % von 24,99 € sind 2,499 € — abgerundet 2,49 €.
+        // 10 % von 24,99 € sind 2,499 € — kaufmännisch gerundet 2,50 €.
         expect(totals.recurringDiscountCents).toBe(250);
         expect(totals.firstPeriodCents).toBe(2249);
         expect(totals.renewalCents).toBe(2249);
@@ -319,6 +319,12 @@ describe("coupons", () => {
             [3333, 1000, 333], // 333,30 → 333
             [100, 1999, 20], // 19,99 → 20
             [1, 1999, 0], // 0,1999 → 0
+            // Exactly half a cent, which `cents * (rate / 100)` used to miss:
+            // 29 / 100 is 0.28999999999999998, so 217,5 arrived as
+            // 217,49999999999997 and rounded down to 2,17 €.
+            [2900, 750, 218], // 217,50 → 218
+            [3500, 330, 116], // 115,50 → 116
+            [7000, 165, 116], // 115,50 → 116
         ];
 
         for (const [basisPoints, priceCents, expected] of cases) {
@@ -378,6 +384,88 @@ describe("coupons", () => {
         expect(including.totals.setupCents).toBe(500);
         // 9,99 € + 5,00 €: beide Hälften.
         expect(including.totals.dueTodayCents).toBe(1499);
+    });
+
+    it("spends a fixed amount once across both sides, not once on each", () => {
+        // 20,00 €/Monat + 15,00 € Einrichtung, 10,00 € Gutschein, der auch
+        // für die Einrichtung gilt. Der Code ist 10,00 € wert — nicht 20,00 €.
+        const { totals, lines } = calculateQuote(
+            input({
+                pricing: {
+                    cycle: "monthly",
+                    currency: "EUR",
+                    priceCents: 2000,
+                    setupFeeCents: 1500,
+                    trialDays: 0,
+                },
+                coupon: coupon({
+                    kind: "fixed",
+                    percentBasisPoints: null,
+                    amountCents: 1000,
+                    currency: "EUR",
+                    appliesToSetupFee: true,
+                }),
+            }),
+        );
+
+        expect(totals.recurringDiscountCents).toBe(1000);
+        expect(totals.setupDiscountCents).toBe(0);
+        expect(totals.setupCents).toBe(1500);
+        // 10,00 € (erster Monat) + 15,00 € (Einrichtung) = 25,00 €.
+        expect(totals.dueTodayCents).toBe(2500);
+        expect(lines.filter((line) => line.kind === "discount")).toHaveLength(
+            1,
+        );
+    });
+
+    it("lets a fixed amount spill onto the setup fee when the period cannot absorb it", () => {
+        // 4,00 €/Monat + 15,00 € Einrichtung, 10,00 € Gutschein: 4,00 € gehen
+        // vom Monat ab, die restlichen 6,00 € von der Einrichtung.
+        const { totals } = calculateQuote(
+            input({
+                pricing: {
+                    cycle: "monthly",
+                    currency: "EUR",
+                    priceCents: 400,
+                    setupFeeCents: 1500,
+                    trialDays: 0,
+                },
+                coupon: coupon({
+                    kind: "fixed",
+                    percentBasisPoints: null,
+                    amountCents: 1000,
+                    currency: "EUR",
+                    appliesToSetupFee: true,
+                }),
+            }),
+        );
+
+        expect(totals.recurringDiscountCents).toBe(400);
+        expect(totals.setupDiscountCents).toBe(600);
+        expect(totals.dueTodayCents).toBe(900);
+    });
+
+    it("applies a percentage to each side, which is what a rate means", () => {
+        // 50 % auf 20,00 €/Monat und auf 15,00 € Einrichtung: beide halbiert.
+        const { totals } = calculateQuote(
+            input({
+                pricing: {
+                    cycle: "monthly",
+                    currency: "EUR",
+                    priceCents: 2000,
+                    setupFeeCents: 1500,
+                    trialDays: 0,
+                },
+                coupon: coupon({
+                    percentBasisPoints: 5000,
+                    appliesToSetupFee: true,
+                }),
+            }),
+        );
+
+        expect(totals.recurringDiscountCents).toBe(1000);
+        expect(totals.setupDiscountCents).toBe(750);
+        expect(totals.dueTodayCents).toBe(1750);
     });
 
     it("never pays anything out when it is worth more than the order", () => {

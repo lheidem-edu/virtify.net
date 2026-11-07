@@ -317,6 +317,8 @@ export type ProductListOptions = {
     query?: string | null;
     /** Only `active` and `hidden`; what the storefront and a customer see. */
     sellableOnly?: boolean;
+    /** Admin only: also return soft-deleted products, so they can be restored. */
+    includeDeleted?: boolean;
 };
 
 export async function listProducts(
@@ -328,9 +330,13 @@ export async function listProducts(
         100,
     );
 
-    const filters: (ReturnType<typeof eq> | undefined)[] = [
-        isNull(schema.product.deletedAt),
-    ];
+    const filters: (ReturnType<typeof eq> | undefined)[] = [];
+
+    // Soft-deleted rows are invisible everywhere but the admin's own list,
+    // which needs them so a deletion can be undone.
+    if (!options.includeDeleted) {
+        filters.push(isNull(schema.product.deletedAt));
+    }
 
     if (options.cursor) {
         filters.push(gt(schema.product.id, options.cursor));
@@ -384,11 +390,28 @@ export async function listProducts(
     };
 }
 
-export async function getProduct(db: Executor, id: string) {
+/**
+ * `includeDeleted` is for the admin alone. A soft-deleted product is hidden
+ * from the storefront and the API, but the staff view has to be able to
+ * reach it: otherwise `restoreProduct` can never be called, and the row goes
+ * on holding its slug where nobody can see what is holding it.
+ */
+export async function getProduct(
+    db: Executor,
+    id: string,
+    options: { includeDeleted?: boolean } = {},
+) {
     const [row] = await db
         .select()
         .from(schema.product)
-        .where(and(eq(schema.product.id, id), isNull(schema.product.deletedAt)))
+        .where(
+            options.includeDeleted
+                ? eq(schema.product.id, id)
+                : and(
+                      eq(schema.product.id, id),
+                      isNull(schema.product.deletedAt),
+                  ),
+        )
         .limit(1);
 
     return row ?? null;
@@ -944,6 +967,21 @@ export async function setConfigOptionValues(
             .from(schema.configOptionValue)
             .where(eq(schema.configOptionValue.optionId, optionId));
 
+        // The surcharges as they stand, for the audit row. Names alone would
+        // make a pure price change look like no change at all — before and
+        // after identical, on the one field anybody would come back to check.
+        const existingPricing = existing.length
+            ? await tx
+                  .select()
+                  .from(schema.configOptionPricing)
+                  .where(
+                      inArray(
+                          schema.configOptionPricing.valueId,
+                          existing.map((row) => row.id),
+                      ),
+                  )
+            : [];
+
         const keep = new Set(
             values.map((value) => value.id).filter((id): id is string => !!id),
         );
@@ -993,22 +1031,65 @@ export async function setConfigOptionValues(
             }
         }
 
+        const savedPricing = saved.length
+            ? await tx
+                  .select()
+                  .from(schema.configOptionPricing)
+                  .where(
+                      inArray(
+                          schema.configOptionPricing.valueId,
+                          saved.map((row) => row.id),
+                      ),
+                  )
+            : [];
+
         await audit(tx, {
             actor,
             action: "config_option.values",
             entityType: "config_option",
             entityId: optionId,
             before: {
-                values: existing.map((row) => row.name),
+                values: describeValues(existing, existingPricing),
             },
             after: {
-                values: saved.map((row) => row.name),
+                values: describeValues(saved, savedPricing),
             },
             ip: origin?.ip,
             userAgent: origin?.userAgent,
         });
 
         return saved;
+    });
+}
+
+/**
+ * A value and its surcharges, flat, for an audit row: `"8 GB RAM"` on its
+ * own, or `"8 GB RAM (monthly EUR 500+0)"` once it costs something. The
+ * prices belong in the trail — an entry whose before and after differ only
+ * in a number nobody wrote down answers no question at all.
+ */
+function describeValues(
+    values: { id: string; name: string }[],
+    pricing: {
+        valueId: string;
+        cycle: string;
+        currency: string;
+        priceCents: number;
+        setupFeeCents: number;
+    }[],
+): string[] {
+    return values.map((value) => {
+        const cells = pricing
+            .filter((row) => row.valueId === value.id)
+            .map(
+                (row) =>
+                    `${row.cycle} ${row.currency} ${row.priceCents}+${row.setupFeeCents}`,
+            )
+            .sort();
+
+        return cells.length
+            ? `${value.name} (${cells.join(", ")})`
+            : value.name;
     });
 }
 

@@ -224,7 +224,7 @@ Decided in this phase, open to being overruled:
   decision from one on the running price, and most codes mean the latter.
 - **A percentage coupon is stored as basis points** (`2500` = 25 %), so the rate itself is an
   integer and cannot pick up a float's rounding error on the way to a price. The discount is
-  rounded half away from zero to whole cents by `money.percent`, which is the same rule the
+  rounded half away from zero to whole cents by `money.basisPoints`, which is the same rule the
   invoice lines use.
 - **`renewal_cents` is the undiscounted period**, except for a `forever` coupon where it is the
   discounted one. `discount_periods` says how long the first price holds: `1`, `n`, or `null`
@@ -241,6 +241,63 @@ Decided in this phase, open to being overruled:
   add-on, and guessing at it now would be a join table nothing uses.
 - **`module_config` is not on the wire.** It is the operator's configuration of a provisioning
   module — template ids, node names — and says nothing a buyer needs to decide or to order.
+
+Reviewed after the fact, and fixed (commit after `e933445`):
+
+An adversarial review of `e933445` — four independent reviewers over the diff, each finding
+refuted by a separate skeptic before it counted — raised 29 candidates, of which 18 survived.
+All 18 are fixed. The ones that moved money or lost data:
+
+- **A fixed coupon was worth twice its face value** when `applies_to_setup_fee` was on. It took
+  its whole amount off the period *and* its whole amount off the setup fee: a 10,00 € code
+  against 20,00 €/Monat + 15,00 € Einrichtung charged 15,00 € instead of 25,00 €, while
+  labelling itself "10,00 €" in the same quote. A fixed amount now has one budget across both
+  sides and spills onto the setup fee only with what the period could not absorb; a percentage
+  still applies its rate to each side, which is what a rate means.
+- **`money.percent` rounded a half cent down.** `cents * (rate / 100)` divides twice in binary
+  float — `29 / 100` is `0.28999999999999998` — so 29 % of 7,50 € arrived as 217,49999999999997
+  and became 2,17 € instead of 2,18 €. 228 of the first half-million whole-percent/amount pairs
+  were wrong. `money.basisPoints(cents, rate)` now does one division on an integer numerator,
+  and `percent` routes through it. This is Phase 0's code, not Phase 2's, but it is the function
+  the VAT layer will call on every invoice line.
+- **A soft-deleted product was unreachable, so the deletion was permanent.** `getProduct` and
+  `listProducts` both filtered `deleted_at`, and the admin detail page — the only page carrying
+  the restore button — called `getProduct` and 404'd. `restoreProduct` could never be invoked,
+  and the row went on holding its slug where nobody could see what was holding it. Both take
+  `includeDeleted` now, the admin list shows deleted products with a badge, and the detail page
+  loads them.
+- **Saving an option's values deleted surcharges for cycles the form had not rendered.** The
+  form's columns came from the product's *current* pricing, and the save replaces every pricing
+  row of every value. Drop the annual price, edit the options, put the annual price back, and
+  the annual surcharges were gone silently. The form now also renders every cycle an option
+  value already prices.
+- **An unreadable surcharge was stored as 0**, wiping the figure the operator was trying to
+  correct. The pricing matrix above it already guarded this; the option-value path does now too.
+- **Editing a coupon dropped product restrictions the form could not render** — one past the
+  hundredth product, or one since deleted. An empty `product_ids` means *every* product, so a
+  product-specific coupon quietly became catalog-wide. The form carries the current restriction
+  in hidden fields and the action keeps what it did not show.
+- **"Gültig bis" was read as midnight UTC**, so a coupon was refused for the whole of the day it
+  was meant to cover. Dates are now read in Europe/Berlin — a `validFrom` at the first instant
+  of its day, a `validUntil` at the last — because that is the calendar the operator is looking
+  at when they pick one.
+- **The option-value audit row recorded names only.** A pure price change left `before` and
+  `after` identical, on the one field anybody would come back to check. Surcharges are in the
+  trail now.
+- **An option with `min_quantity` above `max_quantity`** was saveable and made every quote for
+  the product throw. Refused at the boundary.
+
+And the smaller ones: the quote endpoint gave a distinct answer for a code that does not exist,
+which is an enumeration oracle on an unauthenticated endpoint — every unusable code now gets one
+answer (**decided here, open to being overruled:** the operator still sees the real reason in the
+admin, the customer does not); "Danach je Zeitraum" showed the undiscounted price directly under
+a line saying "für 3 Abrechnungszeiträume", and now reads "Ab dem 4. Zeitraum"; a coupon labelled
+itself "10,00 EUR" instead of "10,00 €"; "1 Tage kostenlos"; a pricing-matrix error printed the
+raw English cycle enum to a German operator; and a test comment stated the opposite of the
+assertion below it.
+
+Six new tests, and the rounding fix was proved non-vacuous by restoring the old `percent` and
+watching the new cases fail.
 
 Still open in this phase:
 

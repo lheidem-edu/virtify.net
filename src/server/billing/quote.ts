@@ -15,6 +15,17 @@ import {
 import type { QuoteRequest } from "@/server/catalog/schema";
 
 /**
+ * One answer for every code that does not work here, whatever the reason.
+ *
+ * `checkCoupon` knows why — expired, wrong product, used up — and the admin
+ * sees that. The storefront does not: a distinct "gibt es nicht" is an
+ * oracle, and an unauthenticated endpoint that answers it will be walked
+ * through the code space until it finds one that exists.
+ */
+export const CODE_NOT_APPLICABLE =
+    "Dieser Gutscheincode gilt für diese Bestellung nicht.";
+
+/**
  * The database's half of the price function: load the rows, check that what
  * was chosen is actually on offer, and hand it to `calculateQuote`.
  *
@@ -169,11 +180,13 @@ export async function quoteProductDetail(
         now,
     });
 
-    // A code that matches nothing at all gets the same answer as one that
-    // does not apply here: the customer needs to be told, and the endpoint
-    // must not become a way to find out which codes exist.
-    if (code && !couponRow) {
-        quote.couponError = "Diesen Gutscheincode gibt es nicht.";
+    // Every code that does not work gets the same answer, whatever the
+    // reason: one that does not exist, one that has expired, one that is used
+    // up and one that is for another product are indistinguishable from out
+    // here. `checkCoupon` still computes the real reason and the admin can
+    // read it; the unauthenticated endpoint does not hand it out.
+    if (code && (!couponRow || quote.couponError)) {
+        quote.couponError = CODE_NOT_APPLICABLE;
     }
 
     return { detail, quote };
