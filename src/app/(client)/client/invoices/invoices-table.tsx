@@ -13,7 +13,6 @@ import {
     INVOICE_STATUS_TONE,
     isOverdue,
 } from "@/lib/format";
-import PayActions from "./pay-actions";
 
 export type InvoiceRow = {
     id: string;
@@ -26,14 +25,13 @@ export type InvoiceRow = {
     amount: number;
     /** What Rechnungskorrekturen have taken back off this invoice. */
     credited: number;
+    /** What has already arrived against it. */
+    paid: number;
     /** Finalized, not settled, not corrected — decided on the server. */
     canPay: boolean;
 };
 
-function buildColumns(
-    stripe: boolean,
-    paypal: boolean,
-): ColumnDef<InvoiceRow, unknown>[] {
+function buildColumns(): ColumnDef<InvoiceRow, unknown>[] {
     return [
         {
             accessorKey: "number",
@@ -96,6 +94,11 @@ function buildColumns(
                             {formatPrice(row.original.credited)} korrigiert
                         </span>
                     ) : null}
+                    {row.original.status === "partial" ? (
+                        <span className="mt-1 block text-muted-foreground text-xs">
+                            {formatPrice(row.original.paid)} erhalten
+                        </span>
+                    ) : null}
                 </>
             ),
             filterFn: (row, id, value) => row.getValue(id) === value,
@@ -118,32 +121,20 @@ function buildColumns(
                     >
                         XRechnung
                     </Link>
-                    {row.original.canPay ? (
-                        <PayActions
-                            invoiceId={row.original.id}
-                            stripe={stripe}
-                            paypal={paypal}
-                        />
-                    ) : null}
+                    <Link
+                        href={`/client/invoices/${row.original.id}`}
+                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                    >
+                        {row.original.canPay ? "Bezahlen" : "Ansehen"}
+                    </Link>
                 </div>
             ),
         },
     ];
 }
 
-export default function InvoicesTable({
-    rows,
-    stripe,
-    paypal,
-}: {
-    rows: InvoiceRow[];
-    stripe: boolean;
-    paypal: boolean;
-}) {
-    const columns = useMemo(
-        () => buildColumns(stripe, paypal),
-        [stripe, paypal],
-    );
+export default function InvoicesTable({ rows }: { rows: InvoiceRow[] }) {
+    const columns = useMemo(() => buildColumns(), []);
 
     return (
         <DataTable

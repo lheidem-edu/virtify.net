@@ -780,8 +780,9 @@ Still open in this phase:
       version and label; the Widerrufsbelehrung gets only a timestamp. Both links point at
       `/terms` and one document covers both today, so the AGB version identifies it — but the
       moment they become separate documents that stops being true.
-- [ ] **Nothing collects the money.** Bank transfer is the only payment option; the enum already
-      has `stripe` and `paypal` and `order.auto_charge` is stored and read by nobody. Phase 5.
+- [x] ~~**Nothing collects the money.**~~ Phase 5. The checkout offers every gateway the
+      operator has switched on and hands the buyer straight to it; `auto_charge` is honoured as
+      far as Phase 5 can honour it (see below).
 - [ ] **Nothing renews a subscription.** The periods, the price snapshots and
       `discount_periods_remaining` are all written for Phase 6, and nothing advances them.
 - [ ] **A service never leaves `pending`.** There is no module to run and no queue to run it in;
@@ -791,12 +792,179 @@ Still open in this phase:
 - [ ] The storefront's "Gemäß § 19 UStG …" note is still hard-coded in three places rather than
       coming from the tax strategy. It is right today and wrong the day the switch is thrown.
 
+## Phase 5 — Payments: Stripe + PayPal · done
+
+`npm run typecheck`, `npm run lint` and `npm run test` (445 tests) are green, the app builds,
+`public/openapi.json` is regenerated, and the integration proofs run against the real Postgres
+`npm run db:up` starts.
+
+**Money moves now, and there is exactly one place where it meets a document.** Everything in
+this phase follows from that sentence.
+
+### `applyPayment` — the one path
+
+`src/server/payments/apply.ts`. A Stripe webhook, a PayPal capture, the customer's own return
+from a hosted page, a transfer somebody books by hand, credit being spent — all of them end
+here, and nothing else may settle an invoice. Two paths is how an invoice gets paid twice by
+mechanisms that do not know about each other.
+
+Three things make it safe to run again, and all three are in the database rather than in a
+caller's good intentions:
+
+1. The first statement takes the payment row **`FOR UPDATE`**, keyed on the provider's
+   reference, which is unique. A second delivery of the same event, a retried capture and a
+   double-clicked button all queue behind the first and find it already succeeded.
+2. What has been received is **summed from the rows**, never incremented. An increment applied
+   twice is simply wrong; a row written twice cannot happen because of (1).
+3. The overpayment entry is keyed on the payment by a unique index. Even if everything above
+   failed, the customer's balance could not double.
+
+It never recomputes what is owed: `invoice.gross_cents` is what `calculateTotals()` froze at
+finalization, `credited_cents` is what the corrections took back, and the arithmetic that turns
+those two plus "what arrived" into a status is `settlement.ts` — pure, integer cents, no
+database, twenty-two unit tests with the figures written out.
+
+### What is new in the schema — migration `0020`
+
+- **`invoice.status` gained `partial`**, and `invoice.paid_cents` records what actually
+  arrived. Both are facts *about* the invoice rather than statements *on* it, so `paid_cents`
+  was added to the immutability trigger's short list — named there on purpose, in its own
+  migration, because 0017 deliberately made a new column immutable by default. Every check that
+  means "this invoice still wants money" goes through `OPEN_INVOICE_STATUSES` / `isOpenInvoice`,
+  so adding the status could not leave a half-paid invoice invisible on a list that happened to
+  compare against `"unpaid"`.
+- **`payment` is the transaction table.** A refund is a **row** (`kind = 'refund'`, pointing at
+  the charge it reverses), not a status — so a charge refunded twice in part is two rows that
+  add up, and the sum keeps working without knowing anything about refunds except their sign.
+  `purpose` tells an invoice payment from a credit top-up, which is the only reason
+  `invoice_id` is nullable. Three CHECK constraints state the invariants where every writer has
+  to pass.
+- **`credit_ledger`** holds the balance as entries, not as a number. A balance column would have
+  to be updated by every path that touches it and would be wrong the first time one forgot; a
+  ledger is wrong only if a row is missing, and a missing row is visible.
+- **`payment_dispute`** — its own table, because a chargeback has a deadline, evidence and an
+  outcome weeks later, and one charge can be disputed, won and disputed again.
+- **`payment_gateway_setting`** — per-gateway `enabled`, sandbox/live and **one AES-256-GCM
+  blob** of credentials (rule 6). One blob rather than a column per secret: the shape of what
+  Stripe needs is not the shape of what PayPal needs, and a column is one `select *` away from a
+  log line. The environment stays the fallback, so `.env.local` keeps working and a deployment
+  can move to the admin area without migrating its secrets.
+- **`paypal_plan`** caches the plan ids PayPal insists on for its Subscriptions API. The key
+  includes the price, so a price change makes a new plan instead of silently repricing everybody
+  already on the old one.
+
+### The gateway interface
+
+`src/server/payments/gateways/types.ts` — `id`, `label`, `capabilities`, `createCheckout`,
+`savePaymentMethod`, `chargeSaved`, `refund`, `handleWebhook`. Three implementations:
+
+- **Stripe** — Checkout Session, SetupIntent, off-session PaymentIntent, refunds. The intent is
+  created and confirmed in two steps so the id the attempt is recorded under exists *before* any
+  money moves. `requires_action` is its own outcome, not a failure: the invoice is still
+  collectable, so the customer is **mailed a link** to a fresh hosted checkout and the invoice
+  stays open until they use it.
+- **PayPal** — Orders v2 with capture; the vault (payment tokens v3) where the account has
+  reference transactions, otherwise PayPal's own Subscriptions API. The mode is a setting, and
+  the default is the one that works for everybody, because without PayPal's written approval
+  every vault charge fails with `MERCHANT_NOT_ENABLED_FOR_REFERENCE_TRANSACTION` at the worst
+  possible moment.
+- **`banktransfer`** — a gateway with no API at all, which is the point: `createCheckout`
+  returns the bank details and the GiroCode instead of a URL, and the booking still goes through
+  `applyPayment`. The alternative is a `markInvoicePaid` that bypasses it, and then a transfer
+  and a card payment for one invoice are two mechanisms that do not know about each other.
+
+`credit` is deliberately **not** a gateway: spending a balance is a ledger entry and a payment
+row, and the interface would be five methods that all throw.
+
+### Idempotency, which is the whole game here
+
+- **The webhook log is a claim, not a lookup.** Writing the event id and stopping if it is
+  already there is wrong in a way that only shows up on a bad day: a handler that fails halfway
+  leaves the row, so the provider's *retry* finds the event "delivered", answers 200 and does
+  nothing — a payment that failed to settle once then never settles at all. `claimEvent` is one
+  statement that inserts *or takes the row back if nobody finished it*, and `handled_at` is set
+  only by a handler that ran to the end. Two deliveries racing can therefore both run; that is
+  fine, because `applyPayment` is where double settlement is actually prevented.
+- **Nothing in a payload may name the invoice it settles.** Every webhook path looks up an
+  attempt *we* recorded under a reference *we* generated. PayPal's `custom_id` carries our
+  invoice id and is used only to *find* a charge of ours, never to decide what a refund attaches
+  to. The one exception is the PayPal subscription mode, where PayPal runs the schedule — and
+  there the document is chosen by our own books (the account's oldest open invoice), not by
+  anything the payload says.
+- **Money crosses the boundary in two places.** `toDecimalString` out, `fromDecimalString` in.
+  PayPal speaks decimal strings; `Number("19.99") * 100` is 1998.9999999999998, and `Math.round`
+  only hides that until a value lands on the other side of a half. The new parser accepts one
+  shape and refuses everything else rather than guessing — deliberately *not* `parseAmount`,
+  which reads German and would take `"1.000"` for a thousand euro.
+- **An in-flight collection is cancelled, not just marked superseded.** A pending PaymentIntent
+  that the row alone had closed would still have completed at Stripe, and the customer would
+  have paid twice for one invoice.
+
+### What the operator and the customer get
+
+- Client: payment methods with add / remove / **default**, an invoice page that offers card,
+  PayPal, bank transfer with details and GiroCode, and the balance; a **Guthaben** page with a
+  ledger and a top-up.
+- Admin: `/admin/payments` with every movement in one list, the hand-booking form,
+  `/admin/payments/disputes`, and `/admin/settings/payments` for the credentials.
+- A refund in the admin area is a **Rechnungskorrektur and then a refund transaction**, in that
+  order: a correction without a refund is an operator who still owes money, which is visible; a
+  refund without a correction is a document that no longer matches the books, which is not.
+- `GET /api/v1/transactions` and `POST /api/v1/invoices/{id}/payments`, both in the OpenAPI
+  registry with per-field descriptions, examples and error shapes.
+
+### Decisions taken here, open to being overruled
+
+- **`partial` is a real status**, not a flag. The plan asks for it, and an invoice that is half
+  paid should not read "Offen" on a list beside one nobody has touched. The cost is every "open"
+  check; they all go through one constant.
+- **The § 19 monitor counts a `partial` invoice pro rata.** Counting nothing until it settles in
+  full would be the wrong direction for a *monitor*: the limit could be crossed by money already
+  in the account, with no warning.
+- **A refund of part of an invoice issues no Rechnungskorrektur automatically.** A correction
+  credits *positions*, not an amount — EN 16931 and § 14 Abs. 4 want a document that says what
+  was taken back. The admin area issues one only when the refund takes back everything the
+  invoice still stands for, and otherwise points at the invoice, where the operator picks the
+  lines they mean.
+- **Money that cannot be placed becomes credit rather than vanishing.** A PayPal-run
+  subscription that collects for an account with nothing open, and a payment against an invoice
+  that has been corrected away, both land on the balance and the operator is told. It is the one
+  outcome that can never be wrong, because the money did arrive.
+- **`webhook_event` keeps its name** instead of becoming the plan's `processed_events`.
+  Renaming a table to match a word in the plan buys nothing.
+- **`markInvoicePaid` in the invoicing service stays, and the admin button no longer uses it.**
+  What is left is the books-only statement "nothing is owed on this any more", used by the
+  revenue tests; the button books a transfer through `applyPayment` like everything else.
+
+### Still open in this phase
+
+- [ ] **`auto_charge` is honoured, but only as far as it can be.** A subscription collects from
+      the method the customer stores *afterwards*, in the customer area — the checkout does not
+      store a card while taking the first payment. For Stripe that would be
+      `setup_future_usage` on the session, which is a small change; for PayPal it needs the
+      vault, which needs the approval. Phase 6's renewal run reads `auto_charge` and
+      `payment_method_id` and will work the day either is set.
+- [ ] **Nothing retries a failed collection.** § 8 of the terms leaves that to the operator and
+      they are mailed about it; a dunning run is Phase 6.
+- [ ] **A dispute is only recorded, never answered.** The evidence goes in at the provider —
+      neither Stripe nor PayPal takes it any other way — so this phase makes sure the deadline is
+      not what gets missed.
+- [ ] **SEPA Direct Debit is not switched on.** The gateway can do it, but the mandate and the
+      Vorabankündigung have to be in § 7 of the terms and the Datenschutzerklärung first, and the
+      six-day settlement path only half exists. `payment_method_types` stays `["card"]` until
+      then, deliberately.
+- [ ] **`POST /api/v1/orders` still only accepts `bank_transfer`.** An order placed through the
+      API has no browser to redirect, so naming a gateway there would record a payment option
+      nothing could act on.
+- [ ] **A credit top-up produces no document.** Money arrives, a ledger entry is written and the
+      invoice it later pays is the document. A Steuerberater should look at that before go-live.
+
 ## Phases 5–11
 
 | Phase | State | Notes |
 |---|---|---|
-| 5 Payments | existing, partial | Stripe + PayPal, stored payment methods, off-session collection, webhooks with dedupe, settlement in one transaction. Missing: the `PaymentGateway` interface the plan asks for, bank transfer as a gateway, partial payments, overpayment → credit ledger, refunds, disputes, gateway credentials in encrypted settings. Settlement now also runs the § 19 threshold check. |
-| 6 Subscriptions, dunning | not started | No pg-boss, no renewal run, no dunning. Phase 4 wrote the `subscription` table, the period arithmetic (`src/server/billing/periods.ts`, with proration) and the price snapshots a renewal needs; nothing advances them. The older `contract` table still exists beside it and is created by hand. |
+| 5 Payments | done | See above. |
+| 6 Subscriptions, dunning | not started | No pg-boss, no renewal run, no dunning. Phase 4 wrote the `subscription` table, the period arithmetic (`src/server/billing/periods.ts`, with proration) and the price snapshots a renewal needs; nothing advances them. Phase 5 added `collectIssuedInvoice()`, which is what a renewal calls once it has raised the invoice. The older `contract` table still exists beside it and is created by hand. |
 | 7 Ticketing (M365 Graph) | not started | Mail goes out over SMTP via nodemailer. |
 | 8 Provisioning (Proxmox) | not started | Phase 2 put the registry interface and the `none` module in `src/server/provisioning`; Phase 4 added the `service` table, which fills with `pending` rows and never empties. The lifecycle methods and the Proxmox module are this phase's. |
 | 9 Client portal polish, i18n | not started | German only, no i18n layer, no `email_templates`. |
@@ -821,13 +989,16 @@ Still open in this phase:
   so does any version already published in `legal_document`. The old path redirects, so nothing is
   broken meanwhile. `legal/*.txt` at the repo root is export, not source — run `npm run
   legal:export` to refresh it.
-- Operational, not code: `STRIPE_WEBHOOK_SECRET` and `PAYPAL_WEBHOOK_ID` need a public URL;
-  PayPal reference transactions need PayPal's written approval before
-  `PAYPAL_VAULTING_ENABLED=true`; Stripe receipt mails must be turned off; a real outbound SMTP
-  relay is still missing; the new AGB § 7 and the Datenschutz sections want reading by the
-  operator; a Steuerberater should see a sample invoice before go-live — Phase 3 makes that
-  concrete: `/admin/settings/tax` is where the switch is scheduled, and the sample to show them
-  is any PDF from `/admin/invoices`.
+- Operational, not code: `STRIPE_WEBHOOK_SECRET` and `PAYPAL_WEBHOOK_ID` need a public URL —
+  or, since Phase 5, a row in `/admin/settings/payments`, which is the same two secrets
+  encrypted at rest; PayPal reference transactions need PayPal's written approval before the
+  recurring mode is set to `vault`; Stripe receipt mails must be turned off, because our own
+  receipt is the one that names our invoice; a real outbound SMTP relay is still missing, and
+  without one the SCA link and every failure notice only reach the log; the new AGB § 7 and the
+  Datenschutz sections want reading by the operator; a Steuerberater should see a sample invoice
+  before go-live — Phase 3 makes that concrete: `/admin/settings/tax` is where the switch is
+  scheduled, and the sample to show them is any PDF from `/admin/invoices`. Phase 5 adds one
+  question for them: a credit top-up takes money with no document behind it.
 - **`timestamp` rather than `timestamptz` now reaches the tax layer.** `tax_mode_history
   .effective_from` and every `issued_at` the resolver compares against are stored in UTC and
   read in Europe/Berlin by `src/lib/berlin-date.ts`, which is correct as long as the column

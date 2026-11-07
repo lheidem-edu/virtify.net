@@ -797,7 +797,21 @@ export async function createCreditNote(
     });
 }
 
-/** Records the incoming payment. Only a finalized invoice can be paid. */
+/**
+ * Declares a finalized invoice settled, without a payment behind it.
+ *
+ * **This is not how money is recorded.** Every euro that actually arrives —
+ * from a gateway, from a transfer somebody books, from the customer's balance
+ * — goes through `applyPayment` in `src/server/payments/apply.ts`, which is
+ * the one place an invoice is ever settled and the one place that writes a
+ * transaction row.
+ *
+ * What is left here is the books-only statement "nothing is owed on this any
+ * more", which the admin area no longer offers (its button books a transfer
+ * instead) and which the revenue tests use to produce paid invoices without
+ * a payment apparatus. `paid_cents` is kept in step so the invoice does not
+ * read as settled while claiming nothing was received.
+ */
 export async function markInvoicePaid(
     db: Db,
     invoiceId: string,
@@ -807,16 +821,26 @@ export async function markInvoicePaid(
     return db.transaction(async (tx) => {
         const row = await lockInvoice(tx, invoiceId);
 
-        if (row.status !== "unpaid") {
+        if (row.status !== "unpaid" && row.status !== "partial") {
             throw new InvoiceError(
                 "not-unpaid",
                 "Nur offene Rechnungen können als bezahlt markiert werden.",
             );
         }
 
+        const due = Math.max(
+            subtract(row.grossCents ?? 0, row.creditedCents),
+            0,
+        );
+
         await tx
             .update(schema.invoice)
-            .set({ status: "paid", paidAt: at, updatedAt: at })
+            .set({
+                status: "paid",
+                paidAt: at,
+                paidCents: due,
+                updatedAt: at,
+            })
             .where(eq(schema.invoice.id, invoiceId));
 
         await audit(tx, {
@@ -850,7 +874,12 @@ export async function unmarkInvoicePaid(
 
         await tx
             .update(schema.invoice)
-            .set({ status: "unpaid", paidAt: null, updatedAt: new Date() })
+            .set({
+                status: "unpaid",
+                paidAt: null,
+                paidCents: 0,
+                updatedAt: new Date(),
+            })
             .where(eq(schema.invoice.id, invoiceId));
 
         await audit(tx, {

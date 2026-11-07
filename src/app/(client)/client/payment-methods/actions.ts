@@ -11,16 +11,18 @@ import {
     mailFrom,
     renderEmail,
 } from "@/server/mail";
-import { paypalConfig, stripeEnabled } from "@/server/payments/config";
+import { gateway } from "@/server/payments/gateways";
+import { deleteVaultToken } from "@/server/payments/gateways/paypal-api";
 import {
-    createVaultSetupToken,
-    deleteVaultToken,
-} from "@/server/payments/paypal";
-import {
-    createSetupCheckout,
     detachStoredMethod,
     ensureStripeCustomer,
-} from "@/server/payments/stripe";
+} from "@/server/payments/gateways/stripe";
+import {
+    markDetached,
+    recordSetup,
+    revokeMethod,
+    setDefaultMethod,
+} from "@/server/payments/methods";
 import { loadSettings } from "@/server/settings";
 
 export type PaymentMethodState = {
@@ -49,18 +51,12 @@ export async function startPaymentMethodSetup(
         return { status: "error", message: "Unbekannte Zahlungsart." };
     }
 
-    if (provider === "stripe" && !stripeEnabled()) {
+    const target = gateway(provider);
+
+    if (!(await target.isEnabled()) || !target.capabilities.storedMethods) {
         return {
             status: "error",
             message: "Diese Zahlungsart steht gerade nicht zur Verfügung.",
-        };
-    }
-
-    if (provider === "paypal" && !paypalConfig().vaulting) {
-        return {
-            status: "error",
-            message:
-                "PayPal lässt sich derzeit nicht als Zahlungsmittel hinterlegen.",
         };
     }
 
@@ -102,23 +98,27 @@ export async function startPaymentMethodSetup(
                     .set({ stripeCustomerId, updatedAt: new Date() })
                     .where(eq(schema.customer.id, customer.id));
             }
-
-            const setup = await createSetupCheckout({
-                customerId: customer.id,
-                stripeCustomerId,
-                contractId: contractId || undefined,
-            });
-
-            await recordSetup(setup.id, customer.id, "stripe", contractId);
-            url = setup.url;
-        } else {
-            const setup = await createVaultSetupToken({
-                customerId: customer.id,
-            });
-
-            await recordSetup(setup.id, customer.id, "paypal", contractId);
-            url = setup.url;
         }
+
+        const setup = await target.savePaymentMethod({
+            id: customer.id,
+            name: customer.company || customer.name,
+            email: contact.email,
+            stripeCustomerId: customer.stripeCustomerId,
+        });
+
+        // Written before the customer leaves, so the identifier they come
+        // back with means something. Both providers return to a URL anyone
+        // could type, carrying an id anyone could present; this row is what
+        // makes it this account's.
+        await recordSetup(db, {
+            id: setup.ref,
+            customerId: customer.id,
+            provider,
+            contractId: contractId || null,
+        });
+
+        url = setup.url;
     } catch (error) {
         console.error("[payment] starting method setup failed:", error);
 
@@ -134,25 +134,8 @@ export async function startPaymentMethodSetup(
 }
 
 /**
- * Written before the customer leaves, so the identifier they come back with
- * means something. Both providers return to a URL anyone could type, carrying
- * an id anyone could present — this row is what makes it this account's.
- */
-async function recordSetup(
-    id: string,
-    customerId: string,
-    provider: "stripe" | "paypal",
-    contractId: string,
-) {
-    await db
-        .insert(schema.paymentSetup)
-        .values({ id, customerId, provider, contractId: contractId || null })
-        .onConflictDoNothing();
-}
-
-/**
  * Withdrawing a stored method. The provider is told first; whether it
- * confirms or not, the local row is revoked and every contract that collected
+ * confirms or not, the local row is revoked and everything that collected
  * from it falls back to manual payment — the row is what we bill from, so a
  * token left behind at the provider is never used again.
  */
@@ -163,7 +146,6 @@ export async function removePaymentMethod(
     const { customer } = await getCurrentCustomer();
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
-
     const methodId = read("methodId");
 
     const [method] = await db
@@ -184,11 +166,11 @@ export async function removePaymentMethod(
         };
     }
 
-    // Fallible, so it runs on its own before the transaction below. Whether
-    // it worked is remembered rather than assumed: withdrawing the
+    // Fallible, so it runs on its own before the revocation. Whether it
+    // worked is remembered rather than assumed: withdrawing the
     // authorisation here always succeeds and is what stops us collecting, but
     // the deletion at the provider is what the customer was promised.
-    let detachedAt: Date | null = new Date();
+    let detached = true;
 
     try {
         if (method.provider === "stripe") {
@@ -198,29 +180,16 @@ export async function removePaymentMethod(
         }
     } catch (error) {
         console.error("[payment] detaching stored method failed:", error);
-        detachedAt = null;
+        detached = false;
     }
 
-    try {
-        await db.transaction(async (tx) => {
-            await tx
-                .update(schema.paymentMethod)
-                .set({ revokedAt: new Date(), detachedAt })
-                .where(eq(schema.paymentMethod.id, methodId));
+    const revoked = await revokeMethod(db, {
+        customerId: customer.id,
+        methodId,
+        actor: { type: "customer", id: customer.id },
+    });
 
-            await tx
-                .update(schema.contract)
-                .set({ paymentMethodId: null, updatedAt: new Date() })
-                .where(
-                    and(
-                        eq(schema.contract.paymentMethodId, methodId),
-                        eq(schema.contract.customerId, customer.id),
-                    ),
-                );
-        });
-    } catch (error) {
-        console.error("[payment] revoking stored method failed:", error);
-
+    if (!revoked.ok) {
         return {
             status: "error",
             message:
@@ -228,7 +197,9 @@ export async function removePaymentMethod(
         };
     }
 
-    if (!detachedAt) {
+    if (detached) {
+        await markDetached(db, methodId);
+    } else {
         await notifyDetachFailed({
             label: method.label,
             provider: method.provider,
@@ -241,10 +212,40 @@ export async function removePaymentMethod(
 
     return {
         status: "removed",
-        message: detachedAt
+        message: detached
             ? "Das Zahlungsmittel ist entfernt und beim Zahlungsdienstleister gelöscht."
             : "Das Zahlungsmittel ist entfernt und wird nicht mehr verwendet. Die Löschung beim Zahlungsdienstleister konnte gerade nicht bestätigt werden; wir holen sie nach.",
     };
+}
+
+/**
+ * Which method an automatic collection reaches for. At most one per account,
+ * which the database enforces with a partial unique index rather than this
+ * action — two tabs are faster than a read followed by a write.
+ */
+export async function makeDefaultPaymentMethod(
+    _previous: PaymentMethodState,
+    data: FormData,
+): Promise<PaymentMethodState> {
+    const { customer } = await getCurrentCustomer();
+    const methodId = String(data.get("methodId") ?? "").trim();
+
+    const changed = await setDefaultMethod(db, {
+        customerId: customer.id,
+        methodId,
+        actor: { type: "customer", id: customer.id },
+    });
+
+    if (!changed) {
+        return {
+            status: "error",
+            message: "Dieses Zahlungsmittel ist nicht mehr hinterlegt.",
+        };
+    }
+
+    revalidatePath("/client/payment-methods");
+
+    return { status: "changed", message: "Standard geändert." };
 }
 
 /**
@@ -399,6 +400,105 @@ export async function setContractCollection(
 
     revalidatePath("/client/contracts");
     revalidatePath("/client/payment-methods");
+
+    return { status: "changed" };
+}
+
+/**
+ * Switches automatic collection for one subscription on or off — the Phase 4
+ * `auto_charge` opt-in, finally honoured. Phase 6's renewal run reads exactly
+ * these two columns.
+ */
+export async function setSubscriptionCollection(
+    _previous: PaymentMethodState,
+    data: FormData,
+): Promise<PaymentMethodState> {
+    const { customer } = await getCurrentCustomer();
+
+    const read = (name: string) => String(data.get(name) ?? "").trim();
+    const subscriptionId = read("subscriptionId");
+    const methodId = read("methodId");
+    const mode = read("mode");
+
+    if (mode !== "on" && mode !== "off") {
+        return { status: "error", message: "Unbekannte Aktion." };
+    }
+
+    try {
+        await db.transaction(async (tx) => {
+            const [subscription] = await tx
+                .select()
+                .from(schema.subscription)
+                .where(
+                    and(
+                        eq(schema.subscription.id, subscriptionId),
+                        eq(schema.subscription.customerId, customer.id),
+                    ),
+                )
+                .for("update");
+
+            if (!subscription) {
+                throw new Error("not-found");
+            }
+
+            if (mode === "off") {
+                await tx
+                    .update(schema.subscription)
+                    .set({
+                        autoCharge: false,
+                        paymentMethodId: null,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(schema.subscription.id, subscriptionId));
+
+                return;
+            }
+
+            const [method] = await tx
+                .select({ id: schema.paymentMethod.id })
+                .from(schema.paymentMethod)
+                .where(
+                    and(
+                        eq(schema.paymentMethod.id, methodId),
+                        eq(schema.paymentMethod.customerId, customer.id),
+                        isNull(schema.paymentMethod.revokedAt),
+                    ),
+                );
+
+            if (!method) {
+                throw new Error("method-unknown");
+            }
+
+            await tx
+                .update(schema.subscription)
+                .set({
+                    autoCharge: true,
+                    paymentMethodId: method.id,
+                    updatedAt: new Date(),
+                })
+                .where(eq(schema.subscription.id, subscriptionId));
+        });
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : "";
+
+        console.error(
+            "[payment] changing subscription collection failed:",
+            error,
+        );
+
+        return {
+            status: "error",
+            message:
+                reason === "method-unknown"
+                    ? "Dieses Zahlungsmittel ist nicht mehr hinterlegt."
+                    : reason === "not-found"
+                      ? "Dieses Abo gibt es nicht."
+                      : "Das hat nicht geklappt. Bitte versuche es erneut.",
+        };
+    }
+
+    revalidatePath("/client/payment-methods");
+    revalidatePath("/client/orders");
 
     return { status: "changed" };
 }

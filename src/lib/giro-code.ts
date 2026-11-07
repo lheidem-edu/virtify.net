@@ -173,3 +173,32 @@ export function giroCodeSymbol(input: GiroCodeInput): GiroCodeSymbol {
 
     return { modules, path: parts.join("") };
 }
+
+/**
+ * The symbol as a standalone SVG, for a web page.
+ *
+ * The PDF renderer draws the same path through `@react-pdf/renderer`'s own
+ * `<Svg>`, so this is the browser's half of one encoder rather than a second
+ * one. The four-module quiet zone is not decoration: ISO 18004 requires it,
+ * and a code printed flush against a coloured background is a code a scanner
+ * may decline to read.
+ *
+ * The result is markup we generated from a module matrix — digits, `M`, `h`,
+ * `v` and `z` — with nothing of the caller's text in it, which is what makes
+ * it safe to put into the page directly.
+ */
+export function giroCodeSvg(input: GiroCodeInput): string {
+    const { modules, path } = giroCodeSymbol(input);
+    const quiet = 4;
+    const span = modules + quiet * 2;
+
+    return [
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${span} ${span}"`,
+        ` width="100%" height="100%" shape-rendering="crispEdges"`,
+        ` role="img" aria-label="GiroCode">`,
+        `<rect width="${span}" height="${span}" fill="#ffffff"/>`,
+        `<g transform="translate(${quiet} ${quiet})" fill="#000000">`,
+        `<path d="${path}"/>`,
+        `</g></svg>`,
+    ].join("");
+}

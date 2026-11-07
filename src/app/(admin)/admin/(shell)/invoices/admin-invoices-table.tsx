@@ -31,6 +31,12 @@ export type AdminInvoiceRow = {
      * issuing collects the amount and the row turns paid on its own.
      */
     autoCollect: boolean;
+    /**
+     * A one-shot reference for the "vollständig bezahlt" button, minted on
+     * the server with the page. It becomes the payment's unique
+     * `provider_ref`, so a double click books once.
+     */
+    markPaidToken: string;
 };
 
 const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
@@ -100,7 +106,8 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
                     </span>
                 ) : null}
                 {row.original.autoCollect &&
-                row.original.status === "unpaid" ? (
+                (row.original.status === "unpaid" ||
+                    row.original.status === "partial") ? (
                     <span
                         title="Wird über das hinterlegte Zahlungsmittel automatisch eingezogen."
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground"
@@ -137,8 +144,12 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
                         >
                             XML
                         </Link>
-                        {row.original.status === "unpaid" ? (
-                            <MarkPaidForm invoiceId={row.original.id} />
+                        {row.original.status === "unpaid" ||
+                        row.original.status === "partial" ? (
+                            <MarkPaidForm
+                                invoiceId={row.original.id}
+                                token={row.original.markPaidToken}
+                            />
                         ) : null}
                     </>
                 )}

@@ -3,6 +3,7 @@ import Link from "next/link";
 import PageHeader from "@/components/shared/page-header";
 import { listInvoices } from "@/server/billing/invoices/repository";
 import { getCurrentCustomer } from "@/server/customers/current";
+import { isOpenInvoice } from "@/db/schema";
 import { listContracts, listOffers } from "@/server/documents/repository";
 
 const CARD =
@@ -20,8 +21,9 @@ export default async function Page() {
 
     const openOffers = offers.filter((entry) => entry.status === "sent");
     // A correction is a document of its own now and never appears in this
-    // list, so "unpaid" is simply what has not been paid.
-    const unpaid = invoices.filter((entry) => entry.status === "unpaid");
+    // list, so "offen" is simply what has not been paid in full — a part
+    // payment leaves an invoice open, and the customer should see it as one.
+    const unpaid = invoices.filter((entry) => isOpenInvoice(entry.status));
     const activeContracts = contracts.filter(
         (entry) => entry.status === "active" || entry.status === "provisioning",
     );

@@ -227,6 +227,48 @@ export function toDecimalString(
 }
 
 /**
+ * The exact inverse of `toDecimalString`, for money that arrives as a decimal
+ * string from somebody else's API — PayPal sends `"19.99"`, never an integer.
+ *
+ * Deliberately *not* `parseAmount`: that one reads what a human typed, in
+ * German, and would read PayPal's hypothetical `"1.000"` as one thousand
+ * euro. This one accepts one shape only — optional sign, digits, and at most
+ * the currency's own number of decimal places — and refuses everything else
+ * rather than guessing.
+ *
+ * The arithmetic never leaves the integers. `Number("19.99") * 100` is
+ * 1998.9999999999998, and `Math.round` only hides that until the day a value
+ * lands on the other side of a half.
+ */
+export function fromDecimalString(
+    value: string,
+    currency: Currency = DEFAULT_CURRENCY,
+): number | null {
+    const places = String(minorUnits(currency)).length - 1;
+    const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+
+    if (!match) {
+        return null;
+    }
+
+    const [, sign, major, minor = ""] = match;
+
+    if (minor.length > places) {
+        return null;
+    }
+
+    const cents =
+        Number(major) * minorUnits(currency) +
+        Number(minor.padEnd(places, "0") || "0");
+
+    if (!Number.isSafeInteger(cents)) {
+        return null;
+    }
+
+    return sign === "-" ? -cents : cents;
+}
+
+/**
  * Parse what somebody typed into a price field. German reading wins, because
  * that is the product's language: a lone comma is always the decimal
  * separator, and a lone dot followed by exactly three digits is a thousands

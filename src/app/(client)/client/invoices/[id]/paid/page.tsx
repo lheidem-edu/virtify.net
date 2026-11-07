@@ -5,6 +5,7 @@ import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { db, schema } from "@/db";
 import { formatPrice } from "@/lib/format";
+import { subtract } from "@/lib/money";
 import { loadInvoice } from "@/server/billing/invoices/repository";
 import { getCurrentCustomer } from "@/server/customers/current";
 import {
@@ -101,23 +102,56 @@ export default async function Page({
     const paid = invoice.status === "paid";
     const number = invoice.number ?? invoice.id;
 
+    // What is still owed after this payment, from the document's own figures.
+    const outstanding = subtract(
+        Math.max(
+            subtract(loaded.totals.grossCents, invoice.creditedCents),
+            0,
+        ),
+        invoice.paidCents,
+    );
+    const partly = invoice.status === "partial";
+
     return (
         <>
             <PageHeader
-                title={paid ? "Zahlung eingegangen" : "Zahlung unterwegs"}
+                title={
+                    paid
+                        ? "Zahlung eingegangen"
+                        : partly
+                          ? "Teilzahlung eingegangen"
+                          : "Zahlung unterwegs"
+                }
                 intro={
                     paid
-                        ? `Vielen Dank. Wir haben ${formatPrice(loaded.totals.grossCents)} für Rechnung ${number} erhalten.`
-                        : `Deine Zahlung über ${formatPrice(loaded.totals.grossCents)} für Rechnung ${number} wird gerade verarbeitet.`
+                        ? `Vielen Dank. Wir haben ${formatPrice(invoice.paidCents)} für Rechnung ${number} erhalten.`
+                        : partly
+                          ? `Vielen Dank. Wir haben ${formatPrice(invoice.paidCents)} für Rechnung ${number} erhalten; offen sind noch ${formatPrice(outstanding)}.`
+                          : `Deine Zahlung über ${formatPrice(loaded.totals.grossCents)} für Rechnung ${number} wird gerade verarbeitet.`
                 }
             />
             <div className="px-6 py-10 md:px-10 md:py-12">
-                <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
+                <p className="max-w-2xl text-muted-foreground text-sm leading-7">
                     {paid
                         ? "Die Rechnung ist damit ausgeglichen; du musst nichts weiter tun. Beleg und XRechnung findest du weiterhin in deiner Rechnungsübersicht."
-                        : "Das kann einen Moment dauern. Sobald die Zahlung bei uns eingegangen ist, wird die Rechnung von selbst als bezahlt geführt — du musst dafür nichts tun und diese Seite nicht offen lassen."}
+                        : partly
+                          ? "Den Rest kannst du jederzeit begleichen — die Rechnung bleibt so lange offen."
+                          : "Das kann einen Moment dauern. Sobald die Zahlung bei uns eingegangen ist, wird die Rechnung von selbst als bezahlt geführt — du musst dafür nichts tun und diese Seite nicht offen lassen."}
                 </p>
-                <div className="mt-8">
+                <div className="mt-8 flex flex-wrap gap-3">
+                    {partly ? (
+                        <Button
+                            nativeButton={false}
+                            size="lg"
+                            render={
+                                <Link
+                                    href={`/client/invoices/${invoice.id}`}
+                                />
+                            }
+                        >
+                            Rest begleichen
+                        </Button>
+                    ) : null}
                     <Button
                         nativeButton={false}
                         variant="outline"

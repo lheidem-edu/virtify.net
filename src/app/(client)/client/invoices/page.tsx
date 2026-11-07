@@ -10,16 +10,16 @@ import {
     listInvoices,
 } from "@/server/billing/invoices/repository";
 import { getCurrentCustomer } from "@/server/customers/current";
-import { paypalEnabled, stripeEnabled } from "@/server/payments/config";
+import { isOpenInvoice } from "@/db/schema";
+import { enabledGateways } from "@/server/payments/gateways";
 import InvoicesTable from "./invoices-table";
 
 export default async function Page() {
     const { customer } = await getCurrentCustomer();
 
-    // Which providers exist is a server-side question; the table only ever
-    // sees the two booleans.
-    const stripe = stripeEnabled();
-    const paypal = paypalEnabled();
+    // Which gateways exist is a server-side question, and the table does not
+    // need to know which: it only links to the invoice, where paying happens.
+    const canPayHere = (await enabledGateways()).length > 0;
 
     const creditNotes = await listCreditNotes(customer.id, false);
 
@@ -36,7 +36,8 @@ export default async function Page() {
             email: entry.email,
             amount: entry.amount,
             credited: entry.creditedCents,
-            canPay: entry.status === "unpaid" && !entry.paidAt,
+            paid: entry.paidCents,
+            canPay: isOpenInvoice(entry.status) && !entry.paidAt,
         }));
 
     return (
@@ -44,17 +45,13 @@ export default async function Page() {
             <PageHeader
                 title="Rechnungen"
                 intro={
-                    stripe || paypal
+                    canPayHere
                         ? "Alle ausgestellten Rechnungen als PDF und als XRechnung. Offene Rechnungen kannst du hier direkt bezahlen."
                         : "Alle ausgestellten Rechnungen als PDF und als XRechnung."
                 }
             />
             <div className="px-6 py-10 md:px-10 md:py-12">
-                <InvoicesTable
-                    rows={invoices}
-                    stripe={stripe}
-                    paypal={paypal}
-                />
+                <InvoicesTable rows={invoices} />
             </div>
 
             {creditNotes.length > 0 ? (

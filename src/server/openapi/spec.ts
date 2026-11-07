@@ -86,6 +86,13 @@ export function buildSpec() {
                     "Rechnungskorrektur mit eigener Nummer.",
             },
             {
+                name: "Zahlungen",
+                description:
+                    "Was tatsächlich geflossen ist: Zahlungen, Erstattungen " +
+                    "und Guthaben. Die Rechnung sagt, was geschuldet wird — " +
+                    "ein Zahlungsdienstleister holt nur das Geld.",
+            },
+            {
                 name: "Kunden",
                 description:
                     "Kundenkonten: Stammdaten, Status und Kundennummer. " +

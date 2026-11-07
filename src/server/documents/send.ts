@@ -568,6 +568,8 @@ export async function sendPaymentReceivedMail(input: {
     to: string;
     amountCents: number;
     paidAt: Date;
+    /** What is still owed afterwards. Zero for the ordinary case. */
+    outstandingCents?: number;
 }) {
     const { operator, site } = await loadSettings();
     const loaded = await loadInvoice(input.invoiceId, "", true);
@@ -579,6 +581,14 @@ export async function sendPaymentReceivedMail(input: {
     const number = loaded.invoice.number;
     const transport = transportOrThrow();
 
+    // A part payment must not be confirmed as "ausgeglichen". The customer
+    // would reasonably stop there, and the invoice would quietly go overdue.
+    const outstanding = input.outstandingCents ?? 0;
+    const settled = outstanding <= 0;
+    const sentence = settled
+        ? `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Die Rechnung ist damit ausgeglichen.`
+        : `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Offen sind davon noch ${formatPrice(outstanding)}.`;
+
     try {
         await transport.sendMail({
             from: await mailFrom(),
@@ -587,7 +597,7 @@ export async function sendPaymentReceivedMail(input: {
             text: [
                 "Sehr geehrte Damen und Herren,",
                 "",
-                `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Die Rechnung ist damit ausgeglichen.`,
+                sentence,
                 "",
                 `Ihre Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/client/invoices`,
                 "",
@@ -597,10 +607,7 @@ export async function sendPaymentReceivedMail(input: {
             html: await renderEmail({
                 preheader: `Zahlung über ${formatPrice(input.amountCents)} erhalten.`,
                 heading: "Zahlungseingang",
-                intro: [
-                    "Sehr geehrte Damen und Herren,",
-                    `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Die Rechnung ist damit ausgeglichen.`,
-                ],
+                intro: ["Sehr geehrte Damen und Herren,", sentence],
                 action: {
                     label: "Rechnungen ansehen",
                     url: `${site.url}/client/invoices`,
@@ -613,6 +620,14 @@ export async function sendPaymentReceivedMail(input: {
                         label: "Eingegangen am",
                         value: formatDate(input.paidAt),
                     },
+                    ...(settled
+                        ? []
+                        : [
+                              {
+                                  label: "Noch offen",
+                                  value: formatPrice(outstanding),
+                              },
+                          ]),
                 ],
                 outro: [`Mit freundlichen Grüßen\n${operator.name}`],
             }),

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import PageHeader from "@/components/shared/page-header";
 import StatusBadge from "@/components/shared/status-badge";
 import { db, schema } from "@/db";
+import { OPEN_INVOICE_STATUSES } from "@/db/schema";
 import { formatDate, formatPrice } from "@/lib/format";
 import { currentStaffCan, requireStaff } from "@/server/auth/staff-session";
 import { thresholdStatus } from "@/server/billing/revenue";
@@ -57,7 +58,17 @@ export default async function Page() {
         };
 
     const drafts = by("draft");
-    const unpaid = by("unpaid");
+
+    // "Offen" is both open statuses: a part-paid invoice still wants money,
+    // and leaving it out would make the figure on the overview smaller than
+    // what is actually outstanding.
+    const unpaid = OPEN_INVOICE_STATUSES.map(by).reduce(
+        (sum, row) => ({
+            count: sum.count + row.count,
+            amount: sum.amount + row.amount,
+        }),
+        { count: 0, amount: 0 },
+    );
 
     const warn = threshold.level !== null;
     const isSmallBusiness = mode.strategy === "kleinunternehmer";

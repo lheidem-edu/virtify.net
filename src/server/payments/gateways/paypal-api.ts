@@ -1,44 +1,80 @@
 import "server-only";
-import { appUrl, paypalConfig, paypalEnabled } from "@/server/payments/config";
+import { fromDecimalString, toDecimalString } from "@/lib/money";
+import {
+    appUrl,
+    gatewayConfig,
+    paypalBase,
+    type PayPalCredentials,
+} from "@/server/payments/settings";
+import { GatewayError } from "./types";
 
 /**
  * PayPal's REST API, called directly. There is no modern server SDK worth the
- * dependency: this is four endpoints and an OAuth token.
+ * dependency: this is a handful of endpoints and an OAuth token.
  *
- * Money is a decimal string on PayPal's side and integer cents on ours, so it
- * crosses the boundary in exactly one place — `amount()` — and nowhere else.
+ * **Money crosses the boundary in exactly two places** — `amount()` on the
+ * way out and `fromDecimalString()` on the way back — and nowhere else.
+ * PayPal speaks decimal strings; we speak integer cents. `Number("19.99") *
+ * 100` is 1998.9999999999998, and `Math.round` only hides that until a value
+ * lands on the other side of a half.
  */
 
 function amount(cents: number) {
-    return (cents / 100).toFixed(2);
+    return toDecimalString(cents);
 }
 
-let token: { value: string; expiresAt: number } | null = null;
+/** PayPal's figure, as whole cents, or null if it is not a figure. */
+export function centsOf(value: string | null | undefined): number | null {
+    return value ? fromDecimalString(value) : null;
+}
 
-async function accessToken() {
-    if (!paypalEnabled()) {
-        throw new Error("PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET are not set");
+type Token = { value: string; expiresAt: number };
+
+/** One token per client id — a key changed in the admin area takes at once. */
+const tokens = new Map<string, Token>();
+
+export async function paypalCredentials(): Promise<{
+    credentials: PayPalCredentials;
+    base: string;
+}> {
+    const config = await gatewayConfig("paypal");
+
+    if (!config.credentials.clientId || !config.credentials.clientSecret) {
+        throw new GatewayError("paypal", "PayPal ist nicht eingerichtet.");
     }
 
-    if (token && token.expiresAt > Date.now() + 60_000) {
-        return token.value;
+    return {
+        credentials: config.credentials,
+        base: paypalBase(config.mode),
+    };
+}
+
+async function accessToken(): Promise<{ token: string; base: string }> {
+    const { credentials, base } = await paypalCredentials();
+    const cached = tokens.get(credentials.clientId);
+
+    if (cached && cached.expiresAt > Date.now() + 60_000) {
+        return { token: cached.value, base };
     }
 
-    const credentials = Buffer.from(
-        `${paypalConfig().clientId}:${paypalConfig().clientSecret}`,
+    const basic = Buffer.from(
+        `${credentials.clientId}:${credentials.clientSecret}`,
     ).toString("base64");
 
-    const response = await fetch(`${paypalConfig().base}/v1/oauth2/token`, {
+    const response = await fetch(`${base}/v1/oauth2/token`, {
         method: "POST",
         headers: {
-            Authorization: `Basic ${credentials}`,
+            Authorization: `Basic ${basic}`,
             "Content-Type": "application/x-www-form-urlencoded",
         },
         body: "grant_type=client_credentials",
     });
 
     if (!response.ok) {
-        throw new Error(`PayPal token request failed: ${response.status}`);
+        throw new GatewayError(
+            "paypal",
+            `PayPal lehnte die Anmeldung ab (${response.status}).`,
+        );
     }
 
     const body = (await response.json()) as {
@@ -46,24 +82,26 @@ async function accessToken() {
         expires_in: number;
     };
 
-    token = {
+    tokens.set(credentials.clientId, {
         value: body.access_token,
         expiresAt: Date.now() + body.expires_in * 1000,
-    };
+    });
 
-    return token.value;
+    return { token: body.access_token, base };
 }
 
 type PayPalError = { name?: string; details?: { issue?: string }[] };
 
-async function call<T>(
+export async function call<T>(
     path: string,
     init: { method: string; body?: unknown; requestId?: string },
-) {
-    const response = await fetch(`${paypalConfig().base}${path}`, {
+): Promise<T> {
+    const { token, base } = await accessToken();
+
+    const response = await fetch(`${base}${path}`, {
         method: init.method,
         headers: {
-            Authorization: `Bearer ${await accessToken()}`,
+            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
             Prefer: "return=representation",
             ...(init.requestId ? { "PayPal-Request-Id": init.requestId } : {}),
@@ -79,24 +117,25 @@ async function call<T>(
 
     if (!response.ok) {
         const issue = body?.details?.[0]?.issue ?? body?.name ?? "unknown";
-        const error = new Error(`PayPal ${path} failed: ${issue}`);
-        // Carried through so callers can recognise the two that are not bugs:
-        // an order captured twice, and an account without reference
-        // transactions.
-        (error as Error & { issue?: string }).issue = issue;
-        throw error;
+
+        // The issue is carried through so callers can recognise the two that
+        // are not bugs: an order captured twice, and an account without
+        // reference transactions.
+        throw new GatewayError(
+            "paypal",
+            `PayPal lehnte ${path} ab: ${issue}`,
+            issue,
+        );
     }
 
     return body as T;
 }
 
-export function paypalIssue(error: unknown) {
-    return error instanceof Error
-        ? ((error as Error & { issue?: string }).issue ?? null)
-        : null;
+export function paypalIssue(error: unknown): string | null {
+    return error instanceof GatewayError ? error.code : null;
 }
 
-type Order = {
+export type PayPalOrder = {
     id: string;
     status: string;
     links?: { rel: string; href: string; method?: string }[];
@@ -105,6 +144,7 @@ type Order = {
             captures?: {
                 id: string;
                 status: string;
+                amount?: { value: string; currency_code: string };
                 seller_receivable_breakdown?: {
                     paypal_fee?: { value: string; currency_code: string };
                 };
@@ -113,14 +153,41 @@ type Order = {
     }[];
 };
 
+export type PayPalCapture = {
+    orderId: string;
+    status: string;
+    captureId: string | null;
+    captureStatus: string | null;
+    amountCents: number | null;
+    feeCents: number | null;
+};
+
+export function readCapture(order: PayPalOrder): PayPalCapture {
+    const capture = order.purchase_units?.[0]?.payments?.captures?.[0];
+
+    return {
+        orderId: order.id,
+        status: order.status,
+        captureId: capture?.id ?? null,
+        captureStatus: capture?.status ?? null,
+        amountCents: centsOf(capture?.amount?.value),
+        feeCents: centsOf(
+            capture?.seller_receivable_breakdown?.paypal_fee?.value,
+        ),
+    };
+}
+
 /** The hosted approval page for a single invoice. */
 export async function createInvoiceOrder(input: {
     invoiceId: string;
     invoiceNumber: string;
     amountCents: number;
+    currency: string;
     attempt: number;
+    returnPath?: string;
+    cancelPath?: string;
 }) {
-    const order = await call<Order>("/v2/checkout/orders", {
+    const order = await call<PayPalOrder>("/v2/checkout/orders", {
         method: "POST",
         requestId: `invoice:${input.invoiceId}:attempt:${input.attempt}`,
         body: {
@@ -134,7 +201,7 @@ export async function createInvoiceOrder(input: {
                     custom_id: input.invoiceId,
                     description: `Rechnung ${input.invoiceNumber}`,
                     amount: {
-                        currency_code: "EUR",
+                        currency_code: input.currency,
                         value: amount(input.amountCents),
                     },
                 },
@@ -145,8 +212,8 @@ export async function createInvoiceOrder(input: {
                         brand_name: "virtify.net",
                         locale: "de-DE",
                         user_action: "PAY_NOW",
-                        return_url: `${appUrl()}/client/invoices/${input.invoiceId}/paid?provider=paypal`,
-                        cancel_url: `${appUrl()}/client/invoices`,
+                        return_url: `${appUrl()}${input.returnPath ?? `/client/invoices/${input.invoiceId}/paid`}?provider=paypal`,
+                        cancel_url: `${appUrl()}${input.cancelPath ?? "/client/invoices"}`,
                     },
                 },
             },
@@ -158,7 +225,7 @@ export async function createInvoiceOrder(input: {
     );
 
     if (!approve) {
-        throw new Error("PayPal returned no approval link");
+        throw new GatewayError("paypal", "PayPal lieferte keine Adresse.");
     }
 
     return { id: order.id, url: approve.href };
@@ -170,39 +237,26 @@ export async function createInvoiceOrder(input: {
  * first capture stands, so the caller treats that as success.
  */
 export async function captureOrder(orderId: string) {
-    const order = await call<Order>(`/v2/checkout/orders/${orderId}/capture`, {
-        method: "POST",
-        requestId: `capture:${orderId}`,
-    });
-
-    return readCapture(order);
+    return readCapture(
+        await call<PayPalOrder>(`/v2/checkout/orders/${orderId}/capture`, {
+            method: "POST",
+            requestId: `capture:${orderId}`,
+        }),
+    );
 }
 
 export async function readOrder(orderId: string) {
     return readCapture(
-        await call<Order>(`/v2/checkout/orders/${orderId}`, {
+        await call<PayPalOrder>(`/v2/checkout/orders/${orderId}`, {
             method: "GET",
         }),
     );
 }
 
-function readCapture(order: Order) {
-    const capture = order.purchase_units?.[0]?.payments?.captures?.[0];
-    const fee = capture?.seller_receivable_breakdown?.paypal_fee?.value;
-
-    return {
-        orderId: order.id,
-        status: order.status,
-        captureId: capture?.id ?? null,
-        captureStatus: capture?.status ?? null,
-        feeCents: fee ? Math.round(Number(fee) * 100) : null,
-    };
-}
-
 /**
- * Storing a PayPal wallet for later merchant-initiated charges. Gated by
- * config: the account has to be approved for reference transactions first,
- * and without that approval every charge fails with
+ * Storing a PayPal wallet for later merchant-initiated charges. Gated by the
+ * gateway setting: the account has to be approved for reference transactions
+ * first, and without that approval every charge fails with
  * MERCHANT_NOT_ENABLED_FOR_REFERENCE_TRANSACTION.
  */
 export async function createVaultSetupToken(input: { customerId: string }) {
@@ -234,7 +288,7 @@ export async function createVaultSetupToken(input: { customerId: string }) {
     const approve = setup.links?.find((link) => link.rel === "approve");
 
     if (!approve) {
-        throw new Error("PayPal returned no vault approval link");
+        throw new GatewayError("paypal", "PayPal lieferte keine Adresse.");
     }
 
     return { id: setup.id, url: approve.href };
@@ -273,9 +327,10 @@ export async function chargeVaultToken(input: {
     invoiceId: string;
     invoiceNumber: string;
     amountCents: number;
+    currency: string;
     token: string;
 }) {
-    const order = await call<Order>("/v2/checkout/orders", {
+    const order = await call<PayPalOrder>("/v2/checkout/orders", {
         method: "POST",
         requestId: `collect:${input.invoiceId}`,
         body: {
@@ -286,7 +341,7 @@ export async function chargeVaultToken(input: {
                     custom_id: input.invoiceId,
                     description: `Rechnung ${input.invoiceNumber}`,
                     amount: {
-                        currency_code: "EUR",
+                        currency_code: input.currency,
                         value: amount(input.amountCents),
                     },
                 },
@@ -307,6 +362,35 @@ export async function chargeVaultToken(input: {
     return readCapture(order);
 }
 
+/** Sends part or all of a capture back. */
+export async function refundCapture(input: {
+    captureId: string;
+    amountCents: number;
+    currency: string;
+    attempt: number;
+}) {
+    const refund = await call<{
+        id: string;
+        status: string;
+        amount?: { value: string; currency_code: string };
+    }>(`/v2/payments/captures/${input.captureId}/refund`, {
+        method: "POST",
+        requestId: `refund:${input.captureId}:${input.attempt}`,
+        body: {
+            amount: {
+                currency_code: input.currency,
+                value: amount(input.amountCents),
+            },
+        },
+    });
+
+    return {
+        id: refund.id,
+        status: refund.status,
+        amountCents: centsOf(refund.amount?.value) ?? input.amountCents,
+    };
+}
+
 /**
  * PayPal has no signing secret; the webhook is authenticated by handing the
  * headers and the untouched body back to PayPal. The body must be the exact
@@ -316,8 +400,10 @@ export async function chargeVaultToken(input: {
 export async function verifyWebhook(input: {
     headers: Headers;
     rawBody: string;
-}) {
-    if (!paypalConfig().webhookId) {
+}): Promise<boolean> {
+    const { credentials } = await paypalCredentials();
+
+    if (!credentials.webhookId) {
         return false;
     }
 
@@ -333,7 +419,7 @@ export async function verifyWebhook(input: {
                 transmission_id: header("paypal-transmission-id"),
                 transmission_sig: header("paypal-transmission-sig"),
                 transmission_time: header("paypal-transmission-time"),
-                webhook_id: paypalConfig().webhookId,
+                webhook_id: credentials.webhookId,
                 webhook_event: JSON.parse(input.rawBody),
             },
         },

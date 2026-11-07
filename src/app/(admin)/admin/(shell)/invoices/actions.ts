@@ -1,9 +1,11 @@
 "use server";
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
+import { isOpenInvoice } from "@/db/schema";
+import { subtract } from "@/lib/money";
 import type { Actor } from "@/server/audit";
 import { requirePermission } from "@/server/auth/staff-session";
 import { storeFinalizedPdf } from "@/server/billing/invoices/pdf";
@@ -14,15 +16,15 @@ import {
     finalizeInvoice,
     InvoiceError,
     markDocumentSent,
-    markInvoicePaid as markPaid,
     unmarkInvoicePaid as unmarkPaid,
     updateInvoiceDraft,
 } from "@/server/billing/invoices/service";
-import { notifyThresholds } from "@/server/billing/revenue-notify";
 import { parseDate, readLineItems } from "@/server/documents/line-items";
 import { loadBuyer } from "@/server/documents/repository";
 import { sendCreditNoteMail, sendInvoiceMail } from "@/server/documents/send";
+import { applyPayment } from "@/server/payments/apply";
 import { collectIssuedInvoice } from "@/server/payments/collect";
+import { emitInvoicePaid } from "@/server/payments/settle";
 
 /**
  * The admin area's invoice actions. Thin on purpose: every one of them checks
@@ -313,13 +315,18 @@ export async function issueInvoice(
     if (collects) {
         try {
             const result = await collectIssuedInvoice(invoiceId);
-            // A collection still in flight is neither: PayPal will say by
-            // webhook whether it came through, and saying "failed" here would
-            // send the operator after money that is on its way.
-            collected =
-                !result.attempted || "pending" in result
-                    ? null
-                    : Boolean(result.succeeded);
+            // A collection still in flight is neither: the gateway will say
+            // by webhook whether it came through, and "failed" here would
+            // send the operator after money that is on its way. So is one
+            // waiting for the customer's SCA confirmation — they have been
+            // mailed a link and the invoice stays open until they use it.
+            collected = !result.attempted
+                ? null
+                : result.status === "succeeded"
+                  ? true
+                  : result.status === "failed"
+                    ? false
+                    : null;
         } catch (error) {
             console.error(
                 "[admin] invoice issued but collecting failed:",
@@ -359,36 +366,120 @@ export async function issueInvoice(
     return { status: "issued" };
 }
 
+/**
+ * "Bezahlt" without typing an amount: books the whole outstanding balance as
+ * a transfer.
+ *
+ * It goes through `applyPayment` rather than setting the status directly, and
+ * that is the point. A status set by hand leaves no transaction behind, so
+ * the invoice would read "bezahlt" while the payments list showed nothing and
+ * `paid_cents` stayed at zero — and a webhook arriving afterwards would then
+ * settle it a second time. One path, or none.
+ */
 export async function markInvoicePaid(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
     const actor = await actorFor("billing.write");
     const invoiceId = String(data.get("invoiceId") ?? "");
+    const token = String(data.get("token") ?? "").trim();
 
-    try {
-        await markPaid(db, invoiceId, actor);
-    } catch (error) {
-        return failure(error, "Die Zahlung konnte nicht vermerkt werden.");
+    const [invoice] = await db
+        .select({
+            id: schema.invoice.id,
+            customerId: schema.invoice.customerId,
+            status: schema.invoice.status,
+            grossCents: schema.invoice.grossCents,
+            creditedCents: schema.invoice.creditedCents,
+            paidCents: schema.invoice.paidCents,
+        })
+        .from(schema.invoice)
+        .where(eq(schema.invoice.id, invoiceId));
+
+    if (!invoice || !isOpenInvoice(invoice.status)) {
+        return {
+            status: "error",
+            message: "Nur offene Rechnungen können als bezahlt verbucht werden.",
+        };
     }
 
-    // Revenue is counted from paid invoices, so this is the other moment the
-    // § 19 figure can move.
-    await notifyThresholds(db);
+    const outstanding = subtract(
+        Math.max(subtract(invoice.grossCents ?? 0, invoice.creditedCents), 0),
+        invoice.paidCents,
+    );
+
+    if (outstanding <= 0) {
+        return {
+            status: "error",
+            message: "Auf diese Rechnung ist nichts mehr offen.",
+        };
+    }
+
+    const outcome = await applyPayment(db, {
+        // The token is minted when the page renders, so a double-clicked
+        // button posts the same reference twice and books once.
+        ref: `banktransfer:${token || invoiceId}`,
+        gateway: "banktransfer",
+        invoiceId: invoice.id,
+        customerId: invoice.customerId,
+        amountCents: outstanding,
+        note: "Von Hand als bezahlt verbucht",
+        actor,
+    });
+
+    if (!outcome.changed) {
+        return {
+            status: "error",
+            message: outcome.known
+                ? "Dieser Zahlungseingang ist bereits verbucht."
+                : "Die Zahlung konnte nicht vermerkt werden.",
+        };
+    }
+
+    await emitInvoicePaid(outcome);
 
     revalidatePath("/admin/invoices");
     revalidatePath(`/admin/invoices/${invoiceId}`);
+    revalidatePath("/admin/payments");
     revalidatePath("/client/invoices");
 
     return { status: "saved" };
 }
 
+/**
+ * Taking a booking back.
+ *
+ * Only where nothing actually moved — an invoice somebody marked paid by
+ * mistake and that has no settled transaction against it. Where money did
+ * arrive, the way back is a refund and, if the document is wrong, a
+ * Rechnungskorrektur. Flipping the status would leave the payment rows
+ * standing and the books disagreeing with the invoice.
+ */
 export async function unmarkInvoicePaid(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
     const actor = await actorFor("billing.write");
     const invoiceId = String(data.get("invoiceId") ?? "");
+
+    const settled = await db
+        .select({ id: schema.payment.id })
+        .from(schema.payment)
+        .where(
+            and(
+                eq(schema.payment.invoiceId, invoiceId),
+                eq(schema.payment.kind, "charge"),
+                inArray(schema.payment.status, ["succeeded", "refunded"]),
+            ),
+        );
+
+    if (settled.length > 0) {
+        return {
+            status: "error",
+            message:
+                "Zu dieser Rechnung ist Geld verbucht. Nimm es über „Erstatten“ zurück, statt den Status zu ändern.",
+        };
+    }
 
     try {
         await unmarkPaid(db, invoiceId, actor);
@@ -496,7 +587,7 @@ export async function resendInvoiceMail(
         // payable document the customer no longer owes back in their inbox.
         if (
             !row?.number ||
-            (row.status !== "unpaid" && row.status !== "paid")
+            (!isOpenInvoice(row.status) && row.status !== "paid")
         ) {
             throw new InvoiceError(
                 "not-finalized",

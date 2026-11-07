@@ -1,20 +1,25 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { loadInvoice } from "@/server/billing/invoices/repository";
+import { db } from "@/db";
 import { getCurrentCustomer } from "@/server/customers/current";
-import { closeOpenAttempts } from "@/server/payments/collect";
-import { paypalEnabled, stripeEnabled } from "@/server/payments/config";
-import { createInvoiceOrder } from "@/server/payments/paypal";
-import { nextAttempt, recordAttempt } from "@/server/payments/settle";
-import { createInvoiceCheckout } from "@/server/payments/stripe";
+import { payFromCredit } from "@/server/payments/apply";
+import { startPayment } from "@/server/payments/collect";
+import { isGatewayId } from "@/server/payments/gateways";
+import { emitInvoicePaid } from "@/server/payments/settle";
 
 export type PayState = { status: "idle" | "error"; message?: string };
 
 /**
- * Hands one invoice to the provider's hosted page. The attempt is written
- * before the redirect on purpose: a checkout session or order nobody recorded
- * is money arriving at the webhook with nothing to match it against.
+ * Hands one invoice to a gateway.
+ *
+ * Everything that matters happens in `startPayment`: the invoice is loaded
+ * through the customer-scoped loader, so a foreign one is simply not there;
+ * what is still owed is read from the document rather than recomputed; the
+ * attempt is written down before the customer is sent anywhere; and any
+ * checkout this invoice has left open is closed first, so an old tab cannot
+ * become a second way to pay the same invoice.
  */
 export async function startInvoicePayment(
     _previous: PayState,
@@ -27,88 +32,73 @@ export async function startInvoicePayment(
     const invoiceId = read("invoiceId");
     const provider = read("provider");
 
-    if (provider !== "stripe" && provider !== "paypal") {
+    if (!isGatewayId(provider)) {
         return { status: "error", message: "Unbekannte Zahlungsart." };
     }
 
-    if (provider === "stripe" ? !stripeEnabled() : !paypalEnabled()) {
-        return {
-            status: "error",
-            message: "Diese Zahlungsart steht gerade nicht zur Verfügung.",
-        };
+    const started = await startPayment({
+        invoiceId,
+        customerId: customer.id,
+        gatewayId: provider,
+    });
+
+    if (!started.ok) {
+        return { status: "error", message: started.reason };
     }
 
-    // The loader constrains the query to this account, so a foreign invoice
-    // comes back as null rather than as a refusal that confirms it exists.
-    const loaded = await loadInvoice(invoiceId, customer.id, false);
-
-    if (!loaded) {
-        return { status: "error", message: "Diese Rechnung gibt es nicht." };
+    if (started.handoff.kind === "instructions") {
+        // There is nowhere to send anybody: the details are on the invoice
+        // page, which is where this form lives.
+        return { status: "idle" };
     }
 
-    const { invoice, buyer, totals } = loaded;
+    // redirect() works by throwing, so it must sit outside anything that
+    // would catch it.
+    redirect(started.handoff.url);
+}
 
-    // Drafts, corrected and already settled invoices are never payable — the
-    // same rule the list uses to decide whether to offer the button at all.
-    if (invoice.status !== "unpaid" || invoice.paidAt) {
-        return {
-            status: "error",
-            message: "Diese Rechnung kann nicht bezahlt werden.",
-        };
+/**
+ * Pays an open invoice from the balance.
+ *
+ * It is a payment like any other — same table, same settlement, same audit —
+ * so an invoice paid half from a card and half from the balance still adds up
+ * in one place. The balance is read under a lock on the account, so two tabs
+ * cannot spend the same euro twice.
+ */
+export async function payInvoiceFromCredit(
+    _previous: PayState,
+    data: FormData,
+): Promise<PayState> {
+    const { customer } = await getCurrentCustomer();
+
+    const invoiceId = String(data.get("invoiceId") ?? "").trim();
+    const amountCents = Number(data.get("amountCents") ?? 0);
+
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+        return { status: "error", message: "Kein gültiger Betrag." };
     }
 
-    if (totals.grossCents <= 0) {
-        return {
-            status: "error",
-            message: "Diese Rechnung weist keinen zu zahlenden Betrag aus.",
-        };
-    }
+    const outcome = await payFromCredit(db, {
+        invoiceId,
+        customerId: customer.id,
+        amountCents,
+        actor: { type: "customer", id: customer.id },
+    });
 
-    let url: string;
-
-    try {
-        // An abandoned checkout stays payable at the provider until it
-        // expires, so it is closed before a second one is opened.
-        await closeOpenAttempts(invoice.id);
-
-        const attempt = await nextAttempt(invoice.id);
-
-        const checkout =
-            provider === "stripe"
-                ? await createInvoiceCheckout({
-                      invoiceId: invoice.id,
-                      invoiceNumber: invoice.number ?? invoice.id,
-                      amountCents: totals.grossCents,
-                      customerEmail: buyer.email,
-                      stripeCustomerId: customer.stripeCustomerId ?? undefined,
-                      attempt,
-                  })
-                : await createInvoiceOrder({
-                      invoiceId: invoice.id,
-                      invoiceNumber: invoice.number ?? invoice.id,
-                      amountCents: totals.grossCents,
-                      attempt,
-                  });
-
-        await recordAttempt({
-            invoiceId: invoice.id,
-            customerId: customer.id,
-            provider,
-            providerRef: checkout.id,
-            amountCents: totals.grossCents,
-        });
-
-        url = checkout.url;
-    } catch (error) {
-        console.error("[payment] starting invoice payment failed:", error);
-
+    if (!outcome.changed) {
         return {
             status: "error",
             message:
-                "Die Zahlung konnte nicht gestartet werden. Bitte versuche es erneut.",
+                outcome.reason ??
+                "Diese Rechnung kann nicht aus dem Guthaben bezahlt werden.",
         };
     }
 
-    // redirect() works by throwing, so it must sit outside the try above.
-    redirect(url);
+    await emitInvoicePaid(outcome);
+
+    revalidatePath("/client/invoices");
+    revalidatePath(`/client/invoices/${invoiceId}`);
+    revalidatePath("/client/credit");
+
+    return { status: "idle" };
 }

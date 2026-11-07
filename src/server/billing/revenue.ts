@@ -2,7 +2,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
 import { berlinYear } from "@/lib/berlin-date";
-import { subtract } from "@/lib/money";
+import { add, multiply, subtract } from "@/lib/money";
 import type { RevenueBasis, Settings } from "@/server/settings";
 
 /**
@@ -70,10 +70,11 @@ function creditNoteBasis(basis: RevenueBasis) {
 /**
  * Net revenue of one calendar year.
  *
- * Only paid invoices count — § 19 measures what was taken in, not what was
- * billed — and only credit notes against invoices that were paid are
- * subtracted, because a correction to an invoice nobody paid takes back
- * revenue that was never counted.
+ * Only money that came in counts — § 19 measures what was taken in, not what
+ * was billed. A fully paid invoice counts in full, a partially paid one for
+ * the share that arrived, and only credit notes against invoices that were
+ * paid are subtracted, because a correction to an invoice nobody paid takes
+ * back revenue that was never counted.
  */
 export async function netRevenueForYear(
     executor: Executor,
@@ -91,6 +92,46 @@ export async function netRevenueForYear(
                 and ${invoiceBasis(basis)} = ${year}`,
         );
 
+    /**
+     * A partially paid invoice counts for the part that arrived.
+     *
+     * Counting nothing until it is settled in full would be the wrong
+     * direction for a *monitor*: the § 19 limit could be crossed by money
+     * that is already in the account, with no warning until the last cent of
+     * some invoice turned up. The share is computed here, in integer cents
+     * through src/lib/money.ts, rather than in SQL — rule 2 says arithmetic
+     * on money never happens in the query.
+     *
+     * Under § 19 the gross and the net are the same figure, so the ratio is
+     * an identity today; it is written out because `regular-vat` is
+     * implemented and one day it will not be.
+     */
+    const partials = await executor
+        .select({
+            netCents: schema.invoice.netCents,
+            grossCents: schema.invoice.grossCents,
+            paidCents: schema.invoice.paidCents,
+        })
+        .from(schema.invoice)
+        .where(
+            sql`${schema.invoice.status} = 'partial'
+                and ${invoiceBasis(basis)} = ${year}`,
+        );
+
+    const received = partials.reduce((sum, row) => {
+        const gross = row.grossCents ?? 0;
+
+        if (gross <= 0) {
+            return sum;
+        }
+
+        const net = row.netCents ?? 0;
+
+        // Capped at the line's own net: a partial invoice cannot contribute
+        // more revenue than the whole one would.
+        return add(sum, Math.min(multiply(net, row.paidCents / gross), net));
+    }, 0);
+
     const [credited] = await executor
         .select({
             cents: sql<number>`coalesce(sum(${schema.creditNote.netCents}), 0)::int`,
@@ -105,7 +146,7 @@ export async function netRevenueForYear(
                 and ${creditNoteBasis(basis)} = ${year}`,
         );
 
-    return subtract(earned?.cents ?? 0, credited?.cents ?? 0);
+    return subtract(add(earned?.cents ?? 0, received), credited?.cents ?? 0);
 }
 
 export type ThresholdMetric = {

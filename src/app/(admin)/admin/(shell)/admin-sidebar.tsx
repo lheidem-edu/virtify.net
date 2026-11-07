@@ -1,6 +1,7 @@
 "use client";
 
 import {
+    CreditCard,
     FileSignature,
     FileText,
     KeyRound,
@@ -57,6 +58,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     key: KeyRound,
     "shield-check": ShieldCheck,
     "shopping-cart": ShoppingCart,
+    "credit-card": CreditCard,
 };
 
 function NavGroup({

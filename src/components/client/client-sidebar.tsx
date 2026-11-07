@@ -15,6 +15,7 @@ import {
     User,
     UserCog,
     Users,
+    Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -54,6 +55,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     users: Users,
     key: KeyRound,
     "shopping-cart": ShoppingCart,
+    wallet: Wallet,
 };
 
 function NavGroup({

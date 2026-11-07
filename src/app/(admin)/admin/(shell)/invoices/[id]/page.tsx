@@ -12,6 +12,9 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { db, schema } from "@/db";
+import { isOpenInvoice } from "@/db/schema";
+import { berlinDay } from "@/lib/berlin-date";
+import { subtract } from "@/lib/money";
 import {
     formatDate,
     formatDateRange,
@@ -19,6 +22,9 @@ import {
     formatQuantity,
     INVOICE_STATUS_LABEL,
     INVOICE_STATUS_TONE,
+    PAYMENT_PROVIDER_LABEL,
+    PAYMENT_STATUS_LABEL,
+    PAYMENT_STATUS_TONE,
 } from "@/lib/format";
 import { requirePermission } from "@/server/auth/staff-session";
 import { showsTax } from "@/server/billing/invoices/pdf";
@@ -41,29 +47,12 @@ import {
     ResendMailAction,
     UnmarkPaidForm,
 } from "../invoice-actions";
+import { manualPaymentToken } from "../../payments/actions";
+import {
+    ManualPaymentForm,
+    RefundAction,
+} from "../../payments/payment-forms";
 import InvoiceEditForm from "./invoice-edit-form";
-
-/**
- * Payment vocabulary lives here rather than in src/lib/format.ts because it is
- * only ever read by the operator — the customer sees the invoice's own status.
- */
-const PROVIDER_LABEL = { stripe: "Stripe", paypal: "PayPal" } as const;
-
-const PAYMENT_STATUS_LABEL = {
-    pending: "Offen",
-    processing: "In Abwicklung",
-    succeeded: "Bezahlt",
-    failed: "Fehlgeschlagen",
-    refunded: "Erstattet",
-} as const;
-
-const PAYMENT_STATUS_TONE = {
-    pending: "muted",
-    processing: "warning",
-    succeeded: "positive",
-    failed: "warning",
-    refunded: "neutral",
-} as const;
 
 const LINK =
     "underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground";
@@ -377,13 +366,19 @@ export default async function Page({
                                     </TableHead>
                                     <TableHead>Referenz</TableHead>
                                     <TableHead>Status</TableHead>
+                                    <TableHead />
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {payments.map((entry) => (
                                     <TableRow key={entry.id}>
                                         <TableCell>
-                                            {PROVIDER_LABEL[entry.provider]}
+                                            {PAYMENT_PROVIDER_LABEL[entry.provider]}
+                                            {entry.kind === "refund" ? (
+                                                <span className="block text-muted-foreground text-xs">
+                                                    Erstattung
+                                                </span>
+                                            ) : null}
                                         </TableCell>
                                         <TableCell>
                                             {entry.methodLabel ? (
@@ -438,11 +433,48 @@ export default async function Page({
                                                 </span>
                                             ) : null}
                                         </TableCell>
+                                        <TableCell className="text-right">
+                                            {entry.kind === "charge" &&
+                                            entry.status === "succeeded" ? (
+                                                <RefundAction
+                                                    paymentId={entry.id}
+                                                    amountCents={
+                                                        entry.amountCents
+                                                    }
+                                                    refundableCents={subtract(
+                                                        entry.amountCents,
+                                                        entry.refundedCents,
+                                                    )}
+                                                    canCreditNote
+                                                />
+                                            ) : null}
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
                         </Table>
                     </div>
+                </div>
+            ) : null}
+
+            {isOpenInvoice(invoice.status) ? (
+                <div className="border-b px-6 py-10 md:px-10 md:py-12">
+                    <h2 className="mb-2 text-sm font-medium tracking-tight">
+                        Zahlungseingang erfassen
+                    </h2>
+                    <p className="mb-6 max-w-2xl text-muted-foreground text-sm leading-7">
+                        Für Geld, das außerhalb eines Zahlungsdienstleisters
+                        angekommen ist — eine Überweisung auf dem Kontoauszug
+                        etwa. Es wird auf demselben Weg verbucht wie eine
+                        Kartenzahlung, damit eine Rechnung nicht zweimal als
+                        bezahlt gelten kann.
+                    </p>
+                    <ManualPaymentForm
+                        invoices={[]}
+                        fixedInvoiceId={invoice.id}
+                        token={await manualPaymentToken()}
+                        today={berlinDay(new Date())}
+                    />
                 </div>
             ) : null}
 
@@ -474,14 +506,17 @@ export default async function Page({
                         </>
                     ) : (
                         <>
-                            {invoice.status === "unpaid" ? (
-                                <MarkPaidForm invoiceId={invoice.id} />
+                            {isOpenInvoice(invoice.status) ? (
+                                <MarkPaidForm
+                                    invoiceId={invoice.id}
+                                    token={await manualPaymentToken()}
+                                />
                             ) : null}
                             {invoice.status === "paid" ? (
                                 <UnmarkPaidForm invoiceId={invoice.id} />
                             ) : null}
                             <DuplicateInvoiceAction invoiceId={invoice.id} />
-                            {invoice.status === "unpaid" ||
+                            {isOpenInvoice(invoice.status) ||
                             invoice.status === "paid" ? (
                                 <ResendMailAction
                                     invoiceId={invoice.id}

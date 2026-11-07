@@ -121,6 +121,7 @@ export async function listInvoices(
                 netCents: schema.invoice.netCents,
                 taxCents: schema.invoice.taxCents,
                 creditedCents: schema.invoice.creditedCents,
+                paidCents: schema.invoice.paidCents,
                 amount: invoiceAmount,
                 email: ownerEmail,
                 /** Non-null when the contract behind the invoice carries a stored

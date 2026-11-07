@@ -10,6 +10,7 @@ import { priceCart } from "@/server/cart/view";
 import { customerForUser } from "@/server/customers/repository";
 import { currentLegalVersion } from "@/server/legal/repository";
 import { loadSettings } from "@/server/settings";
+import { enabledGateways } from "@/server/payments/gateways";
 import CheckoutForm from "./checkout-form";
 import CheckoutIdentity from "./identity";
 
@@ -54,6 +55,25 @@ export default async function Page() {
     const session = await getSession();
     const account = session ? await customerForUser(db, session.user.id) : null;
     const terms = await currentLegalVersion(db, "terms");
+
+    /**
+     * Which ways of paying are offered, and in which order. Bank transfer is
+     * last: it is the one that leaves an invoice open, and § 312j BGB wants
+     * the buyer to be able to pay without a detour, not to be steered into
+     * the slowest option.
+     */
+    const PAYMENT_HINTS: Record<string, string> = {
+        stripe: "Sie werden zur gesicherten Zahlungsseite weitergeleitet und zahlen direkt.",
+        paypal: "Sie werden zu PayPal weitergeleitet und zahlen direkt.",
+        banktransfer:
+            "Sie erhalten eine Rechnung mit Bankverbindung und GiroCode und überweisen innerhalb der Zahlungsfrist.",
+    };
+
+    const paymentOptions = (await enabledGateways()).map((one) => ({
+        id: one.id,
+        label: one.label,
+        hint: PAYMENT_HINTS[one.id] ?? "",
+    }));
 
     return (
         <>
@@ -156,6 +176,7 @@ export default async function Page() {
                                     phone: account.customer.phone,
                                 }}
                                 termsLabel={terms.label}
+                                gateways={paymentOptions}
                             />
                         ) : (
                             <CheckoutIdentity />

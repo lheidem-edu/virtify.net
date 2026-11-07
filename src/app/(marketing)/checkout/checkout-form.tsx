@@ -30,6 +30,12 @@ export type CheckoutFormProps = {
     };
     /** The fassung of the AGB that is being accepted, in words. */
     termsLabel: string;
+    /**
+     * The ways of paying that are switched on, in the order they are offered.
+     * Decided on the server — the gateway configuration is server-only and
+     * must not reach the bundle.
+     */
+    gateways: { id: string; label: string; hint: string }[];
 };
 
 const INITIAL: CheckoutState = { status: "idle" };
@@ -37,6 +43,7 @@ const INITIAL: CheckoutState = { status: "idle" };
 export default function CheckoutForm({
     customer,
     termsLabel,
+    gateways,
 }: CheckoutFormProps) {
     const [state, action, pending] = useActionState(submitOrder, INITIAL);
     const [kind, setKind] = useState(customer.kind);
@@ -134,22 +141,26 @@ export default function CheckoutForm({
                     Zahlungsart
                 </legend>
 
-                <label className="flex items-start gap-3 text-sm">
-                    <input
-                        type="radio"
-                        name="paymentOption"
-                        value="bank_transfer"
-                        defaultChecked
-                        className="mt-1 size-4"
-                    />
-                    <span>
-                        Überweisung
-                        <span className="block text-xs text-zinc-500">
-                            Sie erhalten eine Rechnung mit Bankverbindung und
-                            GiroCode. Kartenzahlung und PayPal folgen.
+                {gateways.map((option, index) => (
+                    <label
+                        key={option.id}
+                        className="flex items-start gap-3 text-sm"
+                    >
+                        <input
+                            type="radio"
+                            name="paymentOption"
+                            value={option.id}
+                            defaultChecked={index === 0}
+                            className="mt-1 size-4"
+                        />
+                        <span>
+                            {option.label}
+                            <span className="block text-xs text-zinc-500">
+                                {option.hint}
+                            </span>
                         </span>
-                    </span>
-                </label>
+                    </label>
+                ))}
 
                 <label className="flex items-start gap-3 text-sm">
                     <input
@@ -160,8 +171,10 @@ export default function CheckoutForm({
                     <span>
                         Wiederkehrende Beträge automatisch einziehen
                         <span className="block text-xs text-zinc-500">
-                            Gilt erst, sobald ein Zahlungsmittel hinterlegt ist.
-                            Die erste Rechnung wird in jedem Fall überwiesen.
+                            Gilt, sobald ein Zahlungsmittel hinterlegt ist —
+                            das richten Sie nach der Bestellung im
+                            Kundenbereich ein. Die erste Rechnung bezahlen Sie
+                            so, wie Sie es oben gewählt haben.
                         </span>
                     </span>
                 </label>

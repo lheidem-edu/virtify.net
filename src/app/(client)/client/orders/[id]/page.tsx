@@ -54,8 +54,11 @@ export default async function Page({
                         {formatPrice(order.grossCents)}
                     </span>
                     {loaded.invoice ? (
+                        // To the invoice itself rather than the list: that is
+                        // where the amount still open, the bank details and
+                        // the GiroCode are.
                         <Link
-                            href="/client/invoices"
+                            href={`/client/invoices/${loaded.invoice.id}`}
                             className="text-sm underline underline-offset-4"
                         >
                             Rechnung {loaded.invoice.number}

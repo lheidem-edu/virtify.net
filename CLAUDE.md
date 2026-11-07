@@ -23,7 +23,9 @@ The build is planned in phases: see `docs/BUILD_PLAN.md`, state in `docs/PROGRES
 - **OpenAPI 3.1** generated from zod (`@asteasolutions/zod-to-openapi`), rendered with **Scalar**
   at `/api/docs`
 - **IDs: ULID**, prefixed (`invoice_01K…`) — see hard rule 1
-- Payments: **Stripe** + **PayPal** · PDF: `@react-pdf/renderer` · GiroCode: `qrcode-generator`
+- Payments: **Stripe** + **PayPal** + bank transfer, all behind one `PaymentGateway` interface
+  in `src/server/payments/gateways`; credentials encrypted in `payment_gateway_setting`, with
+  the environment as the fallback · PDF: `@react-pdf/renderer` · GiroCode: `qrcode-generator`
   (zero dependencies; writing a QR encoder by hand means Reed-Solomon and mask selection with
   nothing to validate against, on a code that asks for money) · Mail: nodemailer/SMTP today,
   Microsoft Graph from Phase 7
@@ -59,6 +61,7 @@ src/
   server/                # domain logic, NO React here
     customers/  auth/  api/  api-keys/  audit/  documents/  payments/
     catalog/  billing/  tax/  storage/  provisioning/  tickets/  jobs/  openapi/
+    payments/gateways/   # stripe, paypal, banktransfer — one interface, three bodies
   cart/  orders/           # the cart, and the one transaction that makes it an order
   lib/                   # money, crypto, ulid, env, utils — framework-free
   components/            # shadcn (components/ui, not linted) + shared app UI
@@ -75,6 +78,15 @@ total an invoice, a credit note or an offer shows. The rendered PDF of a finaliz
 written once and kept in `src/server/storage`; it is never re-rendered on request, so a change
 to the template cannot restyle a document the customer already holds.
 
+One settlement, one function: `applyPayment()` in `src/server/payments/apply.ts` is the only
+place money meets a document. A Stripe webhook, a PayPal capture, a customer's return from a
+hosted page, a transfer booked by hand and credit being spent all end there, and none of them
+recomputes what is owed — `invoice.gross_cents` and `credited_cents` say that, and
+`src/server/payments/settlement.ts` is the pure arithmetic that turns them plus "what arrived"
+into a status. Two settlement paths is how an invoice gets paid twice by mechanisms that do not
+know about each other, which is also why **bank transfer is a gateway** rather than a status
+somebody sets.
+
 Rule: pages, server actions and API route handlers are thin. Business logic lives in
 `src/server/**` as plain, testable TypeScript that takes a `db`/transaction as a parameter.
 Server actions and `/api/v1` routes call the **same** service functions.
@@ -88,17 +100,28 @@ Server actions and `/api/v1` routes call the **same** service functions.
    the ULID stays the technical ID.
 2. **Money is integer minor units (cents)**, stored as `integer`/`bigint`. Never floats. All
    arithmetic, rounding (half-up per line) and formatting goes through `src/lib/money.ts`. Every
-   amount has a `currency` next to it or on its parent.
+   amount has a `currency` next to it or on its parent. A figure that arrives from somebody
+   else's API as a decimal string — PayPal sends `"19.99"` — is parsed by `fromDecimalString()`
+   and never by `Number(x) * 100`, which for that very value is 1998.9999999999998.
 3. **Finalized invoices are immutable.** Corrections only via a Rechnungskorrektur (credit
    note), which has its own gapless range and copies the invoice's tax snapshot rather than
    re-determining it. Invoice numbers are gapless and sequential, assigned at finalization
    inside a transaction (`document_counter` + `SELECT … FOR UPDATE`). Drafts have no number.
-   Enforced in `src/server/billing/invoices` **and** by Postgres triggers (migration `0017`):
-   only `status`, `paid_at`, `cancelled_at`, `sent_at`, `credited_cents`, `updated_at` and the
-   PDF reference — once, from nothing to something — may change afterwards, a finalized invoice
-   cannot be deleted, and its positions cannot be written at all. A column added later is
-   immutable by default, because the trigger compares the whole row minus that list.
-4. **All multi-step writes run in a DB transaction.** The checkout is the longest of them:
+   Enforced in `src/server/billing/invoices` **and** by Postgres triggers (migrations `0017`,
+   `0018`, `0020`): only `status`, `paid_at`, `cancelled_at`, `sent_at`, `credited_cents`,
+   `paid_cents`, `updated_at` and the PDF reference — once, from nothing to something — may
+   change afterwards, a finalized invoice cannot be deleted, cannot go back to `draft`, and its
+   positions cannot be written at all. A column added later is immutable by default, because
+   the trigger compares the whole row minus that list — so letting a new one through means
+   naming it in a migration of its own, as `paid_cents` is.
+   An invoice's status is `draft → unpaid → (partial) → paid`, plus `cancelled` when a
+   correction takes all of it back. **`partial` is an open invoice**: every check that means
+   "this still wants money" asks `isOpenInvoice()` / `OPEN_INVOICE_STATUSES`, never a literal.
+4. **All multi-step writes run in a DB transaction.** Settling a payment is the shortest one
+   worth reading: `applyPayment` takes the payment row `FOR UPDATE` on the provider's unique
+   reference *first*, then the invoice, then sums the movements from the rows rather than
+   incrementing a column — so a webhook delivered twice, a retried capture and a double-clicked
+   button all queue behind the first and find it done. The checkout is the longest of them:
    `placeOrder()` in `src/server/orders/service.ts` writes the order, one subscription per
    billing rhythm, a service per provisionable unit and the finalized first invoice together or
    not at all. It reprices every line from the catalog *inside* that transaction — nothing the
@@ -126,7 +149,14 @@ Server actions and `/api/v1` routes call the **same** service functions.
    left alone, so a shared browser cannot carry one customer's basket into another's.
 6. **Secrets at rest are encrypted** (AES-256-GCM, key from `APP_ENCRYPTION_KEY`): server API
    tokens, gateway credentials, Graph secrets, service passwords. Use `src/lib/crypto.ts`.
-7. **Webhooks and jobs are idempotent.** Store provider event IDs and dedupe.
+7. **Webhooks and jobs are idempotent.** The event id is *claimed*, not merely looked up:
+   `claimEvent()` inserts, or takes the row back if nobody has finished it, and `handled_at` is
+   set only by a handler that ran to the end — otherwise a handler that failed halfway would
+   make the provider's retry a silent 200. The dedupe row keeps the common case off the
+   database; `applyPayment`'s row lock is what actually prevents double settlement.
+   A webhook route is unauthenticated by nature, so **its signature check is its
+   authorization**, and nothing in a payload may name the invoice it settles: every path finds
+   an attempt we recorded under a reference we generated.
 8. **Audit log** every state change on customers, subscriptions, services, invoices, payments,
    tickets and settings (actor, action, entity, before/after, IP).
 9. **Timestamps** are `timestamptz` in UTC; display in `Europe/Berlin`.

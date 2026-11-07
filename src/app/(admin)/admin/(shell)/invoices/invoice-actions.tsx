@@ -49,8 +49,18 @@ export function IssueForm({ invoiceId }: { invoiceId: string }) {
     );
 }
 
-/** Booking a payment is reversible, so it needs no confirmation. */
-export function MarkPaidForm({ invoiceId }: { invoiceId: string }) {
+/**
+ * Books the whole outstanding balance as a transfer. The `token` is minted on
+ * the server when the page renders and becomes the payment's reference, which
+ * is unique — so a double click books once.
+ */
+export function MarkPaidForm({
+    invoiceId,
+    token,
+}: {
+    invoiceId: string;
+    token: string;
+}) {
     const [state, formAction, pending] = useActionState(
         markInvoicePaid,
         initialState,
@@ -59,6 +69,7 @@ export function MarkPaidForm({ invoiceId }: { invoiceId: string }) {
     return (
         <form action={formAction} className="flex flex-col gap-2">
             <input type="hidden" name="invoiceId" value={invoiceId} />
+            <input type="hidden" name="token" value={token} />
             {state.status === "error" ? (
                 <FormStatus
                     tone="error"
@@ -72,7 +83,7 @@ export function MarkPaidForm({ invoiceId }: { invoiceId: string }) {
                 size="sm"
                 disabled={pending}
             >
-                {pending ? "…" : "Bezahlt"}
+                {pending ? "…" : "Vollständig bezahlt"}
             </Button>
         </form>
     );

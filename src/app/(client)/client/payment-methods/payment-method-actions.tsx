@@ -7,6 +7,7 @@ import FormStatus from "@/components/shared/form-status";
 import SelectField from "@/components/shared/select-field";
 import { Button } from "@/components/ui/button";
 import {
+    makeDefaultPaymentMethod,
     type PaymentMethodState,
     removePaymentMethod,
     setContractCollection,
@@ -107,6 +108,28 @@ export function RemovePaymentMethod({
             confirmLabel="Entfernen"
             confirmVariant="destructive"
         />
+    );
+}
+
+/** Makes one stored method the one an automatic collection reaches for. */
+export function MakeDefaultPaymentMethod({ methodId }: { methodId: string }) {
+    const [, formAction, pending] = useActionState(
+        makeDefaultPaymentMethod,
+        initialState,
+    );
+
+    return (
+        <form action={formAction}>
+            <input type="hidden" name="methodId" value={methodId} />
+            <Button
+                type="submit"
+                variant="outline"
+                size="sm"
+                disabled={pending}
+            >
+                {pending ? "…" : "Als Standard"}
+            </Button>
+        </form>
     );
 }
 

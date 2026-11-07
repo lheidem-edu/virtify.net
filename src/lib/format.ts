@@ -37,6 +37,7 @@ export const OFFER_STATUS_LABEL = {
 export const INVOICE_STATUS_LABEL = {
     draft: "Entwurf",
     unpaid: "Offen",
+    partial: "Teilweise bezahlt",
     paid: "Bezahlt",
     cancelled: "Korrigiert",
 } as const;
@@ -61,7 +62,7 @@ export function isOverdue(invoice: {
     paidAt: Date | null;
 }) {
     return (
-        invoice.status === "unpaid" &&
+        (invoice.status === "unpaid" || invoice.status === "partial") &&
         !invoice.paidAt &&
         invoice.dueAt !== null &&
         invoice.dueAt.getTime() < Date.now()
@@ -81,8 +82,50 @@ export function daysOverdue(dueAt: Date | null) {
 export const INVOICE_STATUS_TONE = {
     draft: "muted",
     unpaid: "warning",
+    // Warning, like "offen": money is still owed, and the colour that says
+    // "nothing to do here" would be a lie.
+    partial: "warning",
     paid: "positive",
     cancelled: "neutral",
+} as const;
+
+export const PAYMENT_PROVIDER_LABEL = {
+    stripe: "Kreditkarte",
+    paypal: "PayPal",
+    banktransfer: "Überweisung",
+    credit: "Guthaben",
+} as const;
+
+export const PAYMENT_STATUS_LABEL = {
+    pending: "Begonnen",
+    processing: "Unterwegs",
+    succeeded: "Eingegangen",
+    failed: "Fehlgeschlagen",
+    refunded: "Erstattet",
+} as const;
+
+export const PAYMENT_STATUS_TONE = {
+    pending: "muted",
+    processing: "warning",
+    succeeded: "positive",
+    failed: "neutral",
+    refunded: "neutral",
+} as const;
+
+export const DISPUTE_STATUS_LABEL = {
+    open: "Offen",
+    under_review: "In Prüfung",
+    won: "Gewonnen",
+    lost: "Verloren",
+    withdrawn: "Zurückgezogen",
+} as const;
+
+export const DISPUTE_STATUS_TONE = {
+    open: "warning",
+    under_review: "warning",
+    won: "positive",
+    lost: "neutral",
+    withdrawn: "muted",
 } as const;
 
 export const CREDIT_NOTE_KIND_LABEL = {

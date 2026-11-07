@@ -30,10 +30,30 @@ export const invoiceStatus = pgEnum("invoice_status", [
     "draft",
     /** Finalized and payable. */
     "unpaid",
+    /**
+     * Some money has arrived and some is still owed. Still an *open* invoice
+     * in every sense that matters — it is dunned, it is listed under "offen",
+     * and it can still be paid — so every check that means "open" asks
+     * `OPEN_INVOICE_STATUSES` rather than comparing against `unpaid`.
+     */
+    "partial",
     "paid",
     /** Fully credited by a Rechnungskorrektur. */
     "cancelled",
 ]);
+
+export type InvoiceStatus = (typeof invoiceStatus.enumValues)[number];
+
+/**
+ * An invoice that has been issued and still wants money. The constant exists
+ * so that adding `partial` to the enum could not leave a half-paid invoice
+ * invisible on a list that happened to compare against `"unpaid"`.
+ */
+export const OPEN_INVOICE_STATUSES = ["unpaid", "partial"] as const;
+
+export function isOpenInvoice(status: InvoiceStatus): boolean {
+    return (OPEN_INVOICE_STATUSES as readonly string[]).includes(status);
+}
 
 /** Shared by invoices and credit notes: what the document says about tax. */
 const taxSnapshot = () => ({
@@ -124,6 +144,18 @@ export const invoice = pgTable(
         grossCents: money("gross_cents"),
         /** What Rechnungskorrekturen have taken back off this invoice. */
         creditedCents: money("credited_cents").notNull().default(0),
+        /**
+         * What has actually been received against it: successful charges
+         * less refunds, maintained by `applyPayment` inside the transaction
+         * that settles each one. Never larger than the lines say, because an
+         * overpayment goes to `credit_ledger` instead of inflating this.
+         *
+         * One of the few columns migration 0020 lets past the immutability
+         * trigger, for the reason rule 3 already allows `paid_at` through: it
+         * is a fact *about* the invoice, not a statement *on* it. Nothing
+         * printed on the document moves.
+         */
+        paidCents: money("paid_cents").notNull().default(0),
 
         /**
          * Rechnungsdatum, and the instant the tax strategy was resolved at.

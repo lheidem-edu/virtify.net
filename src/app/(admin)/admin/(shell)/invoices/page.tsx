@@ -1,5 +1,6 @@
 import PageHeader from "@/components/shared/page-header";
 import type { INVOICE_STATUS_LABEL } from "@/lib/format";
+import { createId } from "@/lib/ulid";
 import { requirePermission } from "@/server/auth/staff-session";
 import { listInvoices } from "@/server/billing/invoices/repository";
 import { DEFAULT_UNIT_CODE } from "@/server/billing/invoices/totals";
@@ -94,6 +95,7 @@ export default async function Page({
                         amount: entry.amount,
                         credited: entry.creditedCents,
                         autoCollect: entry.collectedFrom !== null,
+                        markPaidToken: createId("payment"),
                     }))}
                 />
             </div>

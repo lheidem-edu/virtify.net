@@ -34,6 +34,24 @@ export default async function Page() {
                 </Link>
             </div>
 
+            <div className="border-b px-6 py-10 md:px-10 md:py-12">
+                <h2 className="mb-2 font-medium text-sm tracking-tight">
+                    Zahlungsarten
+                </h2>
+                <p className="max-w-2xl text-muted-foreground text-sm leading-7">
+                    Welche Wege der Kunde zum Bezahlen angeboten bekommt, und
+                    womit sich das Portal beim Anbieter anmeldet. Die
+                    Zugangsdaten liegen verschlüsselt und werden nie wieder
+                    angezeigt, also liegen sie nicht in diesem Formular.
+                </p>
+                <Link
+                    href="/admin/settings/payments"
+                    className="mt-4 inline-block text-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                >
+                    Zahlungsarten verwalten
+                </Link>
+            </div>
+
             <div className="px-6 py-10 md:px-10 md:py-12">
                 <SettingsForm
                     values={{

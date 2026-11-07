@@ -15,7 +15,9 @@ import { DEFAULT_UNIT_CODE } from "./totals";
 export const listQuerySchema = z.object({
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
-    status: z.enum(["draft", "unpaid", "paid", "cancelled"]).optional(),
+    status: z
+        .enum(["draft", "unpaid", "partial", "paid", "cancelled"])
+        .optional(),
     customer_id: z.string().optional(),
 });
 
@@ -99,6 +101,7 @@ export function serializeInvoice(
         tax_cents: invoice.taxCents,
         gross_cents: invoice.grossCents,
         credited_cents: invoice.creditedCents,
+        paid_cents: invoice.paidCents,
         tax_strategy: invoice.taxStrategy,
         tax_note: invoice.taxNote,
         recipient: invoice.recipient,

@@ -8,14 +8,17 @@ import { CursorQuerySchema, cursorPage, PROBLEM_RESPONSES } from "../schemas";
  * error shapes and the authentication it needs.
  */
 
-const STATUS = z.enum(["draft", "unpaid", "paid", "cancelled"]).openapi({
-    description:
-        "`draft` hat noch keine Nummer und ist frei änderbar, `unpaid` ist " +
-        "ausgestellt und offen, `paid` bezahlt, `cancelled` durch eine " +
-        "Rechnungskorrektur vollständig aufgehoben. Ein Kundenschlüssel " +
-        "sieht niemals einen Entwurf.",
-    example: "unpaid",
-});
+const STATUS = z
+    .enum(["draft", "unpaid", "partial", "paid", "cancelled"])
+    .openapi({
+        description:
+            "`draft` hat noch keine Nummer und ist frei änderbar, `unpaid` " +
+            "ist ausgestellt und offen, `partial` teilweise bezahlt und " +
+            "weiterhin offen, `paid` bezahlt, `cancelled` durch eine " +
+            "Rechnungskorrektur vollständig aufgehoben. Ein Kundenschlüssel " +
+            "sieht niemals einen Entwurf.",
+        example: "unpaid",
+    });
 
 const TAX_STRATEGY = z
     .string()
@@ -190,6 +193,14 @@ const InvoiceBase = z.object({
     credited_cents: z.int().openapi({
         description:
             "Was Rechnungskorrekturen von dieser Rechnung zurückgenommen haben.",
+        example: 0,
+    }),
+    paid_cents: z.int().openapi({
+        description:
+            "Was auf diese Rechnung tatsächlich eingegangen ist — " +
+            "erfolgreiche Zahlungen abzüglich Erstattungen, in ganzen Cent. " +
+            "Niemals mehr als offen war: eine Überzahlung wird dem Konto als " +
+            "Guthaben gutgeschrieben statt hier verbucht.",
         example: 0,
     }),
     tax_strategy: TAX_STRATEGY,
