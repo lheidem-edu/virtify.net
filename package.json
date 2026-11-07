@@ -33,7 +33,7 @@
         "@react-pdf/renderer": "4.9.0",
         "@scalar/nextjs-api-reference": "0.12.16",
         "@tanstack/react-table": "8.21.3",
-        "better-auth": "1.7.3",
+        "better-auth": "1.7.18",
         "class-variance-authority": "0.7.1",
         "cn": "0.2.5",
         "drizzle-orm": "0.45.2",
