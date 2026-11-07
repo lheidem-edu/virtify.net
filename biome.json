@@ -3,11 +3,11 @@
     "files": {
         "includes": [
             "**",
-            "!.next/**",
-            "!node_modules/**",
+            "!.next",
+            "!node_modules",
             "!tsconfig.tsbuildinfo",
             "!next-env.d.ts",
-            "!drizzle/**",
+            "!drizzle",
             "!public/openapi.json",
             "!components.json"
         ]
@@ -38,10 +38,7 @@
     },
     "overrides": [
         {
-            "includes": [
-                "src/components/ui/**",
-                "src/hooks/use-mobile.ts"
-            ],
+            "includes": ["src/components/ui/**", "src/hooks/use-mobile.ts"],
             "linter": {
                 "enabled": false
             },

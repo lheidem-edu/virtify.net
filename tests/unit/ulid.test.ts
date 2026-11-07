@@ -59,10 +59,10 @@ describe("ulid", () => {
     });
 
     it("rejects the letters Crockford leaves out", () => {
-        expect(isUlid("0".repeat(25) + "I")).toBe(false);
-        expect(isUlid("0".repeat(25) + "L")).toBe(false);
-        expect(isUlid("0".repeat(25) + "O")).toBe(false);
-        expect(isUlid("0".repeat(25) + "U")).toBe(false);
+        expect(isUlid(`${"0".repeat(25)}I`)).toBe(false);
+        expect(isUlid(`${"0".repeat(25)}L`)).toBe(false);
+        expect(isUlid(`${"0".repeat(25)}O`)).toBe(false);
+        expect(isUlid(`${"0".repeat(25)}U`)).toBe(false);
         expect(isUlid("0".repeat(25))).toBe(false);
         expect(isUlid(null)).toBe(false);
     });
