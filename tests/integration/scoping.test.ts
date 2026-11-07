@@ -93,10 +93,12 @@ describe.skipIf(!available)("client-area scoping", () => {
                 .values({
                     customerId: customer.id,
                     contractId: contract.id,
-                    number: `RE-2026-000${index}`,
-                    // Inserted as a draft and finalized below: the trigger
-                    // from migration 0017 refuses an INSERT into
-                    // invoice_item once the invoice has left `draft`.
+                    // A numberless draft, finalized below — the number and
+                    // the status are set together, as `finalizeInvoice`
+                    // does. The triggers refuse an INSERT into invoice_item
+                    // for any invoice that has left `draft` or has already
+                    // been given a number, because either one makes it a
+                    // document rather than working state.
                     status: "draft",
                 })
                 .returning();
@@ -120,6 +122,7 @@ describe.skipIf(!available)("client-area scoping", () => {
                 .update(schema.invoice)
                 .set({
                     status: "unpaid",
+                    number: `RE-2026-000${index}`,
                     netCents: 1000,
                     taxCents: 0,
                     grossCents: 1000,

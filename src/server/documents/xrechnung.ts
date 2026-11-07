@@ -72,12 +72,27 @@ function escapeXml(value: string) {
         .replace(/'/g, "&apos;");
 }
 
-/** EN 16931 dates use format code 102: YYYYMMDD. */
+/**
+ * EN 16931 dates use format code 102: YYYYMMDD — the *Berlin* calendar day.
+ *
+ * Reading the UTC day instead would put a different Ausstellungsdatum (BT-2)
+ * in the XML from the one the PDF prints: `issuedAt` is the raw finalization
+ * instant, and `src/lib/format.ts` renders it in Europe/Berlin, as
+ * `berlinYear()` does for the invoice number. An invoice finalized at 00:30
+ * on 1 January is numbered RE-2027-0001 and dated 01.01.2027 on paper; with
+ * UTC parts its XML said 20261231 — a 2027 number declaring a 2026 issue
+ * date, which is the wrong VAT period for whoever books it.
+ */
+const BERLIN_DAY = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Berlin",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+});
+
 function formatDate(value: Date) {
-    const year = value.getUTCFullYear();
-    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(value.getUTCDate()).padStart(2, "0");
-    return `${year}${month}${day}`;
+    // en-CA gives YYYY-MM-DD, so the separators are all that have to go.
+    return BERLIN_DAY.format(value).replace(/-/g, "");
 }
 
 /** Amounts are decimal with two places, never cents, in the XML. */
@@ -141,8 +156,17 @@ function line(item: DocumentTotals["lines"][number]) {
       <ram:SpecifiedLineTradeSettlement>
         <ram:ApplicableTradeTax>
           <ram:TypeCode>VAT</ram:TypeCode>
-          <ram:CategoryCode>${item.taxCategory}</ram:CategoryCode>
-          <ram:RateApplicablePercent>${rate(item.taxRateBp)}</ram:RateApplicablePercent>
+          <ram:CategoryCode>${item.taxCategory}</ram:CategoryCode>${
+              // BR-O-5: a line that is "not subject to VAT" shall not carry an
+              // Invoiced item VAT rate (BT-152) at all. A 0.00 there would
+              // assert a rate of nothing, which is the very distinction
+              // category O exists to avoid. Every other category wants the
+              // element — BR-E-5 and BR-AE-5 positively require the zero.
+              item.taxCategory === "O"
+                  ? ""
+                  : `
+          <ram:RateApplicablePercent>${rate(item.taxRateBp)}</ram:RateApplicablePercent>`
+}
         </ram:ApplicableTradeTax>${period}
         <ram:SpecifiedTradeSettlementLineMonetarySummation>
           <ram:LineTotalAmount>${amount(item.netCents)}</ram:LineTotalAmount>
@@ -221,6 +245,57 @@ export function renderXRechnung(input: XRechnungInput) {
         (value): value is string => Boolean(value),
     );
 
+    /**
+     * BG-16 PAYMENT INSTRUCTIONS with BT-81. The document declares the
+     * XRechnung 3.0 CIUS, and BR-DE-1 makes this group mandatory there — the
+     * KoSIT validator rejects an invoice without it, however valid the plain
+     * EN 16931 core would be. The bank details are already on the frozen
+     * seller snapshot and already printed on the PDF; nothing new is
+     * disclosed by putting them where a machine can read them.
+     *
+     * UNTDID 4461 code 58 is a SEPA credit transfer, which is what the
+     * GiroCode on the PDF encodes; with no IBAN on file the only honest code
+     * is 1, "instrument not defined". BR-DE-23 then does not apply, because
+     * it hangs off code 58.
+     */
+    const paymentMeans = seller.iban
+        ? `
+      <ram:SpecifiedTradeSettlementPaymentMeans>
+        <ram:TypeCode>58</ram:TypeCode>
+        <ram:PayeePartyCreditorFinancialAccount>
+          <ram:IBANID>${escapeXml(seller.iban.replace(/\s/g, ""))}</ram:IBANID>
+          <ram:AccountName>${escapeXml(seller.name)}</ram:AccountName>
+        </ram:PayeePartyCreditorFinancialAccount>${
+            seller.bic
+                ? `
+        <ram:PayeeSpecifiedCreditorFinancialInstitution>
+          <ram:BICID>${escapeXml(seller.bic.replace(/\s/g, ""))}</ram:BICID>
+        </ram:PayeeSpecifiedCreditorFinancialInstitution>`
+                : ""
+        }
+      </ram:SpecifiedTradeSettlementPaymentMeans>`
+        : `
+      <ram:SpecifiedTradeSettlementPaymentMeans>
+        <ram:TypeCode>1</ram:TypeCode>
+      </ram:SpecifiedTradeSettlementPaymentMeans>`;
+
+    /**
+     * BG-6 SELLER CONTACT. BR-DE-2 makes the group mandatory and BR-DE-5/6/7
+     * each of BT-41 (contact point), BT-42 (telephone) and BT-43 (email).
+     * There is no separate contact person in the settings, so the operator's
+     * own name is the contact point — which is what the PDF footer says too.
+     */
+    const sellerContact = `
+        <ram:DefinedTradeContact>
+          <ram:PersonName>${escapeXml(seller.name)}</ram:PersonName>
+          <ram:TelephoneUniversalCommunication>
+            <ram:CompleteNumber>${escapeXml(seller.phone)}</ram:CompleteNumber>
+          </ram:TelephoneUniversalCommunication>
+          <ram:EmailURIUniversalCommunication>
+            <ram:URIID>${escapeXml(seller.email)}</ram:URIID>
+          </ram:EmailURIUniversalCommunication>
+        </ram:DefinedTradeContact>`;
+
     const preceding = input.precedingNumber
         ? `
       <ram:InvoiceReferencedDocument>
@@ -259,7 +334,7 @@ export function renderXRechnung(input: XRechnungInput) {
     <ram:ApplicableHeaderTradeAgreement>
       <ram:BuyerReference>${escapeXml(input.buyerReference)}</ram:BuyerReference>
       <ram:SellerTradeParty>
-        <ram:Name>${escapeXml(seller.name)}</ram:Name>
+        <ram:Name>${escapeXml(seller.name)}</ram:Name>${sellerContact}
         <ram:PostalTradeAddress>
           <ram:PostcodeCode>${escapeXml(sellerAddress.postalCode)}</ram:PostcodeCode>
           <ram:LineOne>${escapeXml(seller.street)}</ram:LineOne>
@@ -292,7 +367,8 @@ export function renderXRechnung(input: XRechnungInput) {
     </ram:ApplicableHeaderTradeAgreement>
     <ram:ApplicableHeaderTradeDelivery />
     <ram:ApplicableHeaderTradeSettlement>
-      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>${taxes}${period}${
+      <ram:PaymentReference>${escapeXml(input.number)}</ram:PaymentReference>
+      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>${paymentMeans}${taxes}${period}${
           input.dueAt
               ? `
       <ram:SpecifiedTradePaymentTerms>

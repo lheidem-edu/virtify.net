@@ -1,5 +1,5 @@
 import "server-only";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { db } from "@/db";
 import type { Permission } from "@/server/auth/permissions";
 import { staffCan } from "@/server/auth/permissions";
@@ -20,11 +20,23 @@ import { ANY_CUSTOMER } from "@/server/documents/repository";
  * An employee still has to hold the permission for the kind of document they
  * are asking for (CLAUDE.md rule 5). Without it the answer is 404, the same
  * one a stranger gets — a 403 would confirm the document exists.
+ *
+ * And they have to have set up their second factor. These are route handlers,
+ * so no layout runs in front of them: the `requireStaff()` gate that sends an
+ * unenrolled employee to /admin/two-factor/setup on every /admin page never
+ * sees these URLs, and the admin UI links straight to them. Without the check
+ * here an employee who had merely accepted an invitation and set a password
+ * could read every customer's invoice, Rechnungskorrektur and offer through
+ * the /client/… routes while /admin/** was still refusing them.
  */
 export async function documentViewer(needed: Permission) {
     const staff = await getStaffSession();
 
     if (staff) {
+        if (!staff.user.twoFactorEnabled) {
+            redirect("/admin/two-factor/setup");
+        }
+
         if (!(await staffCan(db, staff.user.id, needed))) {
             notFound();
         }

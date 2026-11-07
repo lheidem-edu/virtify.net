@@ -536,6 +536,21 @@ export async function createCreditNote(
                 : (input.lines ?? []);
 
         const byId = new Map(items.map((item) => [item.id, item]));
+
+        /**
+         * What is still open per position, decremented as this call's own
+         * lines consume it. Reading `alreadyCredited` afresh for each line
+         * would let two entries naming the same position each see the whole
+         * remainder, and a correction could then take back more of a line
+         * than the invoice ever charged for it.
+         */
+        const remainingFor = new Map(
+            items.map((item) => [
+                item.id,
+                subtract(item.quantity, alreadyCredited.get(item.id) ?? 0),
+            ]),
+        );
+
         const chosen: {
             item: (typeof items)[number];
             quantity: number;
@@ -551,7 +566,7 @@ export async function createCreditNote(
                 );
             }
 
-            if (!Number.isSafeInteger(line.quantity) || line.quantity < 0) {
+            if (!Number.isSafeInteger(line.quantity)) {
                 throw new InvoiceError(
                     "over-credit",
                     "Die Menge einer Korrekturposition muss eine ganze Zahl sein.",
@@ -562,18 +577,35 @@ export async function createCreditNote(
                 continue;
             }
 
-            const remaining = subtract(
-                item.quantity,
-                alreadyCredited.get(item.id) ?? 0,
-            );
+            const remaining = remainingFor.get(item.id) ?? 0;
 
-            if (line.quantity > remaining) {
+            if (remaining === 0) {
+                throw new InvoiceError(
+                    "over-credit",
+                    `Position ${item.position} ist bereits vollständig korrigiert.`,
+                );
+            }
+
+            /**
+             * A deduction is reversed as a deduction. `POST /api/v1/invoices`
+             * accepts — and documents — a negative quantity for a discount
+             * line, and a full correction of such an invoice reverses that
+             * line with its own sign; forcing it positive would make the
+             * correction charge for what the invoice deducted. Refusing it
+             * outright, as this used to, left the invoice uncancellable for
+             * good: a finalized row can be neither edited nor deleted.
+             */
+            if (
+                Math.sign(line.quantity) !== Math.sign(remaining) ||
+                Math.abs(line.quantity) > Math.abs(remaining)
+            ) {
                 throw new InvoiceError(
                     "over-credit",
                     `Position ${item.position} kann höchstens ${remaining} × korrigiert werden.`,
                 );
             }
 
+            remainingFor.set(item.id, subtract(remaining, line.quantity));
             chosen.push({ item, quantity: line.quantity });
         }
 

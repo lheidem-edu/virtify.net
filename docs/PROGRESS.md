@@ -310,7 +310,7 @@ Still open in this phase:
 
 ## Phase 3 — Tax strategies + invoicing engine · done
 
-`npm run typecheck`, `npm run lint` and `npm run test` (273 tests) are green, the app builds,
+`npm run typecheck`, `npm run lint` and `npm run test` (299 tests) are green, the app builds,
 `public/openapi.json` is regenerated, and every document and admin page in this phase was
 rendered against the dev database and looked at.
 
@@ -482,8 +482,95 @@ Found while building, and fixed:
   the one place both sides meet, and the staff branch checked only that a staff session existed.
   `documentViewer()` takes the permission now and answers 404 without it.
 
+### Reviewed after the fact, and fixed
+
+The phase was reviewed against the diff by seven independent readers, each finding put to two
+skeptics told to refute it, and the survivors re-derived by hand — six of them against the
+running database. Eighteen candidates, twelve survived, ten distinct defects. All ten are
+fixed; the suite went from 273 tests to 299, and the new ones were each run against the old
+code first to prove they fail.
+
+- **One UPDATE walked around the immutability triggers.** `status` was in the trigger's
+  `mutable` list and every other guard keyed off `status = 'draft'`, so
+  `UPDATE invoice SET status='draft'` was accepted on a finalized invoice — and the next
+  statement then saw a draft and allowed everything. Reproduced against the dev database:
+  RE-2026-0003's amounts, its **invoice number** and its buyer name rewritten, its positions
+  deleted, and the row itself deletable but for an unrelated foreign key. That is the hole in
+  the gapless RE- series § 14 Abs. 4 Nr. 4 UStG forbids and a record § 147 AO says must be
+  kept. Migration `0018` refuses the demotion outright, keys the delete refusal on
+  `number IS NOT NULL` as well as the status, and does the same for the positions. Not
+  reachable from the app — every status write in `src/server` is a literal — but the trigger's
+  own header says it exists for the writers that are not the service layer.
+- **An invoice with a deduction line could never be cancelled.** `POST /api/v1/invoices`
+  accepts a negative quantity and the OpenAPI description advertises it ("Negativ für eine
+  Gutschriftsposition"); the correction then refused that sign with a message about integers,
+  and a finalized invoice can be neither edited nor deleted. Proved: RE-2026-0001 over 2 × 10,00 €
+  less 1 × 10,00 € finalizes at 10,00 € and "Stornieren" fails for good. A correction now
+  mirrors the sign, so the pair cancels to nothing.
+- **A correction could credit the same position twice.** The remaining quantity was recomputed
+  from a snapshot taken before the loop, so two entries naming one position each saw the whole
+  remainder. Proved: a line that charged 10,00 € credited 20,00 €, `credited_cents` 2000, and
+  the per-position count 2 for a quantity-1 line. The document-level cap did not notice, because
+  a larger line on the same invoice left room under the gross. What is left is now decremented
+  as this call's own lines consume it. Latent rather than live — nothing but the tests passes
+  `kind: "partial"` today.
+- **The e-invoice dated itself in UTC while everything else used Berlin.** BT-2 and BT-9 came
+  from `getUTCFullYear()` while the PDF (`src/lib/format.ts`) and the invoice number
+  (`berlinYear()`) read the Berlin calendar. An invoice finalized at 00:30 on 1 January is
+  numbered RE-2027-0001 and dated 01.01.2027 on paper; its XML said 20261231 — the wrong VAT
+  period, in the same mail as the PDF that disagreed.
+- **The XML declared XRechnung 3.0 and did not meet it.** It named the CIUS in its guideline
+  identifier while omitting BG-16 PAYMENT INSTRUCTIONS (BR-DE-1) and BG-6 SELLER CONTACT
+  (BR-DE-2/5/6/7) — the IBAN, the BIC and the telephone number were all on the frozen snapshot
+  and printed on the PDF, and none of them reached the XML. Every invoice would have been
+  rejected by a recipient that validates. Both groups are emitted now, in the sequence CII
+  fixes, with `PaymentReference` carrying the invoice number.
+- **A category `O` line carried a VAT rate**, which EN 16931 BR-O-5 forbids: out of scope is not
+  a rate of nothing. Only after a switch to `regular-vat`, and only outside the EU, but the
+  element is gone for that category now. `E` and `AE` keep theirs, which BR-E-5 and BR-AE-5
+  require.
+- **XRechnung had no tests at all.** `tests/unit/xrechnung.test.ts` is new: 14 cases over the
+  categories, the dates, the mandatory groups and the CII element order. Seven of them fail
+  against the code as it was.
+- **The document routes did not ask for a second factor.** `documentViewer()` resolved the staff
+  side with `getStaffSession()` rather than `requireStaff()`. Route handlers run no layout, so
+  an employee who had accepted an invitation, set a password and never enrolled TOTP was
+  redirected on every `/admin` page but could still fetch any customer's invoice, correction and
+  offer through the `/client/…` URLs the admin UI links to — with the permission, so not an
+  escalation, but exactly the bypass the 2FA requirement exists to prevent.
+- **`berlinInstant()` was an hour out on the two days the clocks move.** The offset was sampled
+  at noon and applied to midnight, so the start of the spring-forward day landed at 23:00 the
+  evening before — a tax switch catching the invoices of a day it was not scheduled for, which
+  is the failure the module's own docstring names. The offset is resolved at the candidate
+  instant now. Only the start was affected; the end of day was always right.
+- **`POST /api/v1/invoices` answered with `"items": []`** although the request had to supply at
+  least one and a GET on the same id listed them. It reads the draft back now.
+- **A customer key asking `?status=draft` got every invoice it had.** The filter was dropped to
+  `null` for that case, which removes the predicate rather than narrowing it to nothing. It is
+  passed through now and `excludeDrafts` cancels it out.
+
 Still open in this phase:
 
+- [ ] **The § 19 Gesamtumsatz is attributed by the service date.** `revenue_basis` defaults to
+      `service` and there is no form to change it — it is only displayed, on the dashboard and
+      on `/admin/settings/tax`. § 19 Abs. 2 UStG measures **nach vereinnahmten Entgelten**, which
+      is the `payment` basis. The monitor already counts only paid invoices, so the difference is
+      which calendar year a payment lands in, and it only bites around the turn of the year.
+      Worth a word with the Steuerberater before the next one, and a setting either way.
+- [ ] **Partial corrections are implemented and unreachable.** `createCreditNote` takes
+      `kind: "partial"` with a line selection, it is tested, and nothing calls it: the admin
+      offers only a full Stornierung and there is no credit-note endpoint. Either wire it up or
+      say why not.
+- [ ] **Nothing renders a PDF in the test suite.** `@react-pdf/renderer` cannot render under
+      this vitest configuration at all — the smallest possible document fails inside the
+      reconciler before any of our code runs, and the `unicode-properties` alias in
+      `vitest.config.mts` fixes only the import. The app itself renders fine. Until that is
+      sorted the PDF layer is covered by nothing but the running server, which is how
+      `showTax`, the § 14 fields and the GiroCode's placement go unverified. (`include` is also
+      `tests/**/*.test.ts`, so a `.tsx` test cannot be collected at all.)
+- [ ] **`pdf_sha256` and `pdf_bytes` are written and never read.** The column comment says a
+      swap would be detectable; nothing detects one. Either a verification path or an honest
+      comment.
 - [ ] **No VIES call.** `vat_id_validated_at` is read and respected — an unvalidated ID gets no
       reverse charge — but nothing sets it yet. It wants a service in `src/server/tax` and a
       button on the customer page before regular VAT is switched on.
@@ -491,8 +578,10 @@ Still open in this phase:
       S3-compatible one is a file when a deployment outgrows one node.
 - [ ] **Credit notes have no API endpoint.** They are reachable in both areas and as PDF/XML;
       the plan's five endpoints are invoices only.
-- [ ] **No XRechnung validation in CI.** The document is generated to EN 16931 / XRechnung 3.0
-      and was checked by hand; a KoSIT validator run belongs in Phase 11.
+- [ ] **No XRechnung validation in CI.** "Checked by hand" was not enough — see the two
+      conformance defects above, both of which a KoSIT run would have caught the first time.
+      `tests/unit/xrechnung.test.ts` now asserts the BR-DE rules the CIUS adds, but asserting a
+      rule from memory is not the same as running the validator. It belongs in Phase 11.
 - [ ] The operator's Steuernummer is a settings field and is still empty on a fresh
       installation. § 14 Abs. 4 Nr. 2 UStG wants it or the USt-IdNr.; the USt-IdNr. is filled.
 

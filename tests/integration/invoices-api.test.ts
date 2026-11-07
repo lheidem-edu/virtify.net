@@ -308,6 +308,51 @@ describe.skipIf(!available)("/api/v1/invoices", () => {
             expect(body.data[0].status).toBe("unpaid");
         });
 
+        /**
+         * A draft has no number and no legal existence, so a customer key
+         * never sees one — and asking for drafts has to answer with nothing
+         * rather than confirm they exist. Dropping the filter to null instead
+         * removed the status predicate altogether, so `?status=draft` handed
+         * the key every invoice it had.
+         */
+        it("answers a customer key asking for drafts with nothing", async () => {
+            const response = await list(
+                bearer(
+                    mineToken,
+                    "https://virtify.net/api/v1/invoices?status=draft",
+                ),
+            );
+            const body = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(body.data).toEqual([]);
+            expect(body.has_more).toBe(false);
+        });
+
+        it("still filters a customer key by a status it may see", async () => {
+            const response = await list(
+                bearer(
+                    mineToken,
+                    "https://virtify.net/api/v1/invoices?status=unpaid",
+                ),
+            );
+            const body = await response.json();
+
+            expect(body.data).toHaveLength(1);
+            expect(body.data[0].status).toBe("unpaid");
+
+            const paid = await (
+                await list(
+                    bearer(
+                        mineToken,
+                        "https://virtify.net/api/v1/invoices?status=paid",
+                    ),
+                )
+            ).json();
+
+            expect(paid.data).toEqual([]);
+        });
+
         it("ignores customer_id on a customer key rather than honouring it", async () => {
             const response = await list(
                 bearer(
@@ -568,7 +613,19 @@ describe.skipIf(!available)("/api/v1/invoices", () => {
             expect(body.number).toBeNull();
             expect(body.tax_strategy).toBeNull();
             expect(body.net_cents).toBeNull();
-            expect(body.items).toEqual([]);
+
+            // The documented 201 body carries `items`, and the request had
+            // to supply at least one: echoing an empty array described a
+            // draft that provably has positions as having none, while a GET
+            // on the same id a moment later listed them.
+            expect(body.items).toHaveLength(1);
+            expect(body.items[0]).toMatchObject({
+                position: 1,
+                description: "VPS M — Dezember 2026",
+                quantity: 1,
+                unit_code: "MON",
+                unit_price_cents: 1999,
+            });
         });
 
         it("refuses an unknown account with a sentence, not a 500", async () => {

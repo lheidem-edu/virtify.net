@@ -482,6 +482,109 @@ describe.skipIf(!available)("the invoicing engine", () => {
             );
         });
 
+        /**
+         * The whole point of putting rule 3 in the database as well is that
+         * "a migration, a console, a later feature or a bug can all reach the
+         * row directly". Against that caller it used to cost one extra
+         * statement: `status` is mutable, so demoting a finalized invoice to
+         * `draft` was accepted, and every other guard keys off the status.
+         */
+        it("refuses to turn a finalized invoice back into a draft", async () => {
+            const row = await draft();
+            const { invoice } = await finalizeInvoice(db, row.id, ACTOR, {
+                settings: SETTINGS,
+            });
+
+            await expectRefused(
+                db
+                    .update(schema.invoice)
+                    .set({ status: "draft" })
+                    .where(eq(schema.invoice.id, invoice.id)),
+                /kann kein Entwurf mehr werden/,
+            );
+
+            // …and so the two-statement way round every other guard is shut:
+            // the number, the totals and the positions all stay.
+            await expectRefused(
+                db
+                    .update(schema.invoice)
+                    .set({ status: "draft", netCents: 1 })
+                    .where(eq(schema.invoice.id, invoice.id)),
+                /kann kein Entwurf mehr werden/,
+            );
+
+            const [after] = await db
+                .select()
+                .from(schema.invoice)
+                .where(eq(schema.invoice.id, invoice.id));
+
+            expect(after.status).toBe("unpaid");
+            expect(after.number).toBe(invoice.number);
+        });
+
+        it("refuses to delete a numbered row whatever its status says", async () => {
+            // A number is what § 14 Abs. 4 Nr. 4 UStG wants gapless, so a row
+            // that has one is a document even when its status says draft.
+            // INSERT is not guarded, so this is the state a bad migration or
+            // a restore could leave behind — deleting it would punch a hole
+            // in the RE- series.
+            const id = createId("invoice");
+
+            await db.insert(schema.invoice).values({
+                id,
+                customerId,
+                status: "draft",
+                number: "RE-2026-9001",
+                netCents: 1000,
+                grossCents: 1000,
+                issuedAt: new Date(),
+            });
+
+            await expectRefused(
+                db.delete(schema.invoice).where(eq(schema.invoice.id, id)),
+                /§ 147 AO/,
+            );
+
+            // A genuine draft, with no number, still goes.
+            const gone = await draft();
+            await db
+                .delete(schema.invoice)
+                .where(eq(schema.invoice.id, gone.id));
+        });
+
+        it("refuses a line added to a credit note after the fact", async () => {
+            const row = await draft();
+            await finalizeInvoice(db, row.id, ACTOR, { settings: SETTINGS });
+
+            const credit = await createCreditNote(
+                db,
+                { invoiceId: row.id, kind: "full" },
+                ACTOR,
+                { settings: SETTINGS },
+            );
+
+            // The note's own totals are frozen and its PDF is written once,
+            // but `loadCreditNote` recomputes the totals from these rows and
+            // the XRechnung is rendered from that — so an added line made the
+            // XML contradict the PDF the customer holds.
+            await expectRefused(
+                db.insert(schema.creditNoteItem).values({
+                    creditNoteId: credit.id,
+                    position: 99,
+                    description: "Frei erfunden",
+                    quantity: 1,
+                    unitCode: "MON",
+                    unitPriceCents: 999_999,
+                    taxStrategy: "kleinunternehmer",
+                    taxRateBp: 0,
+                    taxCategory: "E",
+                    taxRule: "kleinunternehmer",
+                    netCents: 999_999,
+                }),
+                /dürfen nicht geändert werden/,
+            );
+        });
+
         it("refuses to edit a draft through the service once it is finalized", async () => {
             const row = await draft();
             await finalizeInvoice(db, row.id, ACTOR, { settings: SETTINGS });
@@ -767,6 +870,160 @@ describe.skipIf(!available)("the invoicing engine", () => {
             expect(reloaded?.invoice.status).toBe("unpaid");
             expect(reloaded?.invoice.creditedCents).toBe(1000);
             expect(reloaded?.invoice.grossCents).toBe(3500);
+        });
+
+        /**
+         * The remaining quantity used to be recomputed from a snapshot taken
+         * before the loop, so two entries naming the same position each saw
+         * the whole remainder. A line that charged 10,00 € was credited
+         * 20,00 €, and the document-level cap did not notice because a larger
+         * line on the same invoice left room under the gross.
+         */
+        it("will not credit one position twice in a single correction", async () => {
+            const row = await draft(customerId, [
+                {
+                    description: "Klein",
+                    quantity: 1,
+                    unitCode: "C62",
+                    unitPriceCents: 1000,
+                },
+                {
+                    description: "Groß",
+                    quantity: 1,
+                    unitCode: "C62",
+                    unitPriceCents: 10_000,
+                },
+            ]);
+
+            await finalizeInvoice(db, row.id, ACTOR, { settings: SETTINGS });
+
+            const items = await db
+                .select()
+                .from(schema.invoiceItem)
+                .where(eq(schema.invoiceItem.invoiceId, row.id));
+            const small = items.find(
+                (item) => item.description === "Klein",
+            ) as (typeof items)[number];
+
+            await expect(
+                createCreditNote(
+                    db,
+                    {
+                        invoiceId: row.id,
+                        kind: "partial",
+                        lines: [
+                            { invoiceItemId: small.id, quantity: 1 },
+                            { invoiceItemId: small.id, quantity: 1 },
+                        ],
+                    },
+                    ACTOR,
+                    { settings: SETTINGS },
+                ),
+            ).rejects.toThrow(/bereits vollständig korrigiert/);
+
+            const [after] = await db
+                .select()
+                .from(schema.invoice)
+                .where(eq(schema.invoice.id, row.id));
+
+            expect(after.creditedCents).toBe(0);
+        });
+
+        /**
+         * `POST /api/v1/invoices` accepts — and its OpenAPI description
+         * advertises — a negative quantity for a deduction. Refusing that
+         * sign in a correction left such an invoice permanently
+         * uncancellable: a finalized row can be neither edited nor deleted,
+         * and a credit note is the only way back.
+         */
+        it("reverses a deduction line as a deduction", async () => {
+            const row = await draft(customerId, [
+                {
+                    description: "Webhosting M",
+                    quantity: 2,
+                    unitCode: "MON",
+                    unitPriceCents: 1000,
+                },
+                {
+                    description: "Gutschrift Ausfallzeit",
+                    quantity: -1,
+                    unitCode: "MON",
+                    unitPriceCents: 1000,
+                },
+            ]);
+
+            const { totals } = await finalizeInvoice(db, row.id, ACTOR, {
+                settings: SETTINGS,
+            });
+
+            expect(totals.grossCents).toBe(1000);
+
+            const credit = await createCreditNote(
+                db,
+                { invoiceId: row.id, kind: "full" },
+                ACTOR,
+                { settings: SETTINGS },
+            );
+
+            // The correction mirrors the invoice line for line, signs and
+            // all, so the pair cancels to nothing.
+            expect(credit.totals.grossCents).toBe(1000);
+            expect(credit.fullyCredited).toBe(true);
+            expect(
+                credit.totals.lines.map((line) => line.quantity).sort(),
+            ).toEqual([-1, 2]);
+
+            const [after] = await db
+                .select()
+                .from(schema.invoice)
+                .where(eq(schema.invoice.id, row.id));
+
+            expect(after.status).toBe("cancelled");
+            expect(after.creditedCents).toBe(1000);
+        });
+
+        it("will not turn a deduction into a charge", async () => {
+            const row = await draft(customerId, [
+                {
+                    description: "Rabatt",
+                    quantity: -2,
+                    unitCode: "C62",
+                    unitPriceCents: 500,
+                },
+            ]);
+
+            await finalizeInvoice(db, row.id, ACTOR, { settings: SETTINGS });
+
+            const [item] = await db
+                .select()
+                .from(schema.invoiceItem)
+                .where(eq(schema.invoiceItem.invoiceId, row.id));
+
+            await expect(
+                createCreditNote(
+                    db,
+                    {
+                        invoiceId: row.id,
+                        kind: "partial",
+                        lines: [{ invoiceItemId: item.id, quantity: 2 }],
+                    },
+                    ACTOR,
+                    { settings: SETTINGS },
+                ),
+            ).rejects.toThrow(/höchstens -2/);
+
+            await expect(
+                createCreditNote(
+                    db,
+                    {
+                        invoiceId: row.id,
+                        kind: "partial",
+                        lines: [{ invoiceItemId: item.id, quantity: -3 }],
+                    },
+                    ACTOR,
+                    { settings: SETTINGS },
+                ),
+            ).rejects.toThrow(/höchstens -2/);
         });
 
         it("will not credit more than was charged", async () => {

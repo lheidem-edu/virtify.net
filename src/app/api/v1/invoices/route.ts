@@ -14,7 +14,11 @@ import {
     serializeInvoice,
     serializeInvoiceSummary,
 } from "@/server/billing/invoices/api";
-import { listInvoicesPage } from "@/server/billing/invoices/repository";
+import {
+    ANY_CUSTOMER,
+    listInvoicesPage,
+    loadInvoice,
+} from "@/server/billing/invoices/repository";
 import {
     createInvoiceDraft,
     InvoiceError,
@@ -47,10 +51,12 @@ export async function GET(request: Request) {
     // A draft has no number and no legal existence; it is working state on
     // our side, so a customer's key never sees one — and asking for drafts
     // with one simply returns nothing rather than an error that confirms
-    // they exist.
+    // they exist. The filter is passed through and `excludeDrafts` cancels
+    // it out: dropping it to null instead removed the predicate altogether,
+    // so `?status=draft` answered a customer key with every invoice it had.
     const page = await listInvoicesPage(db, {
         customerId: own ?? query.data.customer_id ?? null,
-        status: own && query.data.status === "draft" ? null : query.data.status,
+        status: query.data.status,
         excludeDrafts: Boolean(own),
         cursor: query.data.cursor,
         limit: query.data.limit,
@@ -99,7 +105,16 @@ export async function POST(request: Request) {
             label: auth.context.key.prefix,
         });
 
-        return json(serializeInvoice(row, []), 201);
+        // Read back rather than echo: `createInvoiceDraft` returns only the
+        // invoice row, and the documented 201 body carries `items`. Sending
+        // an empty array described a draft that provably has positions —
+        // the body says there are none, GET on the same id says there are.
+        const loaded = await loadInvoice(row.id, ANY_CUSTOMER, true, db);
+
+        return json(
+            serializeInvoice(loaded?.invoice ?? row, loaded?.items ?? []),
+            201,
+        );
     } catch (error) {
         if (error instanceof InvoiceError) {
             return problem(422, "Rechnung ungültig", error.message);
