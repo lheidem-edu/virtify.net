@@ -1,8 +1,14 @@
-import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
+import { db, schema } from "@/db";
 import { isOpenInvoice } from "@/db/schema";
 import { authenticate, scopedCustomerId } from "@/server/api/auth";
-import { invalid, json, malformed, notFound, problem } from "@/server/api/respond";
+import {
+    invalid,
+    json,
+    malformed,
+    notFound,
+    problem,
+} from "@/server/api/respond";
 import {
     recordPaymentSchema,
     serializeTransaction,
@@ -119,11 +125,7 @@ export async function POST(
         if (outcome.known && outcome.paymentId) {
             // The same idempotency key, booked before. The caller gets the
             // transaction they already created rather than a second one.
-            const existing = await loadTransaction(
-                db,
-                outcome.paymentId,
-                null,
-            );
+            const existing = await loadTransaction(db, outcome.paymentId, null);
 
             if (existing) {
                 return json(serializeTransaction(existing), 200);

@@ -1,10 +1,10 @@
 import "server-only";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
+import { isOpenInvoice, type PaymentProvider } from "@/db/schema";
 import { subtract } from "@/lib/money";
 import { createId } from "@/lib/ulid";
 import { type Actor, audit } from "@/server/audit";
-import { isOpenInvoice, type PaymentProvider } from "@/db/schema";
 import { receivedFrom, settlementFor } from "./settlement";
 
 /**
@@ -337,16 +337,6 @@ async function settleAgainstInvoice(
         receivedCents: before,
     });
 
-    /**
-     * Only what *this* payment added beyond what was owed. Two payments that
-     * overshoot by 5 and then by 3 leave the customer with 8, in two entries
-     * that each name the payment they came from.
-     */
-    const creditedToBalanceCents = subtract(
-        settlement.overpaymentCents,
-        previous.overpaymentCents,
-    );
-
     // A document that has been corrected away keeps the status it has: what a
     // payment against it means is a decision, and § 8 leaves those to the
     // operator. The money is still recorded, and it still becomes credit.
@@ -365,19 +355,20 @@ async function settleAgainstInvoice(
         })
         .where(eq(schema.invoice.id, invoiceId));
 
-    if (creditedToBalanceCents !== 0) {
-        await creditBalance(tx, {
-            paymentId,
-            customerId: invoice.customerId,
-            invoiceId,
-            kind: "overpayment",
-            amountCents: creditedToBalanceCents,
-            reason:
-                creditedToBalanceCents > 0
-                    ? `Überzahlung zu Rechnung ${invoice.number ?? invoiceId}`
-                    : `Rücknahme einer Überzahlung zu Rechnung ${invoice.number ?? invoiceId}`,
-        });
-    }
+    /**
+     * Only what *this* payment added beyond what was owed. Two payments that
+     * overshoot by 5 and then by 3 leave the customer with 8, in two entries
+     * that each name the payment they came from — and the refund that takes
+     * one of them back is the same rule with the sign reversed, which is why
+     * it is one function and `resettleInvoice` calls it too.
+     */
+    const creditedToBalanceCents = await bookOvershootDelta(tx, {
+        invoice,
+        grossCents: invoice.grossCents ?? 0,
+        creditedCents: invoice.creditedCents,
+        movements,
+        paymentId,
+    });
 
     await audit(tx, {
         actor: context.actor,
@@ -444,6 +435,66 @@ async function movementsFor(tx: Executor, invoiceId: string) {
 }
 
 /**
+ * What one row did to the overshoot, written as its own ledger entry.
+ *
+ * The same rule in both directions, which is the point of it being one
+ * function: a payment that overshoots by 50 € credits 50 €, and the refund
+ * that takes that 50 € back debits 50 €. Each entry is keyed on the row that
+ * caused it, so the unique index on `(payment_id, kind)` makes a repeat a
+ * no-op rather than a doubled balance.
+ *
+ * Writing it only on the way in — which is what this file did until the
+ * refund path was found to leave the credit standing — means a refunded
+ * overpayment is paid out twice: once to the card, once as spendable credit.
+ */
+async function bookOvershootDelta(
+    tx: Tx,
+    input: {
+        invoice: { id: string; customerId: string; number: string | null };
+        grossCents: number;
+        creditedCents: number;
+        movements: Awaited<ReturnType<typeof movementsFor>>;
+        /** The row this entry belongs to: the payment, or the refund. */
+        paymentId: string;
+    },
+): Promise<number> {
+    const settlement = settlementFor({
+        grossCents: input.grossCents,
+        creditedCents: input.creditedCents,
+        receivedCents: receivedFrom(input.movements),
+    });
+
+    const previous = settlementFor({
+        grossCents: input.grossCents,
+        creditedCents: input.creditedCents,
+        receivedCents: receivedFrom(
+            input.movements.filter((row) => row.id !== input.paymentId),
+        ),
+    });
+
+    const delta = subtract(
+        settlement.overpaymentCents,
+        previous.overpaymentCents,
+    );
+
+    if (delta !== 0) {
+        await creditBalance(tx, {
+            paymentId: input.paymentId,
+            customerId: input.invoice.customerId,
+            invoiceId: input.invoice.id,
+            kind: "overpayment",
+            amountCents: delta,
+            reason:
+                delta > 0
+                    ? `Überzahlung zu Rechnung ${input.invoice.number ?? input.invoice.id}`
+                    : `Rücknahme einer Überzahlung zu Rechnung ${input.invoice.number ?? input.invoice.id}`,
+        });
+    }
+
+    return delta;
+}
+
+/**
  * (3) The last guard. The unique index on `(payment_id, kind)` means a second
  * attempt to credit the same payment is a no-op rather than a doubled
  * balance, whatever went wrong further up.
@@ -471,6 +522,68 @@ async function creditBalance(
             reason: entry.reason,
         })
         .onConflictDoNothing();
+}
+
+/**
+ * Puts back what a refunded charge had done to the balance.
+ *
+ * Only two kinds of charge ever touch the ledger, and each has one mirror:
+ *
+ *  - a **top-up** put money in, so refunding it takes the same money out —
+ *    otherwise the customer has the cash back on their card *and* the credit
+ *    still standing, and can spend it on the next invoice;
+ *  - a charge whose provider is **`credit`** was the balance being spent, so
+ *    reversing it gives the balance back. No money ever left a bank for one
+ *    of these, which is why the gateway-less branch in `refunds.ts` must not
+ *    send the operator to move any.
+ *
+ * Everything else — a card, a transfer — moved real money and leaves the
+ * balance alone; the *overshoot* it may have created is taken back separately
+ * by `bookOvershootDelta`, keyed on the same refund row under a different
+ * kind, so both entries can exist side by side.
+ *
+ * Keyed on the refund's own payment row, so the unique index on
+ * `(payment_id, kind)` makes a second attempt a no-op.
+ */
+export async function reverseChargeCredit(
+    tx: Tx,
+    input: {
+        refundPaymentId: string;
+        charge: {
+            customerId: string;
+            invoiceId: string | null;
+            provider: PaymentProvider;
+            purpose: "invoice" | "topup";
+        };
+        amountCents: number;
+    },
+): Promise<number> {
+    const direction =
+        input.charge.purpose === "topup"
+            ? -1
+            : input.charge.provider === "credit"
+              ? 1
+              : 0;
+
+    if (direction === 0) {
+        return 0;
+    }
+
+    const amountCents = direction * input.amountCents;
+
+    await creditBalance(tx, {
+        paymentId: input.refundPaymentId,
+        customerId: input.charge.customerId,
+        invoiceId: input.charge.invoiceId,
+        kind: "refund",
+        amountCents,
+        reason:
+            direction < 0
+                ? "Zurückgezahlte Guthaben-Aufladung"
+                : "Angerechnetes Guthaben zurückgebucht",
+    });
+
+    return amountCents;
 }
 
 /** The account's owner, for a receipt when the invoice froze no address. */
@@ -694,11 +807,23 @@ export async function listCreditLedger(
         .limit(limit);
 }
 
-/** Used by the refund path to re-settle an invoice after money went back. */
+/**
+ * Re-settles an invoice after the money against it moved without a new
+ * payment: a refund went out, or a Rechnungskorrektur took part of the
+ * document back.
+ *
+ * `causedBy` is the row that caused the movement — the refund's payment id.
+ * It is what the overshoot entry is keyed on, so taking back an overpayment
+ * is the mirror image of granting one rather than a second mechanism. A
+ * correction has no row of its own and passes none; then only the status and
+ * `paid_cents` follow, which is the case where `paid_cents` would otherwise
+ * be left standing above what the corrected document still asks for.
+ */
 export async function resettleInvoice(
     tx: Tx,
     invoiceId: string,
     at: Date,
+    causedBy?: string | null,
 ): Promise<{ status: string; paidCents: number } | null> {
     const [invoice] = await tx
         .select()
@@ -710,10 +835,12 @@ export async function resettleInvoice(
         return null;
     }
 
+    const movements = await movementsFor(tx, invoiceId);
+
     const settlement = settlementFor({
         grossCents: invoice.grossCents ?? 0,
         creditedCents: invoice.creditedCents,
-        receivedCents: receivedFrom(await movementsFor(tx, invoiceId)),
+        receivedCents: receivedFrom(movements),
     });
 
     // A corrected-away invoice keeps its status; everything else follows the
@@ -728,10 +855,27 @@ export async function resettleInvoice(
         .set({
             status,
             paidCents: settlement.paidCents,
-            paidAt: status === "paid" ? (invoice.paidAt ?? at) : null,
+            // A cancelled document keeps the day it was paid: the money did
+            // arrive, and the correction is what made it owe nothing.
+            paidAt:
+                status === "paid"
+                    ? (invoice.paidAt ?? at)
+                    : status === "cancelled"
+                      ? invoice.paidAt
+                      : null,
             updatedAt: at,
         })
         .where(eq(schema.invoice.id, invoiceId));
+
+    if (causedBy) {
+        await bookOvershootDelta(tx, {
+            invoice,
+            grossCents: invoice.grossCents ?? 0,
+            creditedCents: invoice.creditedCents,
+            movements,
+            paymentId: causedBy,
+        });
+    }
 
     return { status, paidCents: settlement.paidCents };
 }

@@ -1,8 +1,8 @@
 import { db } from "@/db";
 import { gateway } from "@/server/payments/gateways";
 import type { WebhookOutcome } from "@/server/payments/gateways/types";
-import { revalidateAfterPayment } from "@/server/payments/settle";
 import { gatewayConfig } from "@/server/payments/settings";
+import { revalidateAfterPayment } from "@/server/payments/settle";
 import { markEventHandled } from "@/server/payments/webhook-log";
 
 /**

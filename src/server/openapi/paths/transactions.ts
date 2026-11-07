@@ -16,15 +16,13 @@ import {
 
 const SECURITY = [{ [apiKeyAuth.name]: [] }];
 
-const GATEWAY = z
-    .enum(["stripe", "paypal", "banktransfer", "credit"])
-    .openapi({
-        description:
-            "Wer das Geld bewegt hat. `banktransfer` ist eine von Hand " +
-            "verbuchte Überweisung, `credit` ist Guthaben des Kontos, das " +
-            "auf eine Rechnung angerechnet wurde.",
-        example: "stripe",
-    });
+const GATEWAY = z.enum(["stripe", "paypal", "banktransfer", "credit"]).openapi({
+    description:
+        "Wer das Geld bewegt hat. `banktransfer` ist eine von Hand " +
+        "verbuchte Überweisung, `credit` ist Guthaben des Kontos, das " +
+        "auf eine Rechnung angerechnet wurde.",
+    example: "stripe",
+});
 
 const STATUS = z
     .enum(["pending", "processing", "succeeded", "failed", "refunded"])
@@ -215,14 +213,11 @@ const NewPaymentSchema = registry.register(
                 description: "Interne Notiz zum Vorgang.",
                 example: "Teilzahlung nach Rücksprache",
             }),
-            received_at: z.iso
-                .datetime()
-                .nullish()
-                .openapi({
-                    description:
-                        "Wann das Geld ankam, in UTC. Fehlt es, gilt jetzt.",
-                    example: "2026-11-07T00:00:00.000Z",
-                }),
+            received_at: z.iso.datetime().nullish().openapi({
+                description:
+                    "Wann das Geld ankam, in UTC. Fehlt es, gilt jetzt.",
+                example: "2026-11-07T00:00:00.000Z",
+            }),
         })
         .openapi({
             description: "Ein Zahlungseingang, der von Hand verbucht wird.",
@@ -258,8 +253,7 @@ const RecordedPaymentSchema = registry.register(
                 }),
             })
             .openapi({
-                description:
-                    "Was die Verbuchung mit der Rechnung gemacht hat.",
+                description: "Was die Verbuchung mit der Rechnung gemacht hat.",
             }),
     }).openapi({
         description: "Der angelegte Vorgang samt Wirkung auf die Rechnung.",
@@ -325,8 +319,7 @@ registry.registerPath({
                 .optional()
                 .openapi({
                     param: { name: "kind", in: "query" },
-                    description:
-                        "Nur Zahlungen oder nur Erstattungen zeigen.",
+                    description: "Nur Zahlungen oder nur Erstattungen zeigen.",
                     example: "charge",
                 }),
         }),

@@ -6,10 +6,7 @@ import SelectField from "@/components/shared/select-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-    type GatewaySettingsState,
-    saveGatewaySettings,
-} from "./actions";
+import { type GatewaySettingsState, saveGatewaySettings } from "./actions";
 
 const initialState: GatewaySettingsState = { status: "idle" };
 

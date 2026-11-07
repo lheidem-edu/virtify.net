@@ -3,8 +3,8 @@ import { fromDecimalString, toDecimalString } from "@/lib/money";
 import {
     appUrl,
     gatewayConfig,
-    paypalBase,
     type PayPalCredentials,
+    paypalBase,
 } from "@/server/payments/settings";
 import { GatewayError } from "./types";
 
@@ -181,6 +181,8 @@ export function readCapture(order: PayPalOrder): PayPalCapture {
 export async function createInvoiceOrder(input: {
     invoiceId: string;
     invoiceNumber: string;
+    /** What the payer reads; defaults to "Rechnung {number}". */
+    descriptor?: string;
     amountCents: number;
     currency: string;
     attempt: number;
@@ -199,7 +201,8 @@ export async function createInvoiceOrder(input: {
                     // PayPal refuse a second payment for the same invoice.
                     invoice_id: input.invoiceNumber,
                     custom_id: input.invoiceId,
-                    description: `Rechnung ${input.invoiceNumber}`,
+                    description:
+                        input.descriptor ?? `Rechnung ${input.invoiceNumber}`,
                     amount: {
                         currency_code: input.currency,
                         value: amount(input.amountCents),

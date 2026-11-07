@@ -399,7 +399,8 @@ export async function markInvoicePaid(
     if (!invoice || !isOpenInvoice(invoice.status)) {
         return {
             status: "error",
-            message: "Nur offene Rechnungen können als bezahlt verbucht werden.",
+            message:
+                "Nur offene Rechnungen können als bezahlt verbucht werden.",
         };
     }
 

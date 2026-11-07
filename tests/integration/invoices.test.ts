@@ -14,6 +14,7 @@ import {
     updateInvoiceDraft,
 } from "@/server/billing/invoices/service";
 import { netRevenueForYear, thresholdStatus } from "@/server/billing/revenue";
+import { applyPayment } from "@/server/payments/apply";
 import { defaultSettings, type Settings } from "@/server/settings";
 import { scheduleTaxMode, taxModeAt } from "@/server/tax/mode";
 import {
@@ -870,6 +871,79 @@ describe.skipIf(!available)("the invoicing engine", () => {
             expect(reloaded?.invoice.status).toBe("unpaid");
             expect(reloaded?.invoice.creditedCents).toBe(1000);
             expect(reloaded?.invoice.grossCents).toBe(3500);
+        });
+
+        /**
+         * A correction changes what the invoice asks for, so what has been
+         * received against it means something else afterwards.
+         *
+         * The correction used to touch `credited_cents` and nothing else, so
+         * a paid invoice kept `paid_cents` at the old full amount: the
+         * schema's own invariant (never more than the lines say) became
+         * false, and the customer's invoice page printed "Offen −10,00 €".
+         * The settlement is the one place that decides those two figures.
+         */
+        it("re-settles a paid invoice that is corrected in part", async () => {
+            const row = await draft(customerId, [
+                {
+                    description: "VPS M",
+                    quantity: 1,
+                    unitCode: "MON",
+                    unitPriceCents: 7000,
+                },
+                {
+                    description: "Backup",
+                    quantity: 1,
+                    unitCode: "MON",
+                    unitPriceCents: 3000,
+                },
+            ]);
+
+            await finalizeInvoice(db, row.id, ACTOR, { settings: SETTINGS });
+
+            await db.insert(schema.payment).values({
+                id: createId("payment"),
+                invoiceId: row.id,
+                customerId,
+                provider: "banktransfer",
+                providerRef: `bt:${row.id}`,
+                amountCents: 10_000,
+            });
+
+            const paid = await applyPayment(db, {
+                ref: `bt:${row.id}`,
+                gateway: "banktransfer",
+                amountCents: 10_000,
+                actor: ACTOR,
+            });
+
+            expect(paid.invoiceStatus).toBe("paid");
+
+            const items = await db
+                .select()
+                .from(schema.invoiceItem)
+                .where(eq(schema.invoiceItem.invoiceId, row.id))
+                .orderBy(asc(schema.invoiceItem.position));
+
+            // The 30,00 € Backup line is taken back.
+            await createCreditNote(
+                db,
+                {
+                    invoiceId: row.id,
+                    kind: "partial",
+                    lines: [{ invoiceItemId: items[1].id, quantity: 1 }],
+                },
+                ACTOR,
+                { settings: SETTINGS },
+            );
+
+            const reloaded = await loadInvoice(row.id, "", true, db);
+
+            expect(reloaded?.invoice.creditedCents).toBe(3000);
+            // 100,00 € received against 70,00 € still asked for: paid, and
+            // `paid_cents` capped at what the corrected document wants.
+            expect(reloaded?.invoice.status).toBe("paid");
+            expect(reloaded?.invoice.paidCents).toBe(7000);
         });
 
         /**

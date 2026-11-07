@@ -1,10 +1,10 @@
 import "server-only";
 import { giroCodeSvg } from "@/lib/giro-code";
-import { loadSettings } from "@/server/settings";
 import { gatewayConfig } from "@/server/payments/settings";
+import { loadSettings } from "@/server/settings";
 import {
-    type CheckoutHandoff,
     type ChargeOutcome,
+    type CheckoutHandoff,
     type GatewayCapabilities,
     type PayableInvoice,
     type PaymentGateway,

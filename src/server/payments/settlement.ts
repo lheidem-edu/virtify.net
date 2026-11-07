@@ -1,5 +1,5 @@
-import { add, subtract } from "@/lib/money";
 import type { InvoiceStatus } from "@/db/schema";
+import { add, subtract } from "@/lib/money";
 
 /**
  * What a sum of money received does to an invoice. Pure: integer cents in,

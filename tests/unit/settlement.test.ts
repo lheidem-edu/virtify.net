@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fromDecimalString, toDecimalString } from "@/lib/money";
-import {
-    receivedFrom,
-    settlementFor,
-} from "@/server/payments/settlement";
+import { receivedFrom, settlementFor } from "@/server/payments/settlement";
 
 /**
  * The arithmetic of a payment, in concrete cents.

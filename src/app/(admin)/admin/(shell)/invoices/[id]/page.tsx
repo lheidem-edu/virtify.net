@@ -14,7 +14,6 @@ import {
 import { db, schema } from "@/db";
 import { isOpenInvoice } from "@/db/schema";
 import { berlinDay } from "@/lib/berlin-date";
-import { subtract } from "@/lib/money";
 import {
     formatDate,
     formatDateRange,
@@ -26,6 +25,7 @@ import {
     PAYMENT_STATUS_LABEL,
     PAYMENT_STATUS_TONE,
 } from "@/lib/format";
+import { subtract } from "@/lib/money";
 import { requirePermission } from "@/server/auth/staff-session";
 import { showsTax } from "@/server/billing/invoices/pdf";
 import { loadInvoice } from "@/server/billing/invoices/repository";
@@ -38,6 +38,8 @@ import {
     loadInvoicePayments,
 } from "@/server/documents/repository";
 import { TAX_STRATEGY_LABEL } from "@/server/tax";
+import { manualPaymentToken } from "../../payments/actions";
+import { ManualPaymentForm, RefundAction } from "../../payments/payment-forms";
 import {
     CancelInvoiceAction,
     DeleteInvoiceAction,
@@ -47,11 +49,6 @@ import {
     ResendMailAction,
     UnmarkPaidForm,
 } from "../invoice-actions";
-import { manualPaymentToken } from "../../payments/actions";
-import {
-    ManualPaymentForm,
-    RefundAction,
-} from "../../payments/payment-forms";
 import InvoiceEditForm from "./invoice-edit-form";
 
 const LINK =
@@ -373,7 +370,11 @@ export default async function Page({
                                 {payments.map((entry) => (
                                     <TableRow key={entry.id}>
                                         <TableCell>
-                                            {PAYMENT_PROVIDER_LABEL[entry.provider]}
+                                            {
+                                                PAYMENT_PROVIDER_LABEL[
+                                                    entry.provider
+                                                ]
+                                            }
                                             {entry.kind === "refund" ? (
                                                 <span className="block text-muted-foreground text-xs">
                                                     Erstattung

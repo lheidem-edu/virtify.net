@@ -16,9 +16,7 @@ export const transactionQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(25),
     customer_id: z.string().optional(),
     invoice_id: z.string().optional(),
-    provider: z
-        .enum(["stripe", "paypal", "banktransfer", "credit"])
-        .optional(),
+    provider: z.enum(["stripe", "paypal", "banktransfer", "credit"]).optional(),
     status: z
         .enum(["pending", "processing", "succeeded", "failed", "refunded"])
         .optional(),

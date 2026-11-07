@@ -51,10 +51,7 @@ export default async function Page({
     const { invoice, items, totals } = loaded;
     const number = invoice.number ?? invoice.id;
 
-    const due = Math.max(
-        subtract(totals.grossCents, invoice.creditedCents),
-        0,
-    );
+    const due = Math.max(subtract(totals.grossCents, invoice.creditedCents), 0);
     const outstanding = subtract(due, invoice.paidCents);
     const payable = isOpenInvoice(invoice.status) && outstanding > 0;
 
@@ -110,7 +107,10 @@ export default async function Page({
                         />
                     ) : null}
                     {invoice.paidCents > 0 ? (
-                        <Row label="Bereits gezahlt" value={-invoice.paidCents} />
+                        <Row
+                            label="Bereits gezahlt"
+                            value={-invoice.paidCents}
+                        />
                     ) : null}
                     <Row label="Offen" value={outstanding} strong />
                 </dl>
@@ -190,9 +190,7 @@ export default async function Page({
                                     <dl className="flex-1 space-y-2 text-sm">
                                         <Detail
                                             label="Empfänger"
-                                            value={
-                                                transfer.instructions.holder
-                                            }
+                                            value={transfer.instructions.holder}
                                         />
                                         <Detail
                                             label="IBAN"
@@ -212,8 +210,7 @@ export default async function Page({
                                         <Detail
                                             label="Verwendungszweck"
                                             value={
-                                                transfer.instructions
-                                                    .remittance
+                                                transfer.instructions.remittance
                                             }
                                             mono
                                         />
@@ -260,9 +257,7 @@ export default async function Page({
                                 <span>
                                     {row.kind === "refund"
                                         ? "Erstattung"
-                                        : PAYMENT_PROVIDER_LABEL[
-                                              row.provider
-                                          ]}
+                                        : PAYMENT_PROVIDER_LABEL[row.provider]}
                                     <span className="block text-muted-foreground text-xs">
                                         {formatDate(
                                             row.settledAt ?? row.createdAt,

@@ -5,12 +5,12 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { getSession } from "@/server/auth/session";
 import { storeFinalizedPdf } from "@/server/billing/invoices/pdf";
-import { startPayment } from "@/server/payments/collect";
-import { gateway } from "@/server/payments/gateways";
 import { currentCart } from "@/server/cart/session";
 import { customerForUser, updateCustomer } from "@/server/customers/repository";
 import { customerSelfPatchSchema } from "@/server/customers/schema";
 import { OrderError, placeOrder } from "@/server/orders/service";
+import { startPayment } from "@/server/payments/collect";
+import { gateway } from "@/server/payments/gateways";
 
 /**
  * The checkout's one write.
@@ -104,7 +104,10 @@ export async function submitOrder(
     const gatewayId =
         chosen === "stripe" || chosen === "paypal" ? chosen : "banktransfer";
 
-    if (gatewayId !== "banktransfer" && !(await gateway(gatewayId).isEnabled())) {
+    if (
+        gatewayId !== "banktransfer" &&
+        !(await gateway(gatewayId).isEnabled())
+    ) {
         return {
             status: "error",
             message: "Diese Zahlungsart steht gerade nicht zur Verfügung.",
@@ -121,9 +124,7 @@ export async function submitOrder(
                 cartId: cart.id,
                 customerId: account.customer.id,
                 paymentOption:
-                    gatewayId === "banktransfer"
-                        ? "bank_transfer"
-                        : gatewayId,
+                    gatewayId === "banktransfer" ? "bank_transfer" : gatewayId,
                 autoCharge: data.get("autoCharge") === "on",
                 acceptance: {
                     termsLabel: String(data.get("termsLabel") ?? "") || null,

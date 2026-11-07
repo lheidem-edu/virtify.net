@@ -43,8 +43,18 @@ export type GatewayCapabilities = {
  */
 export type PayableInvoice = {
     id: string;
-    /** The gapless number. A draft has none and is never payable. */
+    /**
+     * The gapless number — and, at PayPal, the `invoice_id`, which must be
+     * unique across the whole merchant account. A stand-in that is constant
+     * per customer (a Guthaben top-up used to be) makes PayPal refuse every
+     * payment after the first with DUPLICATE_INVOICE_ID.
+     */
     number: string;
+    /**
+     * What the customer reads on the provider's page. Defaults to
+     * "Rechnung {number}", which is wrong for anything that is not one.
+     */
+    descriptor?: string;
     /** What is still owed, in whole minor units. Never recomputed here. */
     amountCents: number;
     currency: string;

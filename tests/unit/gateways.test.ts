@@ -46,9 +46,7 @@ vi.mock("stripe", () => {
  */
 vi.mock("@/server/payments/settings", async (importOriginal) => {
     const actual =
-        await importOriginal<
-            typeof import("@/server/payments/settings")
-        >();
+        await importOriginal<typeof import("@/server/payments/settings")>();
 
     return {
         ...actual,
@@ -335,21 +333,26 @@ describe("the PayPal gateway", () => {
 
         let sent: Record<string, unknown> | null = null;
 
-        fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-            if (String(url).includes("/v1/oauth2/token")) {
-                return answer({ access_token: "t", expires_in: 3600 });
-            }
+        fetchMock.mockImplementation(
+            async (url: string, init?: RequestInit) => {
+                if (String(url).includes("/v1/oauth2/token")) {
+                    return answer({ access_token: "t", expires_in: 3600 });
+                }
 
-            sent = JSON.parse(String(init?.body));
+                sent = JSON.parse(String(init?.body));
 
-            return answer({
-                id: "ORDER-2",
-                status: "PAYER_ACTION_REQUIRED",
-                links: [
-                    { rel: "payer-action", href: "https://paypal.test/approve" },
-                ],
-            });
-        });
+                return answer({
+                    id: "ORDER-2",
+                    status: "PAYER_ACTION_REQUIRED",
+                    links: [
+                        {
+                            rel: "payer-action",
+                            href: "https://paypal.test/approve",
+                        },
+                    ],
+                });
+            },
+        );
 
         await createInvoiceOrder({
             invoiceId: INVOICE.id,

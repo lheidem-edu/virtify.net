@@ -22,15 +22,16 @@ import { notifyDispute } from "./settle";
 
 type Db = typeof defaultDb;
 
-const STATUS: Record<string, typeof schema.disputeStatus.enumValues[number]> = {
-    warning_needs_response: "open",
-    warning_under_review: "under_review",
-    warning_closed: "withdrawn",
-    needs_response: "open",
-    under_review: "under_review",
-    won: "won",
-    lost: "lost",
-};
+const STATUS: Record<string, (typeof schema.disputeStatus.enumValues)[number]> =
+    {
+        warning_needs_response: "open",
+        warning_under_review: "under_review",
+        warning_closed: "withdrawn",
+        needs_response: "open",
+        under_review: "under_review",
+        won: "won",
+        lost: "lost",
+    };
 
 export function disputeStatusFromStripe(value: string) {
     return STATUS[value] ?? "open";
@@ -48,7 +49,7 @@ export async function recordDispute(
         providerRef: string;
         /** The charge or intent the provider names. */
         captureRef: string | null;
-        status: typeof schema.disputeStatus.enumValues[number];
+        status: (typeof schema.disputeStatus.enumValues)[number];
         amountCents: number;
         currency?: string;
         reason?: string | null;

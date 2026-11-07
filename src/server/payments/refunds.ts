@@ -5,7 +5,7 @@ import type { PaymentProvider } from "@/db/schema";
 import { add, subtract } from "@/lib/money";
 import { createId } from "@/lib/ulid";
 import { type Actor, audit } from "@/server/audit";
-import { resettleInvoice } from "./apply";
+import { resettleInvoice, reverseChargeCredit } from "./apply";
 import { gatewayFor } from "./gateways";
 
 /**
@@ -60,17 +60,38 @@ export async function recordRefund(
     const at = input.at ?? new Date();
 
     return db.transaction(async (tx) => {
+        const find = input.chargePaymentId
+            ? eq(schema.payment.id, input.chargePaymentId)
+            : and(
+                  eq(schema.payment.provider, input.provider),
+                  eq(schema.payment.captureRef, input.captureRef ?? ""),
+              );
+
+        /**
+         * The customer's row first, because a refund can take credit back and
+         * `payFromCredit` reads the balance under this same lock. Without it a
+         * customer could spend a euro in one tab while the other was removing
+         * it, and the ledger would go negative. The charge has to be read
+         * unlocked to learn whose it is; the locked read below is the one that
+         * decides anything.
+         */
+        const [owner] = await tx
+            .select({ customerId: schema.payment.customerId })
+            .from(schema.payment)
+            .where(find);
+
+        if (owner) {
+            await tx
+                .select({ id: schema.customer.id })
+                .from(schema.customer)
+                .where(eq(schema.customer.id, owner.customerId))
+                .for("update");
+        }
+
         const [charge] = await tx
             .select()
             .from(schema.payment)
-            .where(
-                input.chargePaymentId
-                    ? eq(schema.payment.id, input.chargePaymentId)
-                    : and(
-                          eq(schema.payment.provider, input.provider),
-                          eq(schema.payment.captureRef, input.captureRef ?? ""),
-                      ),
-            )
+            .where(find)
             .for("update");
 
         if (charge?.kind !== "charge") {
@@ -134,8 +155,20 @@ export async function recordRefund(
             })
             .where(eq(schema.payment.id, charge.id));
 
+        /**
+         * What this refund puts back into — or takes out of — the balance.
+         * Both entries hang off the refund row, under different kinds, so the
+         * unique index on `(payment_id, kind)` lets them coexist and makes a
+         * repeat a no-op. A refund that touches neither writes neither.
+         */
+        const ledgerCents = await reverseChargeCredit(tx, {
+            refundPaymentId,
+            charge,
+            amountCents: input.amountCents,
+        });
+
         if (charge.invoiceId) {
-            await resettleInvoice(tx, charge.invoiceId, at);
+            await resettleInvoice(tx, charge.invoiceId, at, refundPaymentId);
         }
 
         await audit(tx, {
@@ -150,6 +183,7 @@ export async function recordRefund(
                 amountCents: input.amountCents,
                 refundRef: input.refundRef,
                 reason: input.reason,
+                creditLedgerCents: ledgerCents,
             },
         });
 
@@ -200,8 +234,16 @@ export async function refundPayment(
     const gateway = gatewayFor(charge.provider);
 
     if (!gateway?.capabilities.refunds) {
-        // Bank transfer and credit have no API to ask. The money goes back by
-        // hand; the row is written so the books agree with the account.
+        /**
+         * No API to ask — but for two different reasons, and they must not be
+         * confused. A **transfer** moved real money, so the row is written and
+         * the operator wires it back by hand. A **credit** payment moved no
+         * money at all: it was the balance being spent, so reversing it is a
+         * ledger entry and nothing else, which `recordRefund` now writes. The
+         * caller is told which of the two happened, because "please transfer
+         * 29,99 €" for a payment that was never money is how an operator pays
+         * the same amount twice.
+         */
         return recordRefund(db, {
             chargePaymentId: charge.id,
             provider: charge.provider,

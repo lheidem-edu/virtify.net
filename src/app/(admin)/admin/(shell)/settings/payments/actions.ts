@@ -8,6 +8,8 @@ import { requirePermission } from "@/server/auth/staff-session";
 import {
     type GatewayId,
     type GatewayMode,
+    gatewayConfig,
+    mergeCredentials,
     type PayPalRecurringMode,
     saveGatewayConfig,
 } from "@/server/payments/settings";
@@ -62,25 +64,38 @@ export async function saveGatewaySettings(
 
     let credentials: Record<string, string> | null | undefined;
 
-    if (id === "stripe") {
-        const secretKey = read("secretKey");
-        const webhookSecret = read("webhookSecret");
+    /**
+     * Per field, not per gateway.
+     *
+     * The form says so on every secret — "gespeichert — leer lassen, um ihn
+     * zu behalten" — but the old reading was all-or-nothing: typing a new
+     * Stripe secret key and leaving the webhook secret blank wrote the pair
+     * `{ new key, "" }`, and the webhook route then answered every delivery
+     * 503. Rotating a PayPal client secret blanked the webhook id the same
+     * way, which stops `CHECKOUT.ORDER.APPROVED` arriving and leaves an
+     * approved order uncaptured until PayPal voids it.
+     *
+     * So each field falls back to what is stored. `clear` below is still the
+     * only way to empty them.
+     */
+    const stored = (await gatewayConfig(id)).credentials as Record<
+        string,
+        string | undefined
+    >;
 
-        credentials =
-            secretKey || webhookSecret
-                ? { secretKey, webhookSecret }
-                : undefined;
+    const merge = (fields: string[]) =>
+        mergeCredentials(
+            fields,
+            Object.fromEntries(fields.map((field) => [field, read(field)])),
+            stored,
+        );
+
+    if (id === "stripe") {
+        credentials = merge(["secretKey", "webhookSecret"]);
     }
 
     if (id === "paypal") {
-        const clientId = read("clientId");
-        const clientSecret = read("clientSecret");
-        const webhookId = read("webhookId");
-
-        credentials =
-            clientId || clientSecret || webhookId
-                ? { clientId, clientSecret, webhookId }
-                : undefined;
+        credentials = merge(["clientId", "clientSecret", "webhookId"]);
     }
 
     if (read("clear") === "on") {

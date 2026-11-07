@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { parseAmount } from "@/lib/money";
+import { createId } from "@/lib/ulid";
 import { getCurrentCustomer } from "@/server/customers/current";
 import { gateway, isGatewayId } from "@/server/payments/gateways";
 import { recordAttempt } from "@/server/payments/settle";
@@ -62,14 +63,25 @@ export async function startCreditTopUp(
     let url: string;
 
     try {
-        // A top-up has no invoice, so the gateway is handed a stand-in with
-        // the customer's own id as the "number". Nothing downstream reads it
-        // as a document: `purpose: "topup"` on the attempt is what decides
-        // where the money lands.
+        /**
+         * A top-up has no invoice, so the gateway is handed a stand-in.
+         * Nothing downstream reads it as a document: `purpose: "topup"` on
+         * the attempt is what decides where the money lands.
+         *
+         * The "number" has to be **unique per attempt**, because PayPal uses
+         * it as the `invoice_id`, which is unique across the whole merchant
+         * account — one constant per customer meant the second top-up that
+         * customer ever tried was refused with DUPLICATE_INVOICE_ID, and
+         * every one after it. The `descriptor` is what the customer actually
+         * reads on the provider's page, so the reference stays out of sight.
+         */
+        const reference = createId("payment");
+
         const handoff = await target.createCheckout(
             {
                 id: `topup:${customer.id}`,
-                number: `Guthaben ${customer.customerNumber ?? customer.id}`,
+                number: `Guthaben ${customer.customerNumber ?? customer.id} ${reference}`,
+                descriptor: "Guthaben-Aufladung",
                 amountCents,
                 currency: "EUR",
                 customerId: customer.id,

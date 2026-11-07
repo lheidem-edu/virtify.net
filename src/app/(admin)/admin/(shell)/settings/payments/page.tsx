@@ -59,8 +59,10 @@ export default async function Page() {
                             label: "Secret Key",
                             present: Boolean(
                                 (
-                                    gateways.stripe
-                                        .credentials as Record<string, string>
+                                    gateways.stripe.credentials as Record<
+                                        string,
+                                        string
+                                    >
                                 ).secretKey,
                             ),
                             help: "sk_test_… oder sk_live_… — das Präfix entscheidet über Sandbox oder Live.",
@@ -70,8 +72,10 @@ export default async function Page() {
                             label: "Webhook Signing Secret",
                             present: Boolean(
                                 (
-                                    gateways.stripe
-                                        .credentials as Record<string, string>
+                                    gateways.stripe.credentials as Record<
+                                        string,
+                                        string
+                                    >
                                 ).webhookSecret,
                             ),
                             help: `whsec_… für den Endpunkt ${settings.site.url}/api/webhooks/stripe`,
@@ -108,8 +112,10 @@ export default async function Page() {
                             label: "Client ID",
                             present: Boolean(
                                 (
-                                    gateways.paypal
-                                        .credentials as Record<string, string>
+                                    gateways.paypal.credentials as Record<
+                                        string,
+                                        string
+                                    >
                                 ).clientId,
                             ),
                         },
@@ -118,8 +124,10 @@ export default async function Page() {
                             label: "Client Secret",
                             present: Boolean(
                                 (
-                                    gateways.paypal
-                                        .credentials as Record<string, string>
+                                    gateways.paypal.credentials as Record<
+                                        string,
+                                        string
+                                    >
                                 ).clientSecret,
                             ),
                         },
@@ -128,8 +136,10 @@ export default async function Page() {
                             label: "Webhook ID",
                             present: Boolean(
                                 (
-                                    gateways.paypal
-                                        .credentials as Record<string, string>
+                                    gateways.paypal.credentials as Record<
+                                        string,
+                                        string
+                                    >
                                 ).webhookId,
                             ),
                             help: `Aus dem PayPal-Dashboard, für den Endpunkt ${settings.site.url}/api/webhooks/paypal. Ohne ihn lässt sich kein Ereignis prüfen.`,
@@ -144,13 +154,9 @@ export default async function Page() {
                         Überweisung
                     </h2>
                     <StatusBadge
-                        label={
-                            gateways.banktransfer.enabled ? "Aktiv" : "Aus"
-                        }
+                        label={gateways.banktransfer.enabled ? "Aktiv" : "Aus"}
                         tone={
-                            gateways.banktransfer.enabled
-                                ? "positive"
-                                : "muted"
+                            gateways.banktransfer.enabled ? "positive" : "muted"
                         }
                     />
                 </div>

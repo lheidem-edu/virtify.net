@@ -58,6 +58,26 @@ describe.skipIf(!available)("settling an invoice", () => {
     let customerId: string;
     let otherCustomerId: string;
 
+    /**
+     * Opens `count` connections and holds them until all of them are up.
+     *
+     * Without this a `Promise.all` of two transactions is not concurrent:
+     * the pool hands the first branch its one warm connection and the second
+     * waits on a TCP connect and a session handshake, by which time the
+     * first has committed. Every lock test in this file passes with the lock
+     * removed unless the pool is warm, which is how the central claim of the
+     * phase came to have no test behind it.
+     */
+    async function warmPool(count: number) {
+        const held = await Promise.all(
+            Array.from({ length: count }, () => db.$pool.connect()),
+        );
+
+        for (const client of held) {
+            client.release();
+        }
+    }
+
     async function customer(number: number) {
         const userId = createId("user");
 
@@ -265,12 +285,27 @@ describe.skipIf(!available)("settling an invoice", () => {
                 actor: ACTOR,
             });
 
+            // A third payment is what makes this test mean anything: with
+            // only two, the first payment's own overshoot is 0 and the
+            // running total happens to equal the delta, so the plain running
+            // total passes too. 2000 + 2000 + 2000 against 2999 owed
+            // separates them — the deltas are 0, 1001, 2000 (balance 3001),
+            // while a running total would say 0, 1001, 3001 (balance 4002)
+            // and credit the customer 10,01 € too much.
+            await attempt(invoice.id, "cs_over_2c", 2000);
+
+            const third = await applyPayment(db, {
+                ref: "cs_over_2c",
+                gateway: "stripe",
+                amountCents: 2000,
+                actor: ACTOR,
+            });
+
             expect(first.creditedToBalanceCents).toBe(0);
-            // 4000 received against 2999 owed: 1001 over, all of it the
-            // second payment's doing.
             expect(second.creditedToBalanceCents).toBe(1001);
+            expect(third.creditedToBalanceCents).toBe(2000);
             expect(await creditBalanceCents(db, customerId)).toBe(
-                before + 1001,
+                before + 3001,
             );
         });
     });
@@ -302,14 +337,19 @@ describe.skipIf(!available)("settling an invoice", () => {
             const row = await invoiceRow(invoice.id);
 
             expect(row.paidCents).toBe(2999);
-            expect(await creditBalanceCents(db, customerId)).toBe(
-                await creditBalanceCents(db, customerId),
-            );
         });
 
         it("two deliveries at once settle once", async () => {
             const invoice = await issued(2999);
             await attempt(invoice.id, "cs_race_1", 2999);
+
+            // The pool has to be warm first, or this is not a race at all:
+            // the second branch spends its time opening a connection while
+            // the first finishes, and the test passes with the row lock
+            // removed. With two connections already established the two
+            // transactions genuinely overlap, and removing `.for("update")`
+            // in apply.ts makes this fail.
+            await warmPool(2);
 
             // Both start before either finishes. The FOR UPDATE on the
             // payment row is what makes the loser find it already succeeded.
@@ -340,6 +380,8 @@ describe.skipIf(!available)("settling an invoice", () => {
             const invoice = await issued(2999);
             await attempt(invoice.id, "cs_race_2a", 1500);
             await attempt(invoice.id, "cs_race_2b", 1499);
+
+            await warmPool(2);
 
             await Promise.all([
                 applyPayment(db, {
@@ -680,6 +722,7 @@ describe.skipIf(!available)("settling an invoice", () => {
 
         it("refuses another account's invoice", async () => {
             const invoice = await issued(500, otherCustomerId);
+            const balance = await creditBalanceCents(db, customerId);
 
             const outcome = await payFromCredit(db, {
                 invoiceId: invoice.id,
@@ -690,6 +733,225 @@ describe.skipIf(!available)("settling an invoice", () => {
 
             expect(outcome.changed).toBe(false);
             expect((await invoiceRow(invoice.id)).status).toBe("unpaid");
+            // The debit is written before the settlement is attempted, so
+            // the refusal has to take the whole transaction with it.
+            expect(await creditBalanceCents(db, customerId)).toBe(balance);
+        });
+
+        it("refuses to spend credit that is not there", async () => {
+            // The amount comes straight off a customer-submitted form and no
+            // constraint stops the ledger going negative, so this one line in
+            // `payFromCredit` is the whole guard: without it a 29,99 €
+            // invoice is marked paid out of a balance of nothing.
+            const empty = await customer(9100);
+            const invoice = await issued(2999, empty);
+
+            expect(await creditBalanceCents(db, empty)).toBe(0);
+
+            const outcome = await payFromCredit(db, {
+                invoiceId: invoice.id,
+                customerId: empty,
+                amountCents: 2999,
+                actor: ACTOR,
+            });
+
+            expect(outcome.changed).toBe(false);
+            expect((await invoiceRow(invoice.id)).status).toBe("unpaid");
+            expect(await creditBalanceCents(db, empty)).toBe(0);
+        });
+
+        /**
+         * The three ways a refund meets the balance.
+         *
+         * Each was wrong in the same way: the refund row was written, the
+         * invoice re-settled, and `credit_ledger` left exactly as it was. The
+         * rule now is one sentence — a refund puts back whatever its charge
+         * did to the balance — and these are its three concrete numbers.
+         */
+        describe("a refund and the balance", () => {
+            it("takes back the credit a refunded top-up created", async () => {
+                const who = await customer(9201);
+
+                await db.insert(schema.payment).values({
+                    id: createId("payment"),
+                    invoiceId: null,
+                    customerId: who,
+                    provider: "stripe",
+                    status: "pending",
+                    kind: "charge",
+                    purpose: "topup",
+                    amountCents: 5000,
+                    providerRef: "cs_topup_refund",
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                });
+
+                const paid = await applyPayment(db, {
+                    ref: "cs_topup_refund",
+                    gateway: "stripe",
+                    captureRef: "pi_topup_refund",
+                    amountCents: 5000,
+                    actor: ACTOR,
+                });
+
+                expect(paid.creditedToBalanceCents).toBe(5000);
+                expect(await creditBalanceCents(db, who)).toBe(5000);
+
+                const back = await recordRefund(db, {
+                    chargePaymentId: paid.paymentId,
+                    provider: "stripe",
+                    refundRef: "re_topup_refund",
+                    amountCents: 5000,
+                    reason: "Guthaben ausgezahlt",
+                    actor: ACTOR,
+                });
+
+                expect(back.ok).toBe(true);
+                // 50 € back on the card, so 50 € off the balance. Leaving it
+                // standing pays the same money out twice.
+                expect(await creditBalanceCents(db, who)).toBe(0);
+            });
+
+            it("takes back only the part of a top-up that went back", async () => {
+                const who = await customer(9202);
+
+                await db.insert(schema.payment).values({
+                    id: createId("payment"),
+                    invoiceId: null,
+                    customerId: who,
+                    provider: "stripe",
+                    status: "pending",
+                    kind: "charge",
+                    purpose: "topup",
+                    amountCents: 5000,
+                    providerRef: "cs_topup_part",
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                });
+
+                const paid = await applyPayment(db, {
+                    ref: "cs_topup_part",
+                    gateway: "stripe",
+                    amountCents: 5000,
+                    actor: ACTOR,
+                });
+
+                await recordRefund(db, {
+                    chargePaymentId: paid.paymentId,
+                    provider: "stripe",
+                    refundRef: "re_topup_part",
+                    amountCents: 1500,
+                    reason: "Teilauszahlung",
+                    actor: ACTOR,
+                });
+
+                expect(await creditBalanceCents(db, who)).toBe(3500);
+            });
+
+            it("takes back the credit an overpayment created", async () => {
+                const who = await customer(9203);
+                const invoice = await issued(10_000, who);
+                await attempt(invoice.id, "cs_over_refund", 15_000, who);
+
+                const paid = await applyPayment(db, {
+                    ref: "cs_over_refund",
+                    gateway: "stripe",
+                    amountCents: 15_000,
+                    actor: ACTOR,
+                });
+
+                // 150 € against 100 € owed: 50 € of it is credit.
+                expect(paid.creditedToBalanceCents).toBe(5000);
+                expect(await creditBalanceCents(db, who)).toBe(5000);
+
+                await recordRefund(db, {
+                    chargePaymentId: paid.paymentId,
+                    provider: "stripe",
+                    refundRef: "re_over_refund",
+                    amountCents: 5000,
+                    reason: "Überzahlung erstattet",
+                    actor: ACTOR,
+                });
+
+                const row = await invoiceRow(invoice.id);
+
+                // The invoice is still paid in full — only the overshoot went
+                // back — and the credit it had created is gone with it.
+                expect(row.status).toBe("paid");
+                expect(row.paidCents).toBe(10_000);
+                expect(await creditBalanceCents(db, who)).toBe(0);
+            });
+
+            it("gives the balance back when a credit payment is reversed", async () => {
+                const who = await customer(9204);
+                const source = await issued(10_000, who);
+                await attempt(source.id, "cs_credit_back", 15_000, who);
+
+                await applyPayment(db, {
+                    ref: "cs_credit_back",
+                    gateway: "stripe",
+                    amountCents: 15_000,
+                    actor: ACTOR,
+                });
+
+                expect(await creditBalanceCents(db, who)).toBe(5000);
+
+                const invoice = await issued(2999, who);
+
+                const spent = await payFromCredit(db, {
+                    invoiceId: invoice.id,
+                    customerId: who,
+                    amountCents: 2999,
+                    actor: ACTOR,
+                });
+
+                expect(spent.invoiceStatus).toBe("paid");
+                expect(await creditBalanceCents(db, who)).toBe(2001);
+
+                await recordRefund(db, {
+                    chargePaymentId: spent.paymentId,
+                    provider: "credit",
+                    refundRef: "manual-refund:credit-back",
+                    amountCents: 2999,
+                    reason: "Verrechnung zurückgenommen",
+                    actor: ACTOR,
+                });
+
+                const row = await invoiceRow(invoice.id);
+
+                // The invoice owes its 29,99 € again — and the customer has
+                // their 29,99 € of balance back, rather than neither.
+                expect(row.status).toBe("unpaid");
+                expect(row.paidCents).toBe(0);
+                expect(await creditBalanceCents(db, who)).toBe(5000);
+            });
+
+            it("leaves the balance alone for an ordinary card refund", async () => {
+                const who = await customer(9205);
+                const invoice = await issued(2999, who);
+                await attempt(invoice.id, "cs_plain_refund", 2999, who);
+
+                const paid = await applyPayment(db, {
+                    ref: "cs_plain_refund",
+                    gateway: "stripe",
+                    amountCents: 2999,
+                    actor: ACTOR,
+                });
+
+                await recordRefund(db, {
+                    chargePaymentId: paid.paymentId,
+                    provider: "stripe",
+                    refundRef: "re_plain_refund",
+                    amountCents: 2999,
+                    reason: "Storniert",
+                    actor: ACTOR,
+                });
+
+                // Money that never touched the balance must not touch it on
+                // the way back either.
+                expect(await creditBalanceCents(db, who)).toBe(0);
+                expect((await invoiceRow(invoice.id)).status).toBe("unpaid");
+            });
         });
     });
 
@@ -773,9 +1035,9 @@ describe.skipIf(!available)("settling an invoice", () => {
                 // A quarter of a 100,00 € invoice arrived. Counting nothing
                 // would let the limit be crossed by money already in the
                 // account, with no warning.
-                expect(
-                    await netRevenueForYear(fresh.db, 2026, "invoice"),
-                ).toBe(2500);
+                expect(await netRevenueForYear(fresh.db, 2026, "invoice")).toBe(
+                    2500,
+                );
             } finally {
                 await fresh.drop();
             }

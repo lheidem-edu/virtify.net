@@ -1,5 +1,6 @@
 import Link from "next/link";
 import PageHeader from "@/components/shared/page-header";
+import { isOpenInvoice } from "@/db/schema";
 import {
     formatDate,
     formatPrice,
@@ -10,7 +11,6 @@ import {
     listInvoices,
 } from "@/server/billing/invoices/repository";
 import { getCurrentCustomer } from "@/server/customers/current";
-import { isOpenInvoice } from "@/db/schema";
 import { enabledGateways } from "@/server/payments/gateways";
 import InvoicesTable from "./invoices-table";
 

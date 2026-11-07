@@ -22,7 +22,10 @@ import { subtract } from "@/lib/money";
 import { requirePermission } from "@/server/auth/staff-session";
 import { listDisputes } from "@/server/payments/disputes";
 import { gatewayFor } from "@/server/payments/gateways";
-import { listTransactions, openInvoicesFor } from "@/server/payments/repository";
+import {
+    listTransactions,
+    openInvoicesFor,
+} from "@/server/payments/repository";
 import { manualPaymentToken } from "./actions";
 import { ManualPaymentForm, RefundAction } from "./payment-forms";
 
@@ -201,9 +204,7 @@ export default async function Page() {
                                             <TableCell className="text-right font-mono">
                                                 {row.feeCents === null
                                                     ? "—"
-                                                    : formatPrice(
-                                                          row.feeCents,
-                                                      )}
+                                                    : formatPrice(row.feeCents)}
                                             </TableCell>
                                             <TableCell>
                                                 <StatusBadge

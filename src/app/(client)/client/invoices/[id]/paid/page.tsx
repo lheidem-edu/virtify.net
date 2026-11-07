@@ -104,10 +104,7 @@ export default async function Page({
 
     // What is still owed after this payment, from the document's own figures.
     const outstanding = subtract(
-        Math.max(
-            subtract(loaded.totals.grossCents, invoice.creditedCents),
-            0,
-        ),
+        Math.max(subtract(loaded.totals.grossCents, invoice.creditedCents), 0),
         invoice.paidCents,
     );
     const partly = invoice.status === "partial";
@@ -144,9 +141,7 @@ export default async function Page({
                             nativeButton={false}
                             size="lg"
                             render={
-                                <Link
-                                    href={`/client/invoices/${invoice.id}`}
-                                />
+                                <Link href={`/client/invoices/${invoice.id}`} />
                             }
                         >
                             Rest begleichen

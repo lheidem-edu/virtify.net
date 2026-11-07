@@ -10,6 +10,7 @@ import {
     freezeBuyer,
     loadBuyer,
 } from "@/server/documents/repository";
+import { resettleInvoice } from "@/server/payments/apply";
 import { loadSettings, type Settings } from "@/server/settings";
 import { TaxDeterminationError } from "@/server/tax/types";
 import { creditedQuantities } from "./repository";
@@ -775,6 +776,22 @@ export async function createCreditNote(
                 updatedAt: at,
             })
             .where(eq(schema.invoice.id, invoice.id));
+
+        /**
+         * A correction changes what the invoice still asks for, so what has
+         * been received against it now means something else: an invoice over
+         * 100,00 €, paid in full, with a 30,00 € line corrected away is no
+         * longer "100,00 € of 100,00 € paid" but 70,00 € of 70,00 €.
+         *
+         * Without this the document kept `paid_cents` at 100,00 €, which
+         * makes the schema's own invariant false — `paid_cents` is never more
+         * than the lines say — and printed "Offen −30,00 €" to the customer.
+         * The settlement is the one place that decides those two figures, so
+         * it decides them here too. `causedBy` is deliberately not passed: no
+         * payment row moved, and attributing the overshoot is a separate
+         * decision the operator makes (see `adjustCustomerCredit`).
+         */
+        await resettleInvoice(tx, invoice.id, at);
 
         await audit(tx, {
             actor,

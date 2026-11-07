@@ -3,13 +3,14 @@ import { eq } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
 import { applyPayment } from "@/server/payments/apply";
 import { recordReversal } from "@/server/payments/refunds";
+import { gatewayConfig } from "@/server/payments/settings";
 import {
     emitInvoicePaid,
     failPayment,
     notifyReversal,
+    notifyUnbookedReversal,
     notifyUnmatchedPayment,
 } from "@/server/payments/settle";
-import { gatewayConfig } from "@/server/payments/settings";
 import { claimEvent } from "@/server/payments/webhook-log";
 import { captureApprovedOrder } from "./paypal";
 import { centsOf, verifyWebhook } from "./paypal-api";
@@ -107,7 +108,13 @@ async function handle(db: Db, event: Event): Promise<string | null> {
     const feeCents = centsOf(
         event.resource?.seller_receivable_breakdown?.paypal_fee?.value,
     );
-    const amountCents = centsOf(event.resource?.amount?.value);
+    // PayPal puts the figure in `amount.value` on a capture and in
+    // `amount.total` on the older sale shape — `readSale` reads `.total` for
+    // exactly this reason. Reading only one of them turns a real reversal
+    // into a zero, which `recordRefund` then refuses.
+    const amountCents =
+        centsOf(event.resource?.amount?.value) ??
+        centsOf(event.resource?.amount?.total);
 
     switch (event.event_type) {
         case "PAYMENT.CAPTURE.COMPLETED": {
@@ -267,22 +274,40 @@ async function handle(db: Db, event: Event): Promise<string | null> {
                 event: event.event_type,
             });
 
-            if (result.ok && result.changed) {
-                const [row] = await db
-                    .select({ invoiceId: schema.payment.invoiceId })
-                    .from(schema.payment)
-                    .where(eq(schema.payment.captureRef, target));
+            const [row] = await db
+                .select({ invoiceId: schema.payment.invoiceId })
+                .from(schema.payment)
+                .where(eq(schema.payment.captureRef, target));
 
-                await notifyReversal({
-                    invoiceId: row?.invoiceId ?? null,
+            /**
+             * Refused, not merely already-known. The money has left the
+             * PayPal balance and our books still say it is here — and
+             * returning quietly here used to mark the event handled, so
+             * PayPal never retried and nobody was told. The two silent cases
+             * are a missing or unreadable amount and a reversal larger than
+             * what is left of the charge; both want a human the same day.
+             */
+            if (!result.ok) {
+                await notifyUnbookedReversal({
+                    provider: "paypal",
+                    providerRef: refundId,
                     amountCents: amountCents ?? 0,
                     event: event.event_type,
+                    reason: result.reason,
                 });
 
                 return row?.invoiceId ?? null;
             }
 
-            return null;
+            if (result.changed) {
+                await notifyReversal({
+                    invoiceId: row?.invoiceId ?? null,
+                    amountCents: amountCents ?? 0,
+                    event: event.event_type,
+                });
+            }
+
+            return row?.invoiceId ?? null;
         }
 
         default:

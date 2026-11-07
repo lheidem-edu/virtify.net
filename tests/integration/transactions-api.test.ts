@@ -37,6 +37,7 @@ describe.skipIf(!available)("the payments API", () => {
     let mineToken = "";
 
     let mineId = "";
+    let theirId = "";
     let myInvoiceId = "";
     let foreignInvoiceId = "";
     let draftId = "";
@@ -68,9 +69,8 @@ describe.skipIf(!available)("the payments API", () => {
         vi.resetModules();
 
         list = (await import("@/app/api/v1/transactions/route")).GET;
-        record = (
-            await import("@/app/api/v1/invoices/[id]/payments/route")
-        ).POST;
+        record = (await import("@/app/api/v1/invoices/[id]/payments/route"))
+            .POST;
 
         const { createApiKey } = await import("@/server/api-keys");
         const { createCustomer } = await import(
@@ -131,6 +131,7 @@ describe.skipIf(!available)("the payments API", () => {
         );
 
         mineId = mine.id;
+        theirId = theirs.id;
 
         for (const [customerId, keep] of [
             [mine.id, true],
@@ -216,6 +217,24 @@ describe.skipIf(!available)("the payments API", () => {
                 system,
             )
         ).token;
+
+        /**
+         * A settled payment on the *other* account, so "a customer key is
+         * pinned to its own account" has something it could wrongly see.
+         * Without this the foreign account owns no payment row and an
+         * unscoped query would come back empty too — which is how that test
+         * came to pass with the pin removed.
+         */
+        const { applyPayment } = await import("@/server/payments/apply");
+
+        await applyPayment(db as never, {
+            ref: "kontoauszug-fremd-0001",
+            gateway: "banktransfer",
+            invoiceId: foreignInvoiceId,
+            customerId: theirs.id,
+            amountCents: 2999,
+            actor: system,
+        });
     }, 60_000);
 
     afterAll(async () => {
@@ -488,17 +507,37 @@ describe.skipIf(!available)("the payments API", () => {
         });
 
         it("pins a customer key to its own account", async () => {
+            /**
+             * This test used to ask for a ULID that matched no row, so the
+             * answer was an empty page and the loop below never ran — and
+             * the fixture booked payments only on one account, so even an
+             * unscoped query could not have shown anything foreign. Both
+             * halves are fixed here: the other account has a settled payment
+             * of its own, the query names that account's real id, and the
+             * page is asserted to be non-empty before it is inspected.
+             *
+             * Remove `scoped ??` from the route and this fails.
+             */
+            const theirs = await db
+                .select({ id: schema.payment.id })
+                .from(schema.payment)
+                .where(eq(schema.payment.customerId, theirId));
+
+            expect(theirs.length).toBeGreaterThan(0);
+
             const response = await list(
                 bearer(
                     mineToken,
                     // The query asks for somebody else; the key wins.
-                    "https://virtify.net/api/v1/transactions?customer_id=customer_01K9ZC4X7QG0VN3M8T6B2PFHRD",
+                    `https://virtify.net/api/v1/transactions?customer_id=${theirId}`,
                 ),
             );
 
             expect(response.status).toBe(200);
 
             const body = await response.json();
+
+            expect(body.data.length).toBeGreaterThan(0);
 
             for (const row of body.data) {
                 expect(row.customer_id).toBe(mineId);

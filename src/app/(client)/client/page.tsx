@@ -1,9 +1,9 @@
 import { FileSignature, FileText, Receipt } from "lucide-react";
 import Link from "next/link";
 import PageHeader from "@/components/shared/page-header";
+import { isOpenInvoice } from "@/db/schema";
 import { listInvoices } from "@/server/billing/invoices/repository";
 import { getCurrentCustomer } from "@/server/customers/current";
-import { isOpenInvoice } from "@/db/schema";
 import { listContracts, listOffers } from "@/server/documents/repository";
 
 const CARD =

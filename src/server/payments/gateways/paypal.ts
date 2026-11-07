@@ -11,12 +11,12 @@ import {
     refundCapture,
 } from "./paypal-api";
 import {
+    type ChargeOutcome,
     type CheckoutHandoff,
     type CheckoutOptions,
-    type ChargeOutcome,
-    GatewayError,
     type GatewayCapabilities,
     type GatewayCustomer,
+    GatewayError,
     type PayableInvoice,
     type PaymentGateway,
     type RefundableTransaction,
@@ -62,6 +62,7 @@ export const paypalGateway: PaymentGateway = {
         const order = await createInvoiceOrder({
             invoiceId: invoice.id,
             invoiceNumber: invoice.number,
+            descriptor: invoice.descriptor,
             amountCents: invoice.amountCents,
             currency: invoice.currency,
             attempt: options.attempt,
@@ -72,9 +73,7 @@ export const paypalGateway: PaymentGateway = {
         return { kind: "redirect", ref: order.id, url: order.url };
     },
 
-    async savePaymentMethod(
-        customer: GatewayCustomer,
-    ): Promise<SetupHandoff> {
+    async savePaymentMethod(customer: GatewayCustomer): Promise<SetupHandoff> {
         const config = await gatewayConfig("paypal");
 
         if (config.paypalRecurringMode !== "vault") {
@@ -151,8 +150,7 @@ export const paypalGateway: PaymentGateway = {
                 status: "failed",
                 ref: null,
                 code: paypalIssue(error),
-                message:
-                    error instanceof Error ? error.message : "unbekannt",
+                message: error instanceof Error ? error.message : "unbekannt",
             };
         }
     },

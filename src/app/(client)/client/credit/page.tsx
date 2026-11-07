@@ -2,10 +2,7 @@ import PageHeader from "@/components/shared/page-header";
 import { db } from "@/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import { getCurrentCustomer } from "@/server/customers/current";
-import {
-    creditBalanceCents,
-    listCreditLedger,
-} from "@/server/payments/apply";
+import { creditBalanceCents, listCreditLedger } from "@/server/payments/apply";
 import { enabledGateways } from "@/server/payments/gateways";
 import TopUpForm from "./top-up-form";
 

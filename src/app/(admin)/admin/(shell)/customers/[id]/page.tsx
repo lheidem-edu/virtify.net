@@ -16,6 +16,8 @@ import {
     listOffers,
     loadStoredMethodsFor,
 } from "@/server/documents/repository";
+import { creditBalanceCents, listCreditLedger } from "@/server/payments/apply";
+import { CreditAdjustmentForm } from "../../payments/payment-forms";
 import { saveCustomer } from "../actions";
 import CustomerForm from "../customer-form";
 
@@ -65,15 +67,25 @@ export default async function Page({
         notFound();
     }
 
-    const [contacts, contracts, invoices, offers, methods, log] =
-        await Promise.all([
-            listContacts(db, id),
-            listContracts(id, false),
-            listInvoices(id, false),
-            listOffers(id, false),
-            loadStoredMethodsFor(id),
-            auditTrail(db, id),
-        ]);
+    const [
+        contacts,
+        contracts,
+        invoices,
+        offers,
+        methods,
+        log,
+        balanceCents,
+        ledger,
+    ] = await Promise.all([
+        listContacts(db, id),
+        listContracts(id, false),
+        listInvoices(id, false),
+        listOffers(id, false),
+        loadStoredMethodsFor(id),
+        auditTrail(db, id),
+        creditBalanceCents(db, id),
+        listCreditLedger(db, id, 20),
+    ]);
 
     return (
         <>
@@ -217,32 +229,85 @@ export default async function Page({
                 ) : null}
 
                 {tab === "transactions" ? (
-                    methods.length === 0 ? (
-                        <Empty>
-                            Kein Zahlungsmittel hinterlegt — Rechnungen werden
-                            überwiesen. Die Zahlungsliste kommt mit Phase 5.
-                        </Empty>
-                    ) : (
-                        <ul className="space-y-3 text-sm">
-                            {methods.map((method) => (
-                                <li
-                                    key={method.id}
-                                    className="flex flex-wrap items-center gap-3 rounded-lg border p-4"
-                                >
-                                    <span>{method.label}</span>
-                                    <span className="text-muted-foreground">
-                                        seit {formatDate(method.createdAt)}
-                                    </span>
-                                    {method.revokedAt ? (
-                                        <StatusBadge
-                                            label="Widerrufen"
-                                            tone="muted"
-                                        />
-                                    ) : null}
-                                </li>
-                            ))}
-                        </ul>
-                    )
+                    <div className="space-y-8">
+                        {/*
+                         * The only screen from which credit can be put back
+                         * by hand. `adjustCustomerCredit` and its form were
+                         * written in Phase 5 and rendered nowhere, so an
+                         * operator who owed a customer their balance had no
+                         * way to give it to them.
+                         */}
+                        <section className="space-y-3">
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <h2 className="font-medium text-sm">
+                                    Guthaben
+                                </h2>
+                                <span className="font-medium tabular-nums">
+                                    {formatPrice(balanceCents)}
+                                </span>
+                            </div>
+                            <CreditAdjustmentForm customerId={customer.id} />
+                            {ledger.length === 0 ? (
+                                <p className="text-muted-foreground text-sm">
+                                    Noch keine Guthabenbuchung.
+                                </p>
+                            ) : (
+                                <ul className="space-y-2 text-sm">
+                                    {ledger.map((entry) => (
+                                        <li
+                                            key={entry.id}
+                                            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+                                        >
+                                            <span>{entry.reason}</span>
+                                            <span className="tabular-nums">
+                                                {formatPrice(entry.amountCents)}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </section>
+
+                        <section className="space-y-3">
+                            <h2 className="font-medium text-sm">
+                                Zahlungsmittel
+                            </h2>
+                            {methods.length === 0 ? (
+                                <p className="text-muted-foreground text-sm">
+                                    Kein Zahlungsmittel hinterlegt — Rechnungen
+                                    werden überwiesen.
+                                </p>
+                            ) : (
+                                <ul className="space-y-3 text-sm">
+                                    {methods.map((method) => (
+                                        <li
+                                            key={method.id}
+                                            className="flex flex-wrap items-center gap-3 rounded-lg border p-4"
+                                        >
+                                            <span>{method.label}</span>
+                                            <span className="text-muted-foreground">
+                                                seit{" "}
+                                                {formatDate(method.createdAt)}
+                                            </span>
+                                            {method.revokedAt ? (
+                                                <StatusBadge
+                                                    label="Widerrufen"
+                                                    tone="muted"
+                                                />
+                                            ) : null}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </section>
+
+                        <Link
+                            className="text-sm underline underline-offset-4"
+                            href={`/admin/payments?customer=${customer.id}`}
+                        >
+                            Alle Zahlungen dieses Kontos
+                        </Link>
+                    </div>
                 ) : null}
 
                 {tab === "tickets" ? (

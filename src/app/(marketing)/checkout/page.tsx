@@ -9,8 +9,8 @@ import { currentCart } from "@/server/cart/session";
 import { priceCart } from "@/server/cart/view";
 import { customerForUser } from "@/server/customers/repository";
 import { currentLegalVersion } from "@/server/legal/repository";
-import { loadSettings } from "@/server/settings";
 import { enabledGateways } from "@/server/payments/gateways";
+import { loadSettings } from "@/server/settings";
 import CheckoutForm from "./checkout-form";
 import CheckoutIdentity from "./identity";
 

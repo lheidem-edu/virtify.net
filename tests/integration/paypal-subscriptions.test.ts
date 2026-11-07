@@ -1,5 +1,13 @@
 import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+    afterAll,
+    afterEach,
+    beforeAll,
+    describe,
+    expect,
+    it,
+    vi,
+} from "vitest";
 import { createId } from "@/lib/ulid";
 import {
     createInvoiceDraft,
@@ -49,9 +57,7 @@ const SETTINGS: Settings = {
 
 vi.mock("@/server/payments/settings", async (importOriginal) => {
     const actual =
-        await importOriginal<
-            typeof import("@/server/payments/settings")
-        >();
+        await importOriginal<typeof import("@/server/payments/settings")>();
 
     return {
         ...actual,

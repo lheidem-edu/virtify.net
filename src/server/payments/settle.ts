@@ -199,13 +199,17 @@ export function revalidateAfterPayment(invoiceId: string | null) {
     }
 }
 
-async function operatorMail(subject: string, lines: string[], email: {
-    preheader: string;
-    heading: string;
-    intro: string[];
-    action?: { label: string; url: string };
-    rows: { label: string; value: string }[];
-}) {
+async function operatorMail(
+    subject: string,
+    lines: string[],
+    email: {
+        preheader: string;
+        heading: string;
+        intro: string[];
+        action?: { label: string; url: string };
+        rows: { label: string; value: string }[];
+    },
+) {
     const { operator } = await loadSettings();
     const transport = createTransport();
 
@@ -239,6 +243,56 @@ async function operatorMail(subject: string, lines: string[], email: {
  * that must not pass quietly: it means either a payment nobody recorded, or a
  * reference from a different system pointing at this account.
  */
+/**
+ * Money that went back out and could not be booked.
+ *
+ * Distinct from an unmatched *arrival*: here the customer's account has
+ * already been credited by the provider and our books still say the money is
+ * here. Both webhook handlers used to drop this case — the reversal was
+ * refused, the handler returned, the event was marked handled and the
+ * provider never retried. Somebody has to look at it the same day.
+ */
+export async function notifyUnbookedReversal(input: {
+    provider: PaymentProvider;
+    providerRef: string;
+    amountCents: number;
+    event: string;
+    reason: string;
+}) {
+    console.error("[payments] a reversal could not be booked:", input);
+
+    const { site } = await loadSettings();
+
+    await operatorMail(
+        `Rückbuchung nicht verbucht — ${input.provider}`,
+        [
+            `${input.provider} meldet ${input.event} über ${formatPrice(input.amountCents)} (${input.providerRef}), aber die Rückbuchung konnte hier nicht verbucht werden: ${input.reason}`,
+            "",
+            "Das Geld ist draußen, die Bücher sagen noch etwas anderes. Bitte von Hand nachtragen.",
+            `${site.url}/admin/payments`,
+        ],
+        {
+            preheader: `${input.provider}: Rückbuchung nicht verbucht.`,
+            heading: "Rückbuchung nicht verbucht",
+            intro: [
+                `${input.provider} meldet ${input.event} über ${formatPrice(input.amountCents)}, aber die Rückbuchung konnte hier nicht verbucht werden: ${input.reason}`,
+                "Das Geld ist draußen, die Bücher sagen noch etwas anderes.",
+            ],
+            action: {
+                label: "Zahlungen öffnen",
+                url: `${site.url}/admin/payments`,
+            },
+            rows: [
+                { label: "Anbieter", value: input.provider },
+                { label: "Ereignis", value: input.event },
+                { label: "Referenz", value: input.providerRef },
+                { label: "Betrag", value: formatPrice(input.amountCents) },
+                { label: "Grund", value: input.reason },
+            ],
+        },
+    );
+}
+
 export async function notifyUnmatchedPayment(input: {
     provider: PaymentProvider;
     providerRef: string;

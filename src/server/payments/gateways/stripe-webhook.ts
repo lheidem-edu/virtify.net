@@ -1,7 +1,7 @@
 import "server-only";
+import { and, eq } from "drizzle-orm";
 import type Stripe from "stripe";
 import { type db as defaultDb, schema } from "@/db";
-import { eq } from "drizzle-orm";
 import { applyPayment } from "@/server/payments/apply";
 import {
     disputeStatusFromStripe,
@@ -9,18 +9,19 @@ import {
 } from "@/server/payments/disputes";
 import { claimSetup, storeMethod } from "@/server/payments/methods";
 import { recordReversal } from "@/server/payments/refunds";
+import { gatewayConfig } from "@/server/payments/settings";
 import {
     emitInvoicePaid,
     failPayment,
     markProcessing,
     notifyDispute,
     notifyReversal,
+    notifyUnbookedReversal,
     notifyUnmatchedPayment,
 } from "@/server/payments/settle";
-import { gatewayConfig } from "@/server/payments/settings";
 import { claimEvent } from "@/server/payments/webhook-log";
-import type { WebhookOutcome } from "./types";
 import { readFeeCents, readStoredMethod, stripeClient } from "./stripe";
+import type { WebhookOutcome } from "./types";
 
 /**
  * Stripe's word on whether money moved.
@@ -187,6 +188,25 @@ async function handle(db: Db, event: Stripe.Event): Promise<string | null> {
             });
 
             if (!outcome.known) {
+                /**
+                 * A hosted Checkout payment arrives twice under two names:
+                 * the session, which is the reference the attempt was
+                 * recorded under, and the PaymentIntent behind it, which is
+                 * not. The settlement already happened under the session, so
+                 * the intent finds no attempt of its own — and alerting on
+                 * that would fire "Zahlung ohne Zuordnung" on every ordinary
+                 * card payment, which is how the one alarm that means
+                 * *unbookable money* becomes the one nobody reads.
+                 *
+                 * So the charge is looked for under the capture reference
+                 * too, and only money that is nowhere is reported.
+                 */
+                const booked = await invoiceOfCapture(db, intent.id);
+
+                if (booked) {
+                    return booked.invoiceId;
+                }
+
                 await notifyUnmatchedPayment({
                     provider: "stripe",
                     providerRef: intent.id,
@@ -241,34 +261,142 @@ async function handle(db: Db, event: Stripe.Event): Promise<string | null> {
             return null;
         }
 
-        // Money going back out. Every refund on the charge is recorded; the
-        // refund id is the key, so the ones already booked are skipped.
+        /**
+         * Money going back out.
+         *
+         * `charge.refunded` used to be read for its `refunds` list. It is not
+         * there: from API version 2022-11-15 the Charge object no longer
+         * auto-expands refunds, and an event payload cannot be expanded — so
+         * the loop ran zero times and a refund made in the Stripe dashboard,
+         * or a chargeback, was answered 200 and booked nowhere. Stripe's own
+         * description of the event now says it: "Listen to `refund.created`
+         * for information about the refund."
+         *
+         * So the refund events are the ones that book, and `charge.refunded`
+         * asks the API for the list rather than hoping it was sent — belt and
+         * braces, because an operator who subscribed only to the old event
+         * must not silently lose refunds either. Both dedupe on the refund's
+         * own id, which is the payment row's unique reference.
+         */
+        case "refund.created":
+        case "refund.updated": {
+            const refund = event.data.object;
+
+            if (refund.status !== "succeeded") {
+                // A refund that has not landed is not money that moved. The
+                // update event brings it back when it does.
+                return null;
+            }
+
+            return bookRefund(db, {
+                refundId: refund.id,
+                intentId: idOf(refund.payment_intent),
+                amountCents: refund.amount,
+                event: event.type,
+            });
+        }
+
+        case "refund.failed": {
+            const refund = event.data.object;
+
+            await notifyUnbookedReversal({
+                provider: "stripe",
+                providerRef: refund.id,
+                amountCents: refund.amount,
+                event: event.type,
+                reason: refund.failure_reason ?? "unbekannt",
+            });
+
+            return null;
+        }
+
         case "charge.refunded": {
             const charge = event.data.object;
             const intentId = idOf(charge.payment_intent);
+
+            let listed: Stripe.Refund[] = [];
+
+            try {
+                const stripe = await stripeClient();
+                const page = await stripe.refunds.list({
+                    charge: charge.id,
+                    limit: 100,
+                });
+
+                listed = page.data;
+            } catch (error) {
+                console.error(
+                    "[payments] listing the stripe refunds failed:",
+                    error,
+                );
+            }
+
             let invoiceId: string | null = null;
 
-            for (const refund of charge.refunds?.data ?? []) {
-                const result = await recordReversal(db, {
+            for (const refund of listed) {
+                if (refund.status !== "succeeded") {
+                    continue;
+                }
+
+                invoiceId =
+                    (await bookRefund(db, {
+                        refundId: refund.id,
+                        intentId,
+                        amountCents: refund.amount,
+                        event: event.type,
+                    })) ?? invoiceId;
+            }
+
+            return invoiceId ?? (await invoiceOf(db, intentId));
+        }
+
+        /**
+         * A dispute that is lost takes the money back, and Stripe says so in
+         * its own event rather than as a refund. Without this the invoice
+         * stayed `paid` after the money was gone, and the § 19 revenue
+         * monitor went on counting it.
+         */
+        case "charge.dispute.funds_withdrawn": {
+            const dispute = event.data.object;
+
+            return bookRefund(db, {
+                refundId: `${dispute.id}:withdrawn`,
+                intentId: idOf(dispute.payment_intent),
+                amountCents: dispute.amount,
+                event: event.type,
+            });
+        }
+
+        /** Won, or withdrawn by the cardholder: the money comes back. */
+        case "charge.dispute.funds_reinstated": {
+            const dispute = event.data.object;
+            const intentId = idOf(dispute.payment_intent);
+            const booked = await invoiceOfCapture(db, intentId);
+
+            if (!booked) {
+                await notifyUnmatchedPayment({
                     provider: "stripe",
-                    captureRef: intentId,
-                    refundRef: refund.id,
-                    amountCents: refund.amount,
+                    providerRef: dispute.id,
                     event: event.type,
                 });
 
-                if (result.ok && result.changed) {
-                    await notifyReversal({
-                        invoiceId: await invoiceOf(db, intentId),
-                        amountCents: refund.amount,
-                        event: event.type,
-                    });
-                }
+                return null;
             }
 
-            invoiceId = await invoiceOf(db, intentId);
+            // Through the one settlement path, like every other arrival: a
+            // reference we generated, naming an invoice our own books chose.
+            const outcome = await applyPayment(db, {
+                ref: `${dispute.id}:reinstated`,
+                gateway: "stripe",
+                invoiceId: booked.invoiceId,
+                customerId: booked.customerId,
+                captureRef: null,
+                amountCents: dispute.amount,
+                note: `Rückbuchung zurückgenommen (${event.type})`,
+                actor: { type: "system", label: "stripe" },
+            });
 
-            return invoiceId;
+            return outcome.invoiceId ?? booked.invoiceId;
         }
 
         case "charge.dispute.created":
@@ -338,6 +466,82 @@ async function fee(paymentIntentId: string) {
 
         return null;
     }
+}
+
+/**
+ * Books one reversal and says which invoice it touched.
+ *
+ * Every way money goes back out at Stripe ends here — a refund event, a
+ * refund listed off a charge, a lost dispute — so there is one place that
+ * decides what happens when it cannot be booked. That case used to return
+ * silently with the event marked handled, which means Stripe never retried
+ * and nobody was told: the money had left and every figure in the panel
+ * still said it had arrived.
+ */
+async function bookRefund(
+    db: Db,
+    input: {
+        refundId: string;
+        intentId: string | null;
+        amountCents: number;
+        event: string;
+    },
+): Promise<string | null> {
+    const result = await recordReversal(db, {
+        provider: "stripe",
+        captureRef: input.intentId,
+        refundRef: input.refundId,
+        amountCents: input.amountCents,
+        event: input.event,
+    });
+
+    const invoiceId = await invoiceOf(db, input.intentId);
+
+    if (!result.ok) {
+        await notifyUnbookedReversal({
+            provider: "stripe",
+            providerRef: input.refundId,
+            amountCents: input.amountCents,
+            event: input.event,
+            reason: result.reason,
+        });
+
+        return invoiceId;
+    }
+
+    if (result.changed) {
+        await notifyReversal({
+            invoiceId,
+            amountCents: input.amountCents,
+            event: input.event,
+        });
+    }
+
+    return invoiceId;
+}
+
+/** The charge we recorded under this capture reference, if there is one. */
+async function invoiceOfCapture(db: Db, captureRef: string | null) {
+    if (!captureRef) {
+        return null;
+    }
+
+    const [row] = await db
+        .select({
+            invoiceId: schema.payment.invoiceId,
+            customerId: schema.payment.customerId,
+        })
+        .from(schema.payment)
+        .where(
+            and(
+                eq(schema.payment.captureRef, captureRef),
+                eq(schema.payment.kind, "charge"),
+            ),
+        );
+
+    return row?.invoiceId
+        ? { invoiceId: row.invoiceId, customerId: row.customerId }
+        : null;
 }
 
 async function invoiceOf(db: Db, captureRef: string | null) {

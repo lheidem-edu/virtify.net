@@ -112,7 +112,7 @@ function fromEnvironment(id: GatewayId): {
             mode: credentials.secretKey.startsWith("sk_live_")
                 ? "live"
                 : "sandbox",
-            present: credentials.secretKey !== "",
+            present: hasWhatItNeeds("stripe", credentials),
         };
     }
 
@@ -126,8 +126,7 @@ function fromEnvironment(id: GatewayId): {
         return {
             credentials,
             mode: env.PAYPAL_ENV === "live" ? "live" : "sandbox",
-            present:
-                credentials.clientId !== "" && credentials.clientSecret !== "",
+            present: hasWhatItNeeds("paypal", credentials),
         };
     }
 
@@ -136,18 +135,39 @@ function fromEnvironment(id: GatewayId): {
     return { credentials: {}, mode: "live", present: true };
 }
 
-function hasWhatItNeeds(
+/**
+ * Whether a gateway has everything it needs to take money **and book it**.
+ *
+ * The webhook secret is not optional decoration: `/api/webhooks/stripe`
+ * answers 503 without it and `/api/webhooks/paypal` the same without a
+ * webhook id. A gateway that counted as configured on its API key alone was
+ * therefore offered at the checkout, charged the customer's card, and then
+ * had no authoritative path back — the invoice stayed unpaid, dunning chased
+ * a customer who had already paid, and an off-session renewal (which has no
+ * browser to come back from) was never booked at all.
+ *
+ * So the condition here is the one the two routes already enforce. An
+ * operator with half an integration is told it is not configured instead of
+ * discovering it from a customer.
+ */
+export function hasWhatItNeeds(
     id: GatewayId,
     credentials: Credentials[GatewayId],
 ): boolean {
     if (id === "stripe") {
-        return (credentials as StripeCredentials).secretKey !== "";
+        const stripe = credentials as StripeCredentials;
+
+        return stripe.secretKey !== "" && stripe.webhookSecret !== "";
     }
 
     if (id === "paypal") {
         const paypal = credentials as PayPalCredentials;
 
-        return paypal.clientId !== "" && paypal.clientSecret !== "";
+        return (
+            paypal.clientId !== "" &&
+            paypal.clientSecret !== "" &&
+            paypal.webhookId !== ""
+        );
     }
 
     return true;
@@ -164,6 +184,41 @@ function recurringMode(value: string | null | undefined): PayPalRecurringMode {
     // MERCHANT_NOT_ENABLED_FOR_REFERENCE_TRANSACTION at the worst possible
     // moment, so the default is the mode that works for everybody.
     return env.PAYPAL_VAULTING_ENABLED ? "vault" : "subscriptions";
+}
+
+/**
+ * Merges a submitted set of secrets over what is stored, **per field**.
+ *
+ * The admin form says so on every secret — "gespeichert — leer lassen, um
+ * ihn zu behalten" — but the save used to be all-or-nothing per gateway:
+ * typing a new Stripe secret key and leaving the webhook secret blank wrote
+ * the pair `{ new key, "" }`, and `/api/webhooks/stripe` then answered every
+ * delivery 503. The PayPal version of the same mistake blanks the webhook
+ * id, which stops `CHECKOUT.ORDER.APPROVED` arriving and leaves an approved
+ * order uncaptured until PayPal voids it.
+ *
+ * Returns `undefined` when nothing actually changed, which is what tells
+ * `saveGatewayConfig` to leave the stored blob alone.
+ */
+export function mergeCredentials(
+    fields: readonly string[],
+    submitted: Record<string, string>,
+    stored: Record<string, string | undefined>,
+): Record<string, string> | undefined {
+    const next: Record<string, string> = {};
+    let changed = false;
+
+    for (const field of fields) {
+        const value = (submitted[field] ?? "").trim();
+
+        next[field] = value || (stored[field] ?? "");
+
+        if (value && value !== stored[field]) {
+            changed = true;
+        }
+    }
+
+    return changed ? next : undefined;
 }
 
 /**

@@ -171,10 +171,10 @@ export default function CheckoutForm({
                     <span>
                         Wiederkehrende Beträge automatisch einziehen
                         <span className="block text-xs text-zinc-500">
-                            Gilt, sobald ein Zahlungsmittel hinterlegt ist —
-                            das richten Sie nach der Bestellung im
-                            Kundenbereich ein. Die erste Rechnung bezahlen Sie
-                            so, wie Sie es oben gewählt haben.
+                            Gilt, sobald ein Zahlungsmittel hinterlegt ist — das
+                            richten Sie nach der Bestellung im Kundenbereich
+                            ein. Die erste Rechnung bezahlen Sie so, wie Sie es
+                            oben gewählt haben.
                         </span>
                     </span>
                 </label>

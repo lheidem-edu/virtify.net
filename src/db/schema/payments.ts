@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
     boolean,
     index,
@@ -9,7 +10,6 @@ import {
     timestamp,
     uniqueIndex,
 } from "drizzle-orm/pg-core";
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { money, timestamps, ulidFk, ulidPk } from "./_columns";
 import { contract } from "./contracts";
 import { customer } from "./customers";

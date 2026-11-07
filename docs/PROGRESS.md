@@ -936,8 +936,115 @@ row, and the interface would be five methods that all throw.
   What is left is the books-only statement "nothing is owed on this any more", used by the
   revenue tests; the button books a transfer through `applyPayment` like everything else.
 
+### Reviewed after the fact, and fixed
+
+Eight readers over the diff, every finding put to **three** skeptics with different lenses
+(does it reproduce · is it already guarded elsewhere · is the failure story even possible), the
+survivors re-derived by hand and the load-bearing ones reproduced against the running app.
+Thirty-five candidates, twenty-three survived, **ten distinct defects** — five of the eight
+lenses had independently found the same one. All ten are fixed; **470 tests**, up from 446.
+
+- **A refund never touched the credit ledger, so refunded money was paid out twice — or lost.**
+  One missing rule with three faces, and the worst defect this project has shipped so far.
+  `recordRefund` wrote the refund row, re-settled the invoice and left `credit_ledger` exactly
+  as it was. So: a refunded **top-up** put 50 € back on the customer's card and left 50 € of
+  spendable balance standing (reproduced, then spent on a fresh invoice, which came out
+  `paid`); a refunded **overpayment** did the same with the overshoot; and refunding a payment
+  made **from the balance** re-opened the invoice without giving the balance back, so the
+  customer owed it again *and* was out the credit. The ledger kind `refund` existed in
+  migration `0020` and was written nowhere. The rule now is one sentence — *a refund puts back
+  whatever its charge did to the balance* — in `reverseChargeCredit`, and the overshoot is
+  `bookOvershootDelta`, the **same function** that grants it, called by `settleAgainstInvoice`
+  and `resettleInvoice` alike. Writing it only on the way in was the whole bug.
+- **A refund made in the Stripe dashboard was booked nowhere.** `charge.refunded` iterated
+  `charge.refunds.data`. That list is not there: since API version `2022-11-15` the Charge
+  object no longer auto-expands refunds and an event payload cannot be expanded, so the loop ran
+  **zero times**, the route answered 200, `handled_at` was set and Stripe never retried. Stripe's
+  own description of the event now says it — *"Listen to `refund.created` for information about
+  the refund."* The refund events book it; `charge.refunded` asks the API for the list rather
+  than hoping it was sent, so an operator subscribed only to the old event loses nothing either.
+- **A lost chargeback never left the books.** `disputes.ts` said the reversal "comes as its own
+  event, which `recordReversal` books like any other refund" and no such case existed:
+  `charge.dispute.funds_withdrawn` fell through to `default`. The money was gone, the invoice
+  still read `paid`, and the § 19 revenue monitor went on counting it.
+  `funds_withdrawn`/`funds_reinstated` are handled, the latter back through `applyPayment` under
+  a reference we generate.
+- **A reversal that could not be booked was dropped in silence.** Both handlers returned
+  quietly when `recordRefund` refused — a missing amount, or a chargeback larger than what was
+  left of the charge — and the event was marked handled, so the provider never retried and
+  nobody was told. That is the one case where the money has already left and our books still
+  say it is here: it now raises `notifyUnbookedReversal`. PayPal's amount is also read from both
+  shapes it sends (`amount.value` *and* `amount.total`), which was one of the two ways it
+  silently became zero.
+- **Stripe and PayPal counted as configured without a webhook secret.** `hasWhatItNeeds` asked
+  only for an API key, while `/api/webhooks/stripe` answers **503** without the signing secret
+  and `/api/webhooks/paypal` without the webhook id. So the checkout offered the card, charged
+  it, and had no authoritative path back — dunning then chases a customer who has already paid,
+  and an off-session renewal, which has no browser to come back from, is never booked at all.
+  Shown live on this machine: with `STRIPE_WEBHOOK_SECRET` empty the invoice page offered
+  "25,99 € mit Kreditkarte (Stripe) bezahlen" while `POST /api/webhooks/stripe` answered
+  `503 payments are not configured`. The condition is now the one the routes already enforce.
+- **Saving one gateway secret blanked the others.** The form promises "gespeichert — leer
+  lassen, um ihn zu behalten" per field; the action read them per *gateway*, so rotating the
+  Stripe key with the webhook field left blank wrote `{ new key, "" }` and took the webhook down
+  with it. The PayPal version blanks the webhook id, which stops `CHECKOUT.ORDER.APPROVED` and
+  leaves an approved order uncaptured until PayPal voids it. `mergeCredentials` merges per
+  field; `clear` is still the only way to empty them.
+- **A partial Rechnungskorrektur left `paid_cents` above what the invoice still asked for.**
+  100,00 € paid, a 30,00 € line corrected away, and the document kept `paid_cents` at 10000:
+  the schema's own invariant became false and the customer's invoice page printed
+  "Offen −30,00 €". `createCreditNote` re-settles in the same transaction now, so the one
+  function that decides `status` and `paid_cents` decides them here too.
+- **Every ordinary card payment raised the unmatched-money alarm.** A hosted Checkout payment
+  arrives twice — as the session, which is the reference the attempt was recorded under, and as
+  the PaymentIntent, which is not — and `.env.example` tells the operator to subscribe to both.
+  So "Zahlung ohne Zuordnung" fired on every successful payment, which is how the one alarm that
+  means *money we cannot book* becomes the one nobody reads. The intent is looked for under the
+  capture reference first.
+- **A customer's second PayPal top-up was refused, for ever.** The stand-in handed to the
+  gateway used `Guthaben {Kundennummer}` as the "number", which PayPal uses as `invoice_id` —
+  unique across the whole merchant account, which is exactly why it is used that way for real
+  invoices. Every top-up after the first came back `DUPLICATE_INVOICE_ID`. A top-up now carries
+  its own reference, and a `descriptor` keeps it out of what the payer reads.
+- **`adjustCustomerCredit` and its form were written and rendered nowhere.** The only way to put
+  credit back by hand did not exist in the UI — which also meant there was no way to repair the
+  balances the defect above was destroying. It is on the customer's **Zahlungen** tab in the
+  admin area now, with the balance and the ledger beside it; the tab's copy no longer says the
+  payment list "kommt mit Phase 5".
+
+**Four tests were passing without testing anything**, and the review's mutation pass is what
+found them. Each is repaired so that removing the thing it names makes it fail:
+
+- The **`FOR UPDATE` row lock** — the central claim of the whole phase — had no test. The
+  "two deliveries at once" case never ran its two transactions concurrently: the pool handed the
+  first branch its one warm connection while the second was still opening one. Warming the pool
+  first makes it a race; removing `.for("update")` now gives `[true, true]`.
+- The **customer-key pin on `GET /api/v1/transactions`** was vacuous twice over — it asked for a
+  ULID that matched no row, so the loop never ran, and the fixture booked payments on only one
+  account. The foreign account has a settled payment now and the page is asserted non-empty;
+  removing `scoped ??` makes one customer read another's.
+- **`payFromCredit`'s balance check** had no test, and the amount comes straight off a
+  customer-submitted form.
+- **"counts each payment's own overshoot, not the running total"** used two payments, where the
+  delta and the running total are equal by accident. A third separates them: 0, 1001, 2000.
+
+One thing I reported early was **wrong and is corrected here**: I said the client invoice page
+had lost the `Math.max(…, 0)` floor on what is owed. It has not — the floor is there, and the
+negative "Offen" came only from `paid_cents`, which the re-settle above fixes at the source.
+
 ### Still open in this phase
 
+- [ ] **The overshoot a partial correction creates is not attributed automatically.** After
+      `createCreditNote` re-settles, an invoice that was overpaid relative to the corrected
+      document shows the difference as received-but-not-owed, and the operator books it with the
+      credit form. Minting it automatically needs a key the ledger does not have — the entries
+      are unique per `(payment_id, kind)` and a correction has no payment row of its own — so
+      attributing it to one of several charges would be guessing. A `credit_note_id` on
+      `credit_ledger` would settle it, and that is a migration.
+- [ ] **What an invoice still owes is spelled out in seven places.** `settlementFor()` computes
+      `outstandingCents` and the pages, actions and API routes each re-derive
+      `max(gross − credited, 0) − paid` by hand. They agree today; one of them drifting is
+      exactly the shape of Phase 4's shown-versus-charged defect.
 - [ ] **`auto_charge` is honoured, but only as far as it can be.** A subscription collects from
       the method the customer stores *afterwards*, in the customer area — the checkout does not
       store a card while taking the first payment. For Stripe that would be

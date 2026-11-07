@@ -7,12 +7,12 @@ import {
     type StripeCredentials,
 } from "@/server/payments/settings";
 import {
+    type ChargeOutcome,
     type CheckoutHandoff,
     type CheckoutOptions,
-    type ChargeOutcome,
-    GatewayError,
     type GatewayCapabilities,
     type GatewayCustomer,
+    GatewayError,
     type PayableInvoice,
     type PaymentGateway,
     type RefundableTransaction,
@@ -211,7 +211,9 @@ export const stripeGateway: PaymentGateway = {
                             currency: invoice.currency.toLowerCase(),
                             unit_amount: invoice.amountCents,
                             product_data: {
-                                name: `Rechnung ${invoice.number}`,
+                                name:
+                                    invoice.descriptor ??
+                                    `Rechnung ${invoice.number}`,
                             },
                         },
                     },
@@ -222,7 +224,8 @@ export const stripeGateway: PaymentGateway = {
                     invoice_number: invoice.number,
                 },
                 payment_intent_data: {
-                    description: `Rechnung ${invoice.number}`,
+                    description:
+                        invoice.descriptor ?? `Rechnung ${invoice.number}`,
                     metadata: {
                         invoice_id: invoice.id,
                         invoice_number: invoice.number,
@@ -260,9 +263,7 @@ export const stripeGateway: PaymentGateway = {
         return { kind: "redirect", ref: session.id, url: session.url };
     },
 
-    async savePaymentMethod(
-        customer: GatewayCustomer,
-    ): Promise<SetupHandoff> {
+    async savePaymentMethod(customer: GatewayCustomer): Promise<SetupHandoff> {
         const stripe = await stripeClient();
         const stripeCustomerId = await ensureStripeCustomer(customer);
 

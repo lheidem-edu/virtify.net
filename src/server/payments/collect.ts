@@ -6,7 +6,7 @@ import { subtract } from "@/lib/money";
 import type { Actor } from "@/server/audit";
 import { loadInvoice } from "@/server/billing/invoices/repository";
 import { applyPayment } from "./apply";
-import { gateway, type GatewayId } from "./gateways";
+import { type GatewayId, gateway } from "./gateways";
 import { captureApprovedOrder } from "./gateways/paypal";
 import { stripeClient } from "./gateways/stripe";
 import type { CheckoutHandoff, PayableInvoice } from "./gateways/types";
@@ -41,8 +41,7 @@ async function payable(
     invoiceId: string,
     customerId: string,
 ): Promise<
-    | { ok: true; invoice: PayableInvoice }
-    | { ok: false; reason: string }
+    { ok: true; invoice: PayableInvoice } | { ok: false; reason: string }
 > {
     // The loader constrains the query to this account, so a foreign invoice
     // comes back as null rather than as a refusal that confirms it exists.
@@ -157,8 +156,7 @@ export async function startPayment(input: {
 
         return {
             ok: false,
-            reason:
-                "Die Zahlung konnte nicht gestartet werden. Bitte versuche es erneut.",
+            reason: "Die Zahlung konnte nicht gestartet werden. Bitte versuche es erneut.",
         };
     }
 }
@@ -201,9 +199,7 @@ export async function closeOpenAttempts(invoiceId: string) {
                 const stripe = await stripeClient();
 
                 if (attempt.providerRef.startsWith("cs_")) {
-                    await stripe.checkout.sessions.expire(
-                        attempt.providerRef,
-                    );
+                    await stripe.checkout.sessions.expire(attempt.providerRef);
                 } else if (attempt.providerRef.startsWith("pi_")) {
                     // An off-session collection that is still in flight. The
                     // row alone would stop *us* offering it again, but not
@@ -400,8 +396,7 @@ export async function collectIssuedInvoice(
             invoice,
         );
     } catch (error) {
-        const reason =
-            error instanceof Error ? error.message : "unbekannt";
+        const reason = error instanceof Error ? error.message : "unbekannt";
 
         console.error("[payments] collecting the invoice failed:", error);
 
@@ -428,7 +423,10 @@ export async function collectIssuedInvoice(
         }).catch((error) => {
             // A reference we have already recorded: the gateway's own
             // idempotency returned the same object. Nothing to do.
-            console.error("[payments] the attempt was already recorded:", error);
+            console.error(
+                "[payments] the attempt was already recorded:",
+                error,
+            );
         });
     }
 

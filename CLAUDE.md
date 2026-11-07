@@ -87,6 +87,15 @@ into a status. Two settlement paths is how an invoice gets paid twice by mechani
 know about each other, which is also why **bank transfer is a gateway** rather than a status
 somebody sets.
 
+Money moves in two directions, and **every rule that touches the balance has to be written in
+both**. A refund puts back whatever its charge did to `credit_ledger` — a refunded top-up
+debits it, a reversed credit payment re-credits it — and the overshoot a payment creates is
+taken back by `bookOvershootDelta`, the *same* function that granted it, called by
+`settleAgainstInvoice` and `resettleInvoice` alike. Writing such a rule only on the way in is
+how a refunded top-up leaves the customer the cash *and* the credit. Each entry is keyed on the
+row that caused it — the payment, or the refund — so the unique index on
+`credit_ledger (payment_id, kind)` makes a repeat a no-op rather than a doubled balance.
+
 Rule: pages, server actions and API route handlers are thin. Business logic lives in
 `src/server/**` as plain, testable TypeScript that takes a `db`/transaction as a parameter.
 Server actions and `/api/v1` routes call the **same** service functions.

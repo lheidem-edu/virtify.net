@@ -58,10 +58,7 @@ export async function storeMethod(
             .onConflictDoUpdate({
                 target: schema.paymentMethod.token,
                 set: { label: input.label, revokedAt: null },
-                setWhere: eq(
-                    schema.paymentMethod.customerId,
-                    input.customerId,
-                ),
+                setWhere: eq(schema.paymentMethod.customerId, input.customerId),
             })
             .returning({ id: schema.paymentMethod.id });
 
@@ -127,10 +124,7 @@ export async function liveMethods(executor: Executor, customerId: string) {
 }
 
 /** The one an automatic collection reaches for, if the account has one. */
-export async function defaultMethod(
-    executor: Executor,
-    customerId: string,
-) {
+export async function defaultMethod(executor: Executor, customerId: string) {
     const methods = await liveMethods(executor, customerId);
 
     return methods.find((method) => method.isDefault) ?? null;
