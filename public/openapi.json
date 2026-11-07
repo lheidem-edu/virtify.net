@@ -25,6 +25,10 @@
             "description": "Produkte, Preise und Zusatzleistungen — und die Funktion, die daraus einen Preis macht."
         },
         {
+            "name": "Rechnungen",
+            "description": "Rechnungen und ihre Positionen. Eine ausgestellte Rechnung ist unveränderlich; korrigiert wird über eine Rechnungskorrektur mit eigener Nummer."
+        },
+        {
             "name": "Kunden",
             "description": "Kundenkonten: Stammdaten, Status und Kundennummer. Ein Kundenschlüssel sieht hier ausschließlich das eigene Konto."
         }
@@ -568,6 +572,750 @@
                     "time",
                     "commit"
                 ]
+            },
+            "InvoiceItem": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Position.",
+                        "example": "invoiceitem_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "position": {
+                        "type": "integer",
+                        "description": "Laufende Nummer auf dem Dokument, ab 1.",
+                        "example": 1
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Die Leistung, wie sie auf dem Dokument steht.",
+                        "example": "VPS M — Oktober 2026"
+                    },
+                    "detail": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Kleingedrucktes unter der Position.",
+                        "example": "Vertrag VT-2026-0004"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "description": "Die Menge dieser Position.",
+                        "example": 1
+                    },
+                    "unit_code": {
+                        "type": "string",
+                        "description": "Mengeneinheit nach UN/ECE Recommendation 20 — `MON`, `ANN`, `C62`, `HUR`, `DAY`.",
+                        "example": "MON"
+                    },
+                    "unit_price_cents": {
+                        "type": "integer",
+                        "description": "Einzelpreis netto, in ganzen Cent.",
+                        "example": 1999
+                    },
+                    "net_cents": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Menge × Einzelpreis, einmal gerundet und beim Ausstellen festgeschrieben. `null` bei einem Entwurf.",
+                        "example": 1999
+                    },
+                    "tax_rate_bp": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Der Steuersatz in Basispunkten — 1900 sind 19 %. Beim Ausstellen festgeschrieben, nie nachträglich ermittelt.",
+                        "example": 0
+                    },
+                    "tax_category": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Steuerkategorie nach UNTDID 5305: `S` Regelsatz, `E` steuerbefreit (§ 19 UStG), `AE` Reverse Charge, `O` nicht steuerbar.",
+                        "example": "E"
+                    },
+                    "tax_rule": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Warum dieser Satz gilt — `kleinunternehmer`, `domestic-standard`, `eu-b2b-reverse-charge`, `eu-b2c-oss` oder `non-eu-out-of-scope`.",
+                        "example": "kleinunternehmer"
+                    },
+                    "service_period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Beginn des Leistungszeitraums dieser Position, falls er vom Dokument abweicht.",
+                        "example": "2026-10-01T00:00:00.000Z"
+                    },
+                    "service_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende des Leistungszeitraums dieser Position.",
+                        "example": "2026-10-31T00:00:00.000Z"
+                    }
+                },
+                "required": [
+                    "id",
+                    "position",
+                    "description",
+                    "detail",
+                    "quantity",
+                    "unit_code",
+                    "unit_price_cents",
+                    "net_cents",
+                    "tax_rate_bp",
+                    "tax_category",
+                    "tax_rule",
+                    "service_period_start",
+                    "service_period_end"
+                ],
+                "description": "Eine Position der Rechnung."
+            },
+            "InvoiceSummary": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Rechnung.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Das Kundenkonto, an das die Rechnung geht.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "contract_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Vertrag, zu dem sie gehört, falls es einen gibt.",
+                        "example": null
+                    },
+                    "number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die fortlaufende Rechnungsnummer nach § 14 Abs. 4 Nr. 4 UStG. `null`, solange die Rechnung ein Entwurf ist.",
+                        "example": "RE-2026-0009"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "unpaid",
+                            "paid",
+                            "cancelled"
+                        ],
+                        "description": "`draft` hat noch keine Nummer und ist frei änderbar, `unpaid` ist ausgestellt und offen, `paid` bezahlt, `cancelled` durch eine Rechnungskorrektur vollständig aufgehoben. Ein Kundenschlüssel sieht niemals einen Entwurf.",
+                        "example": "unpaid"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "Währung aller Beträge nach ISO 4217.",
+                        "example": "EUR"
+                    },
+                    "issued_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Das Rechnungsdatum — und der Zeitpunkt, nach dem sich die anzuwendende Besteuerung richtet.",
+                        "example": "2026-11-07T10:00:00.000Z"
+                    },
+                    "due_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Fälligkeitsdatum.",
+                        "example": "2026-11-21T10:00:00.000Z"
+                    },
+                    "paid_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann die Zahlung eingegangen ist.",
+                        "example": null
+                    },
+                    "cancelled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie vollständig korrigiert wurde.",
+                        "example": null
+                    },
+                    "service_period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Beginn des Leistungszeitraums des Dokuments.",
+                        "example": "2026-10-01T00:00:00.000Z"
+                    },
+                    "service_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende des Leistungszeitraums des Dokuments.",
+                        "example": "2026-10-31T00:00:00.000Z"
+                    },
+                    "net_cents": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Nettosumme in ganzen Cent. `null` bei einem Entwurf.",
+                        "example": 1999
+                    },
+                    "tax_cents": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Umsatzsteuer in ganzen Cent, je Steuersatz auf die Summe der Positionen gerechnet. Unter § 19 UStG immer 0.",
+                        "example": 0
+                    },
+                    "gross_cents": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Bruttosumme in ganzen Cent.",
+                        "example": 1999
+                    },
+                    "credited_cents": {
+                        "type": "integer",
+                        "description": "Was Rechnungskorrekturen von dieser Rechnung zurückgenommen haben.",
+                        "example": 0
+                    },
+                    "tax_strategy": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Besteuerung, die beim Ausstellen festgeschrieben wurde — `kleinunternehmer` oder `regular-vat`. `null` bei einem Entwurf: die Steuer wird erst beim Ausstellen entschieden.",
+                        "example": "kleinunternehmer"
+                    },
+                    "tax_note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der steuerliche Hinweis, der auf dem Dokument steht — § 14 Abs. 4 Nr. 8 UStG.",
+                        "example": "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet."
+                    },
+                    "recipient": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Anschrift, wie sie beim Ausstellen eingefroren wurde, eine Zeile je Element.",
+                        "example": "Muster GmbH\nMaria Musterfrau\nMusterweg 1\n12345 Musterstadt"
+                    },
+                    "buyer_reference": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Leitweg-ID oder Kundennummer — EN 16931 BT-10.",
+                        "example": "10001"
+                    },
+                    "intro_text": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Einleitender Absatz auf dem Dokument.",
+                        "example": null
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Schlussbemerkung auf dem Dokument.",
+                        "example": null
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Anlagezeitpunkt in UTC.",
+                        "example": "2026-11-01T09:00:00.000Z"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Letzte Änderung in UTC.",
+                        "example": "2026-11-07T08:15:00.000Z"
+                    }
+                },
+                "required": [
+                    "id",
+                    "customer_id",
+                    "contract_id",
+                    "number",
+                    "status",
+                    "currency",
+                    "issued_at",
+                    "due_at",
+                    "paid_at",
+                    "cancelled_at",
+                    "service_period_start",
+                    "service_period_end",
+                    "net_cents",
+                    "tax_cents",
+                    "gross_cents",
+                    "credited_cents",
+                    "tax_strategy",
+                    "tax_note",
+                    "recipient",
+                    "buyer_reference",
+                    "intro_text",
+                    "note",
+                    "created_at",
+                    "updated_at"
+                ],
+                "description": "Eine Rechnung ohne ihre Positionen, wie sie in Listen steht."
+            },
+            "Invoice": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Rechnung.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Das Kundenkonto, an das die Rechnung geht.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "contract_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Vertrag, zu dem sie gehört, falls es einen gibt.",
+                        "example": null
+                    },
+                    "number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die fortlaufende Rechnungsnummer nach § 14 Abs. 4 Nr. 4 UStG. `null`, solange die Rechnung ein Entwurf ist.",
+                        "example": "RE-2026-0009"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "unpaid",
+                            "paid",
+                            "cancelled"
+                        ],
+                        "description": "`draft` hat noch keine Nummer und ist frei änderbar, `unpaid` ist ausgestellt und offen, `paid` bezahlt, `cancelled` durch eine Rechnungskorrektur vollständig aufgehoben. Ein Kundenschlüssel sieht niemals einen Entwurf.",
+                        "example": "unpaid"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "Währung aller Beträge nach ISO 4217.",
+                        "example": "EUR"
+                    },
+                    "issued_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Das Rechnungsdatum — und der Zeitpunkt, nach dem sich die anzuwendende Besteuerung richtet.",
+                        "example": "2026-11-07T10:00:00.000Z"
+                    },
+                    "due_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Fälligkeitsdatum.",
+                        "example": "2026-11-21T10:00:00.000Z"
+                    },
+                    "paid_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann die Zahlung eingegangen ist.",
+                        "example": null
+                    },
+                    "cancelled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie vollständig korrigiert wurde.",
+                        "example": null
+                    },
+                    "service_period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Beginn des Leistungszeitraums des Dokuments.",
+                        "example": "2026-10-01T00:00:00.000Z"
+                    },
+                    "service_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende des Leistungszeitraums des Dokuments.",
+                        "example": "2026-10-31T00:00:00.000Z"
+                    },
+                    "net_cents": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Nettosumme in ganzen Cent. `null` bei einem Entwurf.",
+                        "example": 1999
+                    },
+                    "tax_cents": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Umsatzsteuer in ganzen Cent, je Steuersatz auf die Summe der Positionen gerechnet. Unter § 19 UStG immer 0.",
+                        "example": 0
+                    },
+                    "gross_cents": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Bruttosumme in ganzen Cent.",
+                        "example": 1999
+                    },
+                    "credited_cents": {
+                        "type": "integer",
+                        "description": "Was Rechnungskorrekturen von dieser Rechnung zurückgenommen haben.",
+                        "example": 0
+                    },
+                    "tax_strategy": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Besteuerung, die beim Ausstellen festgeschrieben wurde — `kleinunternehmer` oder `regular-vat`. `null` bei einem Entwurf: die Steuer wird erst beim Ausstellen entschieden.",
+                        "example": "kleinunternehmer"
+                    },
+                    "tax_note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der steuerliche Hinweis, der auf dem Dokument steht — § 14 Abs. 4 Nr. 8 UStG.",
+                        "example": "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet."
+                    },
+                    "recipient": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Anschrift, wie sie beim Ausstellen eingefroren wurde, eine Zeile je Element.",
+                        "example": "Muster GmbH\nMaria Musterfrau\nMusterweg 1\n12345 Musterstadt"
+                    },
+                    "buyer_reference": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Leitweg-ID oder Kundennummer — EN 16931 BT-10.",
+                        "example": "10001"
+                    },
+                    "intro_text": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Einleitender Absatz auf dem Dokument.",
+                        "example": null
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Schlussbemerkung auf dem Dokument.",
+                        "example": null
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Anlagezeitpunkt in UTC.",
+                        "example": "2026-11-01T09:00:00.000Z"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Letzte Änderung in UTC.",
+                        "example": "2026-11-07T08:15:00.000Z"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvoiceItem"
+                        },
+                        "description": "Die Positionen, in Reihenfolge der Positionsnummer."
+                    },
+                    "credit_notes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "Technische ID der Korrektur.",
+                                    "example": "creditnote_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                },
+                                "number": {
+                                    "type": "string",
+                                    "description": "Ihre eigene, lückenlose Nummer.",
+                                    "example": "RK-2026-0001"
+                                },
+                                "gross_cents": {
+                                    "type": "integer",
+                                    "description": "Was sie zurücknimmt, in ganzen Cent, positiv.",
+                                    "example": 1999
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "number",
+                                "gross_cents"
+                            ]
+                        },
+                        "description": "Die Rechnungskorrekturen zu dieser Rechnung. Eine Korrektur ist ein eigenes Dokument mit eigener Nummer."
+                    }
+                },
+                "required": [
+                    "id",
+                    "customer_id",
+                    "contract_id",
+                    "number",
+                    "status",
+                    "currency",
+                    "issued_at",
+                    "due_at",
+                    "paid_at",
+                    "cancelled_at",
+                    "service_period_start",
+                    "service_period_end",
+                    "net_cents",
+                    "tax_cents",
+                    "gross_cents",
+                    "credited_cents",
+                    "tax_strategy",
+                    "tax_note",
+                    "recipient",
+                    "buyer_reference",
+                    "intro_text",
+                    "note",
+                    "created_at",
+                    "updated_at",
+                    "items",
+                    "credit_notes"
+                ],
+                "description": "Eine Rechnung mit ihren Positionen. Jede Position trägt die Besteuerung, die beim Ausstellen galt — nie die von heute."
+            },
+            "InvoicePage": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvoiceSummary"
+                        },
+                        "description": "Die Zeilen dieser Seite, in ID-Reihenfolge."
+                    },
+                    "next_cursor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "An die nächste Anfrage als `cursor` weitergeben; `null` auf der letzten Seite.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "has_more": {
+                        "type": "boolean",
+                        "description": "Ob nach dieser Seite noch Zeilen folgen.",
+                        "example": false
+                    }
+                },
+                "required": [
+                    "data",
+                    "next_cursor",
+                    "has_more"
+                ]
+            },
+            "NewInvoiceItem": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                        "description": "Die Leistung, wie sie auf dem Dokument stehen soll.",
+                        "example": "VPS M — Oktober 2026"
+                    },
+                    "detail": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 500,
+                        "description": "Kleingedrucktes unter der Position.",
+                        "example": "Vertrag VT-2026-0004"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "minimum": -9999,
+                        "maximum": 9999,
+                        "description": "Die Menge. Negativ für eine Gutschriftsposition; 0 wird abgelehnt statt übergangen.",
+                        "example": 1
+                    },
+                    "unit_code": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8,
+                        "default": "MON",
+                        "description": "Mengeneinheit nach UN/ECE Recommendation 20.",
+                        "example": "MON"
+                    },
+                    "unit_price_cents": {
+                        "type": "integer",
+                        "description": "Einzelpreis netto, in ganzen Cent.",
+                        "example": 1999
+                    },
+                    "service_period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Beginn des Leistungszeitraums dieser Position.",
+                        "example": "2026-10-01T00:00:00.000Z"
+                    },
+                    "service_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende des Leistungszeitraums dieser Position.",
+                        "example": "2026-10-31T00:00:00.000Z"
+                    }
+                },
+                "required": [
+                    "description",
+                    "quantity",
+                    "unit_price_cents"
+                ],
+                "description": "Eine Position eines neuen Rechnungsentwurfs."
+            },
+            "NewInvoice": {
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Das Kundenkonto, an das die Rechnung geht.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "contract_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Vertrag, zu dem sie gehört. Er muss demselben Konto gehören, sonst wird die Anfrage abgelehnt.",
+                        "example": "contract_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "intro_text": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 2000,
+                        "description": "Einleitender Absatz auf dem Dokument.",
+                        "example": null
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 2000,
+                        "description": "Schlussbemerkung auf dem Dokument.",
+                        "example": null
+                    },
+                    "service_period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Beginn des Leistungszeitraums des Dokuments.",
+                        "example": "2026-10-01T00:00:00.000Z"
+                    },
+                    "service_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende des Leistungszeitraums des Dokuments.",
+                        "example": "2026-10-31T00:00:00.000Z"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/NewInvoiceItem"
+                        },
+                        "minItems": 1,
+                        "maxItems": 200,
+                        "description": "Mindestens eine Position."
+                    }
+                },
+                "required": [
+                    "customer_id",
+                    "items"
+                ],
+                "description": "Ein neuer Rechnungsentwurf. Er bekommt keine Nummer und keine Steuer — beides entsteht erst beim Ausstellen."
             },
             "ProductPricing": {
                 "type": "object",
@@ -1831,6 +2579,528 @@
                             "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/invoices": {
+            "get": {
+                "tags": [
+                    "Rechnungen"
+                ],
+                "summary": "Rechnungen auflisten",
+                "description": "Gibt die Rechnungen seitenweise zurück, sortiert nach ID. Ein Kundenschlüssel bekommt ausschließlich die Rechnungen des eigenen Kontos und niemals Entwürfe; `customer_id` wird für ihn ignoriert statt beachtet. Benötigt `billing.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                            "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": false,
+                        "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25,
+                            "description": "Zeilen pro Seite, höchstens 100.",
+                            "example": 25
+                        },
+                        "required": false,
+                        "description": "Zeilen pro Seite, höchstens 100.",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "draft",
+                                "unpaid",
+                                "paid",
+                                "cancelled"
+                            ],
+                            "description": "Auf einen Status einschränken.",
+                            "example": "unpaid"
+                        },
+                        "required": false,
+                        "description": "Auf einen Status einschränken.",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Auf ein Kundenkonto einschränken. Nur für Mitarbeiterschlüssel wirksam.",
+                            "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": false,
+                        "description": "Auf ein Kundenkonto einschränken. Nur für Mitarbeiterschlüssel wirksam.",
+                        "name": "customer_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Eine Seite Rechnungen.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoicePage"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Rechnungen"
+                ],
+                "summary": "Rechnungsentwurf anlegen",
+                "description": "Legt einen Entwurf an. Ein Entwurf hat keine Nummer, verbraucht keine aus der Nummernreihe und trägt noch keine Steuer: beides entsteht erst beim Ausstellen. Nur mit einem Mitarbeiterschlüssel — eine Rechnung ist eine Zahlungsaufforderung, und ein Kundenschlüssel, der eine schreiben könnte, könnte sich selbst abrechnen. Benötigt `billing.write`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/NewInvoice"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Der angelegte Entwurf.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Invoice"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/invoices/{id}": {
+            "get": {
+                "tags": [
+                    "Rechnungen"
+                ],
+                "summary": "Rechnung ansehen",
+                "description": "Eine Rechnung mit allen Positionen und den Rechnungskorrekturen, die auf sie verweisen. Jede Position trägt den Steuersatz, die Steuerkategorie und die Regel, die beim Ausstellen galten. Eine Rechnung, die dieser Schlüssel nicht sehen darf, wird mit 404 beantwortet — ein 403 würde bestätigen, dass es sie gibt. Benötigt `billing.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID der Rechnung.",
+                            "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID der Rechnung.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Die Rechnung mit ihren Positionen.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Invoice"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/invoices/{id}/pdf": {
+            "get": {
+                "tags": [
+                    "Rechnungen"
+                ],
+                "summary": "Rechnung als PDF",
+                "description": "Liefert das Dokument selbst. Eine ausgestellte Rechnung kommt Byte für Byte aus dem Dokumentenspeicher, so wie sie beim Ausstellen gerendert wurde — nicht neu gesetzt. Ein Entwurf wird nur einem Mitarbeiterschlüssel ausgeliefert und ist deutlich als solcher gekennzeichnet. Benötigt `billing.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID der Rechnung.",
+                            "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID der Rechnung.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Das Dokument als PDF.",
+                        "content": {
+                            "application/pdf": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary",
+                                    "description": "Die PDF-Datei."
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/invoices/{id}/finalize": {
+            "post": {
+                "tags": [
+                    "Rechnungen"
+                ],
+                "summary": "Rechnung ausstellen",
+                "description": "Stellt den Entwurf aus. In einer Transaktion: die Besteuerung, die in diesem Moment gilt, wird ermittelt und auf jede Position geschrieben, Verkäufer und Käufer werden eingefroren, die Summen berechnet und die lückenlose Nummer nach § 14 Abs. 4 Nr. 4 UStG vergeben. Danach ist das Dokument unveränderlich — Korrekturen erfolgen ausschließlich über eine Rechnungskorrektur. Eine Rechnung, die kein Entwurf mehr ist, wird mit 409 abgelehnt statt still bestätigt. Nur mit einem Mitarbeiterschlüssel; benötigt `billing.write`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID der Rechnung.",
+                            "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID der Rechnung.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Die ausgestellte Rechnung mit Nummer und Summen.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Invoice"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Die Rechnung ist kein Entwurf mehr und kann nicht noch einmal ausgestellt werden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "description": "URI die den Fehlertyp benennt.",
+                                            "example": "https://virtify.net/problems/nicht-mehr-aenderbar"
+                                        },
+                                        "title": {
+                                            "type": "string",
+                                            "description": "Kurze Beschreibung des Fehlertyps.",
+                                            "example": "Nicht mehr änderbar"
+                                        },
+                                        "status": {
+                                            "type": "integer",
+                                            "description": "Der HTTP-Statuscode.",
+                                            "example": 409
+                                        },
+                                        "detail": {
+                                            "type": "string",
+                                            "description": "Was in diesem Fall schiefging.",
+                                            "example": "Nur Entwürfe können ausgestellt werden."
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "detail"
+                                    ]
                                 }
                             }
                         }

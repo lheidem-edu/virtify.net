@@ -1,16 +1,16 @@
 import PageHeader from "@/components/shared/page-header";
 import type { INVOICE_STATUS_LABEL } from "@/lib/format";
 import { requirePermission } from "@/server/auth/staff-session";
+import { listInvoices } from "@/server/billing/invoices/repository";
+import { DEFAULT_UNIT_CODE } from "@/server/billing/invoices/totals";
 import { billingPeriod } from "@/server/documents/contract-term";
 import { dateInputValue } from "@/server/documents/line-items";
 import {
     ANY_CUSTOMER,
     listContracts,
     listCustomerAccounts,
-    listInvoices,
     loadContract,
 } from "@/server/documents/repository";
-import { DEFAULT_UNIT_CODE } from "@/server/documents/totals";
 import AdminInvoicesTable from "./admin-invoices-table";
 import InvoiceForm, { type InvoicePrefill } from "./invoice-form";
 
@@ -92,7 +92,7 @@ export default async function Page({
                         paidAt: entry.paidAt,
                         email: entry.email,
                         amount: entry.amount,
-                        isCorrection: entry.cancelsInvoiceId !== null,
+                        credited: entry.creditedCents,
                         autoCollect: entry.collectedFrom !== null,
                     }))}
                 />

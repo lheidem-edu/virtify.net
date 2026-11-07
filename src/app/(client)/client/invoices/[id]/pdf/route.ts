@@ -1,62 +1,34 @@
 import { notFound } from "next/navigation";
-import { formatDate } from "@/lib/format";
+import { db } from "@/db";
+import { invoicePdf } from "@/server/billing/invoices/pdf";
 import { documentViewer } from "@/server/documents/access";
-import { renderDocumentPdf } from "@/server/documents/pdf";
-import { formatRecipient, loadInvoice } from "@/server/documents/repository";
 
+/**
+ * One URL for both sides: a customer opens their own invoice from the
+ * Kundenbereich, an employee opens the same document from Verwaltung.
+ * `documentViewer()` says which of the two is asking, and the loader behind
+ * `invoicePdf` constrains the query accordingly — a foreign id is a 404.
+ *
+ * A finalized invoice is served from the document store, byte for byte as it
+ * was rendered when it was issued.
+ */
 export async function GET(
     _request: Request,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const { customerId, isAdmin } = await documentViewer();
+    const viewer = await documentViewer("billing.read");
     const { id } = await params;
 
-    const loaded = await loadInvoice(id, customerId, isAdmin);
+    const result = await invoicePdf(db, id, viewer);
 
-    // A draft has no number yet and is not a document the customer may see.
-    if (!loaded || (!isAdmin && loaded.invoice.status === "draft")) {
+    if (!result) {
         notFound();
     }
 
-    const { invoice, buyer, totals } = loaded;
-
-    // A correction is recognised by what it points at, as the mail does —
-    // it is an invoice of the same series, only with reversed signs.
-    const original = invoice.cancelsInvoiceId
-        ? ((await loadInvoice(invoice.cancelsInvoiceId, customerId, isAdmin))
-              ?.invoice ?? null)
-        : null;
-
-    const pdf = await renderDocumentPdf({
-        kind: "invoice",
-        variant:
-            invoice.status === "draft"
-                ? "draft"
-                : original
-                  ? "correction"
-                  : null,
-        title: original
-            ? `Korrektur zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
-            : null,
-        number: invoice.number ?? "ENTWURF",
-        customerNumber: buyer.customerNumber,
-        recipient: invoice.recipient ?? formatRecipient(buyer),
-        issuedAt: invoice.issuedAt ?? new Date(),
-        dueAt: invoice.dueAt,
-        servicePeriod: {
-            start: invoice.servicePeriodStart,
-            end: invoice.servicePeriodEnd,
-        },
-        introText: invoice.introText,
-        note: invoice.note,
-        totals,
-        details: loaded.items.map((item) => item.detail),
-    });
-
-    return new Response(new Uint8Array(pdf), {
+    return new Response(new Uint8Array(result.bytes), {
         headers: {
             "Content-Type": "application/pdf",
-            "Content-Disposition": `inline; filename="${(invoice.number ?? id).replace(/[^\w.-]/g, "-")}.pdf"`,
+            "Content-Disposition": `inline; filename="${result.filename}"`,
             // Invoices are personal documents; shared caches must not hold them.
             "Cache-Control": "private, no-store",
         },

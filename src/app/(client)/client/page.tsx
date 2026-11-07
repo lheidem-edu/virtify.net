@@ -1,12 +1,9 @@
 import { FileSignature, FileText, Receipt } from "lucide-react";
 import Link from "next/link";
 import PageHeader from "@/components/shared/page-header";
+import { listInvoices } from "@/server/billing/invoices/repository";
 import { getCurrentCustomer } from "@/server/customers/current";
-import {
-    listContracts,
-    listInvoices,
-    listOffers,
-} from "@/server/documents/repository";
+import { listContracts, listOffers } from "@/server/documents/repository";
 
 const CARD =
     "flex flex-col gap-3 rounded-lg border p-6 transition-colors hover:border-ring";
@@ -22,11 +19,9 @@ export default async function Page() {
     ]);
 
     const openOffers = offers.filter((entry) => entry.status === "sent");
-    // A correction is issued like any other invoice but owes nothing —
-    // counting it as open would tell the customer to pay a reversal.
-    const unpaid = invoices.filter(
-        (entry) => entry.status === "issued" && !entry.cancelsInvoiceId,
-    );
+    // A correction is a document of its own now and never appears in this
+    // list, so "unpaid" is simply what has not been paid.
+    const unpaid = invoices.filter((entry) => entry.status === "unpaid");
     const activeContracts = contracts.filter(
         (entry) => entry.status === "active" || entry.status === "provisioning",
     );

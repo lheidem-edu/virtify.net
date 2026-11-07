@@ -1,3 +1,4 @@
+import { berlinInstant } from "@/lib/berlin-date";
 import { parseAmount } from "@/lib/money";
 
 /**
@@ -62,34 +63,5 @@ export function cents(data: FormData, name: string): number | null {
 export function date(data: FormData, name: string, end = false): Date | null {
     const value = text(data, name);
 
-    if (!value) {
-        return null;
-    }
-
-    const parsed = new Date(
-        `${value}T${end ? "23:59:59.999" : "00:00:00.000"}${berlinOffset(value)}`,
-    );
-
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-/** `+01:00` or `+02:00` for a `YYYY-MM-DD`, whichever Berlin was on that day. */
-function berlinOffset(day: string): string {
-    const noon = new Date(`${day}T12:00:00.000Z`);
-
-    if (Number.isNaN(noon.getTime())) {
-        return "Z";
-    }
-
-    const name = new Intl.DateTimeFormat("en-US", {
-        timeZone: "Europe/Berlin",
-        timeZoneName: "longOffset",
-    })
-        .formatToParts(noon)
-        .find((part) => part.type === "timeZoneName")?.value;
-
-    // "GMT+01:00" → "+01:00"; "GMT" itself would mean no offset at all.
-    const offset = name?.replace("GMT", "") ?? "";
-
-    return offset === "" ? "Z" : offset;
+    return value ? berlinInstant(value, end) : null;
 }

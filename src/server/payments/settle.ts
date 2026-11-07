@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
 import { formatPrice } from "@/lib/format";
 import { createId } from "@/lib/ulid";
+import { notifyThresholds } from "@/server/billing/revenue-notify";
 import { sendPaymentReceivedMail } from "@/server/documents/send";
 import {
     createTransport,
@@ -135,9 +136,9 @@ export async function settlePayment(input: {
         // meantime, paid twice, or paid after a manual booking. The payment is
         // recorded either way — it happened — but somebody has to decide
         // whether it goes back, so the caller is told rather than nothing.
-        const unexpected = invoice ? invoice.status !== "issued" : true;
+        const unexpected = invoice ? invoice.status !== "unpaid" : true;
 
-        if (invoice?.status === "issued") {
+        if (invoice?.status === "unpaid") {
             await tx
                 .update(schema.invoice)
                 .set({
@@ -184,6 +185,11 @@ export async function settlePayment(input: {
     });
 
     if (outcome.changed) {
+        // Revenue is counted from paid invoices, so this is one of the two
+        // moments the § 19 figure can move. It never throws and sends at
+        // most one mail per year, metric and level.
+        await notifyThresholds(db);
+
         // Exactly once per invoice, because only the transaction above can
         // report `changed`. A webhook holds the customer's redirect while
         // this runs, which is worth the second it costs: the alternative is

@@ -1,8 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { loadInvoice } from "@/server/billing/invoices/repository";
 import { getCurrentCustomer } from "@/server/customers/current";
-import { loadInvoice } from "@/server/documents/repository";
 import { closeOpenAttempts } from "@/server/payments/collect";
 import { paypalEnabled, stripeEnabled } from "@/server/payments/config";
 import { createInvoiceOrder } from "@/server/payments/paypal";
@@ -48,13 +48,9 @@ export async function startInvoicePayment(
 
     const { invoice, buyer, totals } = loaded;
 
-    // Drafts, Stornos and already settled invoices are never payable — the
+    // Drafts, corrected and already settled invoices are never payable — the
     // same rule the list uses to decide whether to offer the button at all.
-    if (
-        invoice.status !== "issued" ||
-        invoice.cancelsInvoiceId ||
-        invoice.paidAt
-    ) {
+    if (invoice.status !== "unpaid" || invoice.paidAt) {
         return {
             status: "error",
             message: "Diese Rechnung kann nicht bezahlt werden.",

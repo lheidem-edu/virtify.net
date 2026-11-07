@@ -3,3 +3,6 @@
 /.env.local
 /.env
 /tsconfig.tsbuildinfo
+
+# Rendered invoice and credit note PDFs (DOCUMENT_STORAGE_PATH).
+/.data

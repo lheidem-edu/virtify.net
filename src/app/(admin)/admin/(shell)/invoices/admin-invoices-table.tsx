@@ -24,8 +24,8 @@ export type AdminInvoiceRow = {
     paidAt: Date | null;
     email: string;
     amount: number;
-    /** A correction settles the invoice it reverses; nothing on it falls due. */
-    isCorrection: boolean;
+    /** What Rechnungskorrekturen have taken back off this invoice. */
+    credited: number;
     /**
      * The contract behind the invoice carries a stored payment method, so
      * issuing collects the amount and the row turns paid on its own.
@@ -93,9 +93,14 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
                 />
                 {/* Quiet on purpose: it explains why a row may turn paid by
                     itself, it is not another thing to click. */}
+                {row.original.credited > 0 &&
+                row.original.status !== "cancelled" ? (
+                    <span className="text-muted-foreground text-xs">
+                        {formatPrice(row.original.credited)} korrigiert
+                    </span>
+                ) : null}
                 {row.original.autoCollect &&
-                row.original.status === "issued" &&
-                !row.original.isCorrection ? (
+                row.original.status === "unpaid" ? (
                     <span
                         title="Wird über das hinterlegte Zahlungsmittel automatisch eingezogen."
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground"
@@ -132,8 +137,7 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
                         >
                             XML
                         </Link>
-                        {row.original.status === "issued" &&
-                        !row.original.isCorrection ? (
+                        {row.original.status === "unpaid" ? (
                             <MarkPaidForm invoiceId={row.original.id} />
                         ) : null}
                     </>

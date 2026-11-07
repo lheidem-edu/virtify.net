@@ -20,6 +20,12 @@ export const operator = {
     email: "admin@virtify.net",
     /** Held for intra-EU transactions; the § 19 UStG scheme still applies. */
     vatId: "DE457809315",
+    /**
+     * Steuernummer. § 14 Abs. 4 Nr. 2 UStG wants the Steuernummer or the
+     * USt-IdNr. on every invoice; the operator holds both, and the admin
+     * settings page is where the real one is entered.
+     */
+    taxNumber: "",
     /** Printed on invoices and offers. Deliberately absent from the
      *  Impressum, where only the email address is given. */
     phone: "+49 (0) 171 4100695",
@@ -42,6 +48,19 @@ export const policy = {
     dataRetrievalDays: 14,
     /** Minimum notice for urgent security maintenance, in hours. */
     securityMaintenanceNoticeHours: 24,
+} as const;
+
+/**
+ * § 19 UStG. The scheme applies while the previous calendar year stayed under
+ * the first figure and the current year stays under the second; exceeding the
+ * current-year limit ends it from that transaction on. Both are settings in
+ * the database — these are only what a fresh installation starts with.
+ */
+export const revenue = {
+    kleinunternehmerPreviousLimitCents: 2_500_000,
+    kleinunternehmerCurrentLimitCents: 10_000_000,
+    /** `service` | `invoice` | `payment` — see the settings schema. */
+    basis: "service",
 } as const;
 
 /** Commit the running build was produced from — see next.config.ts. */

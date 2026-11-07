@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { type db as Database, db, schema } from "@/db";
+import { berlinYear } from "@/lib/berlin-date";
 
 /**
  * Number patterns. `{YEAR}` is the issuing year, `{SEQ}` the counter padded
@@ -10,6 +11,14 @@ import { type db as Database, db, schema } from "@/db";
  */
 export const NUMBERING = {
     invoice: { pattern: "RE-{YEAR}-{SEQ}", pad: 4, perYear: true },
+    /**
+     * Rechnungskorrekturen run on a range of their own, as
+     * docs/BUILD_PLAN.md asks. Keeping them out of the RE- series is what
+     * makes both series answerable to an auditor on their own terms: every
+     * RE- number is an invoice, every RK- number is a correction, and
+     * neither has a hole where the other one took a number.
+     */
+    creditNote: { pattern: "RK-{YEAR}-{SEQ}", pad: 4, perYear: true },
     offer: { pattern: "AN-{YEAR}-{SEQ}", pad: 4, perYear: true },
 } as const;
 
@@ -30,7 +39,11 @@ type Tx = Parameters<Parameters<typeof Database.transaction>[0]>[0];
  */
 export async function nextNumber(tx: Tx, kind: DocumentKind, at: Date) {
     const config = NUMBERING[kind];
-    const year = at.getFullYear();
+    // The calendar the operator issues by. `getFullYear()` would be the
+    // server's local year, which is UTC in the container — so an invoice
+    // finalized at 00:30 on 1 January would be numbered into the year that
+    // just ended.
+    const year = berlinYear(at);
     const scope = config.perYear ? `${kind}:${year}` : kind;
 
     const [row] = await tx

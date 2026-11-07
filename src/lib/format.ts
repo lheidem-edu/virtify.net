@@ -36,7 +36,7 @@ export const OFFER_STATUS_LABEL = {
 
 export const INVOICE_STATUS_LABEL = {
     draft: "Entwurf",
-    issued: "Ausgestellt",
+    unpaid: "Offen",
     paid: "Bezahlt",
     cancelled: "Korrigiert",
 } as const;
@@ -61,7 +61,7 @@ export function isOverdue(invoice: {
     paidAt: Date | null;
 }) {
     return (
-        invoice.status === "issued" &&
+        invoice.status === "unpaid" &&
         !invoice.paidAt &&
         invoice.dueAt !== null &&
         invoice.dueAt.getTime() < Date.now()
@@ -80,9 +80,14 @@ export function daysOverdue(dueAt: Date | null) {
 
 export const INVOICE_STATUS_TONE = {
     draft: "muted",
-    issued: "warning",
+    unpaid: "warning",
     paid: "positive",
     cancelled: "neutral",
+} as const;
+
+export const CREDIT_NOTE_KIND_LABEL = {
+    full: "Vollständig",
+    partial: "Teilweise",
 } as const;
 
 export const CONTRACT_STATUS_TONE = {

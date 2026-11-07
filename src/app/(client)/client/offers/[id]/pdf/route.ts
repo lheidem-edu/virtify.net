@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 import { documentViewer } from "@/server/documents/access";
-import { renderDocumentPdf } from "@/server/documents/pdf";
+import { renderDocumentPdf, sellerFromSettings } from "@/server/documents/pdf";
 import { formatRecipient, loadOffer } from "@/server/documents/repository";
+import { loadSettings } from "@/server/settings";
 
 export async function GET(
     _request: Request,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const { customerId, isAdmin } = await documentViewer();
+    const { customerId, isAdmin } = await documentViewer("offers.read");
     const { id } = await params;
 
     const loaded = await loadOffer(id, customerId, isAdmin);
@@ -29,7 +30,11 @@ export async function GET(
         introText: offer.introText,
         note: offer.note,
         totals,
-        details: loaded.items.map((item) => item.detail),
+        seller: sellerFromSettings(await loadSettings()),
+        showTax:
+            totals.taxCents !== 0 ||
+            totals.groups.some((group) => group.rateBp > 0),
+        taxNotes: loaded.taxNotes,
     });
 
     return new Response(new Uint8Array(pdf), {

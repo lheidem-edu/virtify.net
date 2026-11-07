@@ -6,4 +6,5 @@
  */
 import "./customers";
 import "./health";
+import "./invoices";
 import "./products";

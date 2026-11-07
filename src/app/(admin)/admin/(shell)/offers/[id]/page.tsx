@@ -220,7 +220,7 @@ export default async function Page({
                                         {formatPrice(line.unitPriceCents)}
                                     </TableCell>
                                     <TableCell className="text-right font-mono">
-                                        {formatPrice(line.lineTotalCents)}
+                                        {formatPrice(line.netCents)}
                                     </TableCell>
                                 </TableRow>
                             ))}

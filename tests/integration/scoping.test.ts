@@ -1,6 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+    listInvoices,
+    loadInvoice,
+} from "@/server/billing/invoices/repository";
+import {
     createCustomerForUser,
     customerForUser,
     getCustomer,
@@ -9,10 +13,8 @@ import {
 } from "@/server/customers/repository";
 import {
     listContracts,
-    listInvoices,
     listOffers,
     loadContract,
-    loadInvoice,
     loadOffer,
 } from "@/server/documents/repository";
 import {
@@ -92,7 +94,10 @@ describe.skipIf(!available)("client-area scoping", () => {
                     customerId: customer.id,
                     contractId: contract.id,
                     number: `RE-2026-000${index}`,
-                    status: "issued",
+                    // Inserted as a draft and finalized below: the trigger
+                    // from migration 0017 refuses an INSERT into
+                    // invoice_item once the invoice has left `draft`.
+                    status: "draft",
                 })
                 .returning();
 
@@ -104,7 +109,24 @@ describe.skipIf(!available)("client-area scoping", () => {
                 description: `Leistung ${index}`,
                 quantity: 1,
                 unitPriceCents: 1000,
+                netCents: 1000,
+                taxStrategy: "kleinunternehmer",
+                taxRateBp: 0,
+                taxCategory: "E",
+                taxRule: "kleinunternehmer",
             });
+
+            await db
+                .update(schema.invoice)
+                .set({
+                    status: "unpaid",
+                    netCents: 1000,
+                    taxCents: 0,
+                    grossCents: 1000,
+                    taxStrategy: "kleinunternehmer",
+                    issuedAt: new Date("2026-11-01T10:00:00Z"),
+                })
+                .where(eq(schema.invoice.id, invoice.id));
 
             const [offer] = await db
                 .insert(schema.offer)

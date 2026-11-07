@@ -308,13 +308,200 @@ Still open in this phase:
 - [ ] No demo catalog in `npm run seed`. The dev database was given one by hand while this
       phase was being tested; a fresh installation starts with an empty catalog.
 
-## Phases 3–11
+## Phase 3 — Tax strategies + invoicing engine · done
+
+`npm run typecheck`, `npm run lint` and `npm run test` (273 tests) are green, the app builds,
+`public/openapi.json` is regenerated, and every document and admin page in this phase was
+rendered against the dev database and looked at.
+
+**Tax is a strategy, and the strategy is picked by a date.** `src/server/tax` is the
+`TaxStrategy` interface CLAUDE.md fixes — `id`, `determine(ctx)`, `invoiceNotes(ctx)` — and
+nothing else. A strategy reads only the context it is handed: seller, buyer, the instant, what
+is being supplied. No database, no clock, no settings. That is what makes a finalized invoice
+reproducible years later from its own snapshot.
+
+- [x] `kleinunternehmer` (active): 0 % on every line, category `E`, the sentence
+      "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet." — and **no tax column on the PDF at
+      all**. § 19 Abs. 1 Satz 4 UStG forbids showing a tax amount, and § 14c Abs. 2 makes a
+      Kleinunternehmer owe one they print whether or not they collected it.
+- [x] `regular-vat` (implemented, tested, **not active**): the seller's country at the standard
+      rate for a domestic sale; 0 % with category `AE` and the reverse-charge sentence for an EU
+      business with a VAT ID that VIES has actually confirmed; the destination country's
+      standard rate through OSS for an EU consumer; category `O`, not taxable in Germany,
+      outside the EU. An ID nobody has checked is treated as no ID at all — under § 18e UStG the
+      seller is the one who owes the tax when it turns out to be wrong.
+- [x] `tax_mode_history` + `taxModeAt(executor, at)`. A switch is a row with an effective date,
+      not a setting: `/admin/settings/tax` schedules one behind a confirmation dialog **and** a
+      tick box, lists what is planned, lets a switch that has not taken effect yet be withdrawn,
+      and refuses one dated into the past. Resolution is by the **finalization date**, so
+      switching is never retroactive — proved by a test that issues one invoice before the
+      switch and one after and reads the first one back unchanged.
+- [x] EU standard rates with effective dates live in `src/server/tax/rates.ts`, as code rather
+      than a table — see the decisions below.
+
+**The invoicing engine.** `src/server/billing/invoices` is the lifecycle, and it absorbed what
+`src/server/documents` had rather than growing beside it: `documents/totals.ts` is gone, the
+invoice loaders moved, and `documents/{pdf,xrechnung,send,numbering,repository}.ts` were
+rewritten to take the tax snapshot as data.
+
+- [x] `finalizeInvoice()` in one transaction: resolve the strategy in force at that instant,
+      apply it to every line, freeze seller and buyer onto the row, compute the totals, and take
+      the gapless number from `document_counter` under the row lock its upsert holds. Status
+      `unpaid`. The lines are written **before** the invoice leaves `draft`, because the trigger
+      refuses them afterwards.
+- [x] **Immutability twice over.** The service refuses it, and migration `0017` installs
+      Postgres triggers that refuse it again: `invoice` may change only `status`, `paid_at`,
+      `cancelled_at`, `sent_at`, `credited_cents`, `updated_at` and the PDF reference once;
+      `invoice_item` may not be inserted, updated or deleted while its invoice is finalized;
+      `credit_note` is immutable from its first commit and cannot be deleted. The comparison is
+      *the whole row minus the mutable columns*, so a column added later is immutable by
+      default — the direction a mistake should fall in.
+- [x] **Credit notes on their own gapless range** (`RK-{YEAR}-{0000}`), full or partial,
+      referencing the invoice they credit. Amounts are stored positive (UNTDID 1001 type 381);
+      the tax snapshot is copied from the invoice's own lines and never re-determined, so a
+      correction issued after a strategy switch still reverses the rate the invoice charged.
+      A partial correction may never take back more than was charged, counting what earlier
+      ones already took.
+- [x] Every line snapshots `tax_strategy`, `tax_rate_bp` (basis points, so a rate is an
+      integer), `tax_category` (UNTDID 5305) and `tax_rule` — *why* that rate — plus its own
+      `net_cents` and service period.
+
+**PDF, stored once.** `@react-pdf/renderer`, DIN 5008 Form B as before, now with: the tax
+column and the summary grouped by rate (absent entirely under § 19), the § 14 UStG fields, the
+operator's Steuernummer *and* USt-IdNr. where both are held, the service period per line where
+it differs from the document's, and an **EPC/GiroCode QR** for the bank transfer. The bytes are
+written to a document store behind an interface (`src/server/storage`, local disk today, S3 a
+module away) and every later request is served from it — a template change cannot restyle a
+document the customer already holds. Write-once: the row's `pdf_key` goes from nothing to
+something and is then refused by the trigger.
+
+**§ 19 threshold monitor.** `netRevenueForYear()` sums the net of **paid** invoices less what
+credit notes took back, attributed to a calendar year by a configurable date (Leistungs-,
+Rechnungs- or Zahlungsdatum), read in Europe/Berlin. `/admin` is now a dashboard with the two
+limits as bars; staff with `billing.read` get one mail at 80 % and one at 100 %, deduped by a
+unique index on (year, metric, level) so a second invoice the same afternoon sends nothing.
+Checked where the figure can actually move: after a payment is marked or settles.
+
+**Surfaces.** Admin invoice list and detail (now with the tax summary, the corrections against
+the invoice and what is still open), manual invoices, finalize, cancel-by-correction with a
+reason, resend, PDF and XRechnung; `/admin/credit-notes` list and detail; `/admin/settings/tax`.
+Client invoice list and detail with the corrections underneath, and PDF/XML for both.
+
+**API.** `GET /api/v1/invoices`, `GET /api/v1/invoices/{id}`, `GET /api/v1/invoices/{id}/pdf`,
+`POST /api/v1/invoices` (staff only, draft) and `POST /api/v1/invoices/{id}/finalize` (staff
+only), registered under `src/server/openapi/paths/invoices.ts` with the `Rechnungen` tag. A
+customer key sees its own invoices and never a draft; `customer_id` is ignored for it rather
+than honoured. A row it may not see is 404, never 403. Finalizing something that is no longer a
+draft is 409, not a silent success.
+
+**Migration `0016` + `0017`.** The status `issued` is called `unpaid` from here on, which is
+what docs/BUILD_PLAN.md's lifecycle says. The two corrections that were kept as negative
+invoices in the RE- series became credit notes, keeping the RE- numbers they were issued under —
+a document the customer holds cannot be renumbered, so the RE- series has two holes that two
+credit notes account for, and every number ever handed out is still attributable. Every
+finalized invoice was given the § 19 snapshot it was issued under and the totals its lines add
+up to. `customer.country` was put into ISO codes, which the tax determination needs; the two
+dev rows that said "Deutschland" are `DE` now.
+
+**Tests (105 new, 273 in all).**
+
+- `tests/unit/tax.test.ts` — § 19 charging nothing to anybody anywhere; regular VAT for DE,
+  AT-B2B with a validated ID, AT-B2B *without* one (which is B2C, 20 %), AT-B2C and US; the
+  rate table across the Estonian and Finnish changes; the refusal to guess without a country;
+  country normalisation; the DIN 5008 address block.
+- `tests/unit/totals.test.ts` — per-line rounding, the tax computed per rate on the group
+  rather than per line, groups kept apart by category at the same rate, the half-cent cases
+  (50 ct at 19 % → 10, 7,50 € at 29 % → 2,18 €), a correction as the exact negation, and the
+  one cent a partial correction and its remainder cannot both have.
+- `tests/unit/giro-code.test.ts` — the eleven EPC lines in order, the amount format, the byte
+  limits, and that the payload really is UTF-8.
+- `tests/unit/berlin-date.test.ts` — the winter/summer boundaries of a typed date.
+- `tests/integration/invoices.test.ts` — finalization and its snapshot; **twenty parallel
+  finalizations producing 1..20 with no gap and no duplicate**; the trigger refusing an UPDATE,
+  a DELETE, and every write to the positions; the strategy switch by effective date; DE/AT-B2B/
+  AT-B2C/US end to end; credit notes full and partial and the over-credit refusal; the threshold
+  crossing 80 % and 100 % at exactly the right euro; the document store.
+- `tests/integration/invoices-api.test.ts` — the five endpoints through the real handlers:
+  401 without a key, scoping, 404 for a foreign row and for a draft on a customer key, cursor
+  pagination, 422 naming the field, 403 without `billing.write`, 409 on a second finalize, and
+  the PDF coming back byte for byte identical on the second request.
+
+Decided in this phase, open to being overruled:
+
+- **The tax amount is computed per rate on the group, not per line.** CLAUDE.md says "rounding
+  half-up per line", and that is what the *net* of a line does. The tax amount does not exist
+  per line: § 14 Abs. 4 Nr. 8 UStG asks for "der auf das Entgelt entfallende Steuerbetrag",
+  singular, per rate, and EN 16931 BR-CO-17 says the same. Summing per-line roundings can land a
+  cent away from that and makes a validator reject the invoice. So lines carry no `tax_cents`
+  at all — only their net and the snapshot of the rate that applies to it.
+- **The EU rates are a module, not a table.** The build plan says "OSS destination rate from
+  tax_rates". A table would ship empty, be filled by hand once and then go stale while the
+  invoices it produced looked perfectly ordinary. In code they are versioned, reviewed, covered
+  by tests, and a rate change is a one-line commit with a date on it. The admin area prints the
+  whole table so the operator can see what would be charged.
+- **A credit note's amounts are positive.** UNTDID 1001 type 381 expects it, the heading already
+  says the document is a correction, and everything that aggregates money subtracts them at the
+  call site rather than relying on a sign.
+- **The § 19 strategy ignores the buyer entirely** — country, VAT ID and all. That is what
+  CLAUDE.md specifies and it is right for domestic customers. It is a simplification for a
+  cross-border B2B service, where § 3a Abs. 2 UStG puts the place of supply abroad even for a
+  Kleinunternehmer. Worth a Steuerberater's opinion before the first EU business customer.
+- **Regular VAT does not apply the § 3a Abs. 5 Satz 3 Bagatellgrenze.** It is optional, opting
+  into OSS from the first euro is allowed, and the alternative makes the rate on one invoice
+  depend on the running yearly total of every other one.
+- **`/admin` is a dashboard now** instead of a redirect to the customer list, because the § 19
+  figure is the one number that must not be noticed too late. An employee without
+  `billing.read` still lands on the customer list.
+- **The PDF is stored, not re-rendered.** The alternative — rendering on every request — is
+  simpler until the template changes, at which point every old invoice silently changes with it.
+- **Finalizing does not render the PDF inside the transaction.** Rendering takes a few hundred
+  milliseconds and would hold the number counter's lock for all of them, turning a burst of
+  renewals into a queue. It is written immediately afterwards and can always be produced again
+  from the frozen row, which is why storing is write-once rather than write-never.
+- **A finalized invoice is not deletable at all**, not even by an administrator — § 147 AO. The
+  trigger refuses it; the way to undo one is a correction.
+
+Found while building, and fixed:
+
+- **The GiroCode encoded umlauts as Latin-1 in production and UTF-8 in tests.**
+  `qrcode-generator` exposes its UTF-8 converter only in the CommonJS build, so reaching for it
+  worked under tsx and vitest and was `undefined` in a Next bundle — a 500 on every invoice PDF.
+  The payload's own bytes are built here now, and a test asserts them directly instead of
+  inferring them from a module count.
+- **The QR code was drawn on top of the payment paragraph.** `flexGrow` gives a @react-pdf child
+  no bound to wrap against; both halves have explicit widths now.
+- **The ISO country codes put "DE" on the address block** of every German invoice.
+  `formatRecipient` leaves the home country off and writes a foreign one out in German, which is
+  what DIN 5008 asks for.
+- **A date typed into the tax settings was read as midnight UTC**, an hour or two into the wrong
+  day — the same bug Phase 2 fixed for coupons. Phase 2's helper is now `src/lib/berlin-date.ts`
+  and both use it.
+- **A draft showed no tax column even under regular VAT**, because it carries no snapshot. It
+  shows what finalizing it today would charge.
+- **An employee without `billing.read` could fetch any invoice PDF.** The document routes are
+  the one place both sides meet, and the staff branch checked only that a staff session existed.
+  `documentViewer()` takes the permission now and answers 404 without it.
+
+Still open in this phase:
+
+- [ ] **No VIES call.** `vat_id_validated_at` is read and respected — an unvalidated ID gets no
+      reverse charge — but nothing sets it yet. It wants a service in `src/server/tax` and a
+      button on the customer page before regular VAT is switched on.
+- [ ] **No S3 storage backend.** The interface is there and the local one implements it; the
+      S3-compatible one is a file when a deployment outgrows one node.
+- [ ] **Credit notes have no API endpoint.** They are reachable in both areas and as PDF/XML;
+      the plan's five endpoints are invoices only.
+- [ ] **No XRechnung validation in CI.** The document is generated to EN 16931 / XRechnung 3.0
+      and was checked by hand; a KoSIT validator run belongs in Phase 11.
+- [ ] The operator's Steuernummer is a settings field and is still empty on a fresh
+      installation. § 14 Abs. 4 Nr. 2 UStG wants it or the USt-IdNr.; the USt-IdNr. is filled.
+
+## Phases 4–11
 
 | Phase | State | Notes |
 |---|---|---|
-| 3 Tax + invoicing | existing, partial | Invoices draft → issued → paid → corrected, gapless numbering via `document_counter` with `FOR UPDATE`, DIN 5008 PDF, XRechnung CII, Rechnungskorrektur. Missing: `TaxStrategy` interface (§ 19 is hardcoded in `totals.ts`), `tax_mode_history`, per-line tax snapshots, the immutability trigger, the § 19 threshold monitor, PDF storage behind an interface, GiroCode. |
 | 4 Cart, checkout, orders | not started | `contract` and `offer` exist and are created by hand in the admin area; there is no cart, no self-service order. |
-| 5 Payments | existing, partial | Stripe + PayPal, stored payment methods, off-session collection, webhooks with dedupe, settlement in one transaction. Missing: the `PaymentGateway` interface the plan asks for, bank transfer as a gateway, partial payments, overpayment → credit ledger, refunds, disputes, gateway credentials in encrypted settings. |
+| 5 Payments | existing, partial | Stripe + PayPal, stored payment methods, off-session collection, webhooks with dedupe, settlement in one transaction. Missing: the `PaymentGateway` interface the plan asks for, bank transfer as a gateway, partial payments, overpayment → credit ledger, refunds, disputes, gateway credentials in encrypted settings. Settlement now also runs the § 19 threshold check. |
 | 6 Subscriptions, dunning | not started | No pg-boss, no renewal run, no dunning, no proration. `contract` carries the term arithmetic (`src/lib/documents/contract-term.ts`) but nothing bills it automatically. |
 | 7 Ticketing (M365 Graph) | not started | Mail goes out over SMTP via nodemailer. |
 | 8 Provisioning (Proxmox) | not started | Phase 2 put the registry interface and the `none` module in `src/server/provisioning`; the lifecycle methods and the Proxmox module are this phase's. |
@@ -344,7 +531,15 @@ Still open in this phase:
   PayPal reference transactions need PayPal's written approval before
   `PAYPAL_VAULTING_ENABLED=true`; Stripe receipt mails must be turned off; a real outbound SMTP
   relay is still missing; the new AGB § 7 and the Datenschutz sections want reading by the
-  operator; a Steuerberater should see a sample invoice before go-live.
+  operator; a Steuerberater should see a sample invoice before go-live — Phase 3 makes that
+  concrete: `/admin/settings/tax` is where the switch is scheduled, and the sample to show them
+  is any PDF from `/admin/invoices`.
+- **`timestamp` rather than `timestamptz` now reaches the tax layer.** `tax_mode_history
+  .effective_from` and every `issued_at` the resolver compares against are stored in UTC and
+  read in Europe/Berlin by `src/lib/berlin-date.ts`, which is correct as long as the column
+  really holds UTC. The single migration above is still the fix; nothing here makes it more
+  urgent, but it is the first place where getting it wrong would move an invoice's tax rate
+  rather than only its displayed date.
 
 ## Decisions taken without asking, open to being overruled
 

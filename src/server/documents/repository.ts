@@ -2,7 +2,10 @@ import "server-only";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { db, schema } from "@/db";
-import { calculateTotals } from "@/server/documents/totals";
+import { determineTax } from "@/server/billing/invoices/tax-context";
+import { calculateTotals } from "@/server/billing/invoices/totals";
+import { loadSettings } from "@/server/settings";
+import { countryName, normaliseCountry } from "@/server/tax/countries";
 
 /** A pool connection or an open transaction — a loader works in either. */
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -36,6 +39,26 @@ const ownerEmail = sql<string>`(
     limit 1
 )`;
 
+/**
+ * What an invoice is worth, in one expression both lists can select.
+ *
+ * A finalized invoice carries its gross total on the row — that figure was
+ * computed under the strategy in force at the time and must not be derived
+ * again under today's. A draft has no total yet, so its lines are summed
+ * live; a draft has no tax either way, because tax is decided at
+ * finalization.
+ *
+ * `${schema.invoice}."id"` rather than `${schema.invoice.id}`: Drizzle renders
+ * a bare column reference unqualified inside a `sql` template, which inside a
+ * correlated subquery resolves to the *subquery's* id column.
+ */
+export const invoiceAmount = sql<number>`coalesce(
+    ${schema.invoice.grossCents},
+    (select coalesce(sum(it.quantity * it.unit_price_cents), 0)::int
+       from ${schema.invoiceItem} it
+      where it.invoice_id = ${schema.invoice}."id")
+)`;
+
 /** The accounts a contract, offer or invoice can be addressed to. */
 export async function listCustomerAccounts(executor: Executor = db) {
     return executor
@@ -67,6 +90,10 @@ export async function loadBuyer(customerId: string, executor: Executor = db) {
             city: schema.customer.city,
             country: schema.customer.country,
             vatId: schema.customer.vatId,
+            /** Phase 3: a reverse charge needs a number VIES has confirmed. */
+            vatIdValidatedAt: schema.customer.vatIdValidatedAt,
+            /** Firma or Privatperson — B2B from B2C. */
+            kind: schema.customer.kind,
             buyerReference: schema.customer.buyerReference,
             customerNumber: schema.customer.customerNumber,
             email: ownerEmail,
@@ -78,74 +105,20 @@ export async function loadBuyer(customerId: string, executor: Executor = db) {
     return row;
 }
 
-export async function listInvoices(
-    customerId: string,
-    isAdmin: boolean,
-    executor: Executor = db,
-) {
-    const rows = await executor
-        .select({
-            id: schema.invoice.id,
-            number: schema.invoice.number,
-            status: schema.invoice.status,
-            issuedAt: schema.invoice.issuedAt,
-            dueAt: schema.invoice.dueAt,
-            paidAt: schema.invoice.paidAt,
-            recipient: schema.invoice.recipient,
-            contractId: schema.invoice.contractId,
-            cancelsInvoiceId: schema.invoice.cancelsInvoiceId,
-            email: ownerEmail,
-            /** Non-null when the contract behind the invoice carries a stored
-             *  method, i.e. issuing it will collect the amount by itself. */
-            collectedFrom: schema.paymentMethod.label,
-        })
-        .from(schema.invoice)
-        .innerJoin(
-            schema.customer,
-            eq(schema.invoice.customerId, schema.customer.id),
-        )
-        .leftJoin(
-            schema.contract,
-            eq(schema.invoice.contractId, schema.contract.id),
-        )
-        // A revoked authorisation is joined away: the list must not promise a
-        // collection that will not happen.
-        .leftJoin(
-            schema.paymentMethod,
-            and(
-                eq(schema.contract.paymentMethodId, schema.paymentMethod.id),
-                isNull(schema.paymentMethod.revokedAt),
-            ),
-        )
-        .where(ownership(schema.invoice.customerId, customerId, isAdmin))
-        .orderBy(desc(schema.invoice.createdAt));
-
-    return withTotals(
-        rows,
-        schema.invoiceItem.invoiceId,
-        schema.invoiceItem,
-        executor,
-    );
-}
-
 /**
  * Adds each document's total in one extra query rather than one per row —
  * the alternative is an N+1 that grows with the list.
  */
 async function withTotals<T extends { id: string }>(
     rows: T[],
-    _key: unknown,
-    table: typeof schema.invoiceItem | typeof schema.offerItem,
     executor: Executor = db,
 ) {
     if (rows.length === 0) {
         return rows.map((row) => ({ ...row, amount: 0 }));
     }
 
-    const parent =
-        table === schema.invoiceItem
-            ? schema.invoiceItem.invoiceId
-            : schema.offerItem.offerId;
+    const table = schema.offerItem;
+    const parent = schema.offerItem.offerId;
 
     const sums = await executor
         .select({
@@ -164,37 +137,6 @@ async function withTotals<T extends { id: string }>(
     const byId = new Map(sums.map((entry) => [entry.parentId, entry.amount]));
 
     return rows.map((row) => ({ ...row, amount: byId.get(row.id) ?? 0 }));
-}
-
-export async function loadInvoice(
-    id: string,
-    customerId: string,
-    isAdmin: boolean,
-    executor: Executor = db,
-) {
-    const [row] = await executor
-        .select()
-        .from(schema.invoice)
-        .where(
-            and(
-                eq(schema.invoice.id, id),
-                ownership(schema.invoice.customerId, customerId, isAdmin),
-            ),
-        );
-
-    if (!row) {
-        return null;
-    }
-
-    const items = await executor
-        .select()
-        .from(schema.invoiceItem)
-        .where(eq(schema.invoiceItem.invoiceId, id))
-        .orderBy(asc(schema.invoiceItem.position));
-
-    const buyer = await loadBuyer(row.customerId, executor);
-
-    return { invoice: row, items, buyer, totals: calculateTotals(items) };
 }
 
 /**
@@ -300,12 +242,7 @@ export async function listOffers(
         .where(ownership(schema.offer.customerId, customerId, isAdmin))
         .orderBy(desc(schema.offer.createdAt));
 
-    return withTotals(
-        rows,
-        schema.offerItem.offerId,
-        schema.offerItem,
-        executor,
-    );
+    return withTotals(rows, executor);
 }
 
 export async function loadOffer(
@@ -336,7 +273,35 @@ export async function loadOffer(
 
     const buyer = await loadBuyer(row.customerId, executor);
 
-    return { offer: row, items, buyer, totals: calculateTotals(items) };
+    // An offer quotes what an invoice would charge, so it is priced under the
+    // strategy in force *today* rather than under a snapshot — it has none,
+    // and it is not a document under § 14 UStG. The invoice that follows
+    // freezes its own answer when it is finalized.
+    const { determination, notes } = await determineTax(
+        executor,
+        buyer,
+        await loadSettings(),
+        new Date(),
+    );
+
+    return {
+        offer: row,
+        items,
+        buyer,
+        taxNotes: notes,
+        totals: calculateTotals(
+            items.map((item) => ({
+                description: item.description,
+                detail: item.detail,
+                quantity: item.quantity,
+                unitCode: item.unitCode,
+                unitPriceCents: item.unitPriceCents,
+                taxRateBp: determination.rateBp,
+                taxCategory: determination.category,
+                taxRule: determination.rule,
+            })),
+        ),
+    };
 }
 
 export async function listContracts(
@@ -401,6 +366,7 @@ export async function loadContract(
             status: schema.invoice.status,
             issuedAt: schema.invoice.issuedAt,
             dueAt: schema.invoice.dueAt,
+            amount: invoiceAmount,
         })
         .from(schema.invoice)
         .where(eq(schema.invoice.contractId, id))
@@ -435,12 +401,7 @@ export async function loadContract(
     return {
         contract: row,
         buyer,
-        invoices: await withTotals(
-            invoices,
-            schema.invoiceItem.invoiceId,
-            schema.invoiceItem,
-            executor,
-        ),
+        invoices,
         offer: offer ?? null,
         paymentMethod: method ?? null,
     };
@@ -510,21 +471,35 @@ export function xmlBuyer(
     };
 }
 
-/** Postal address as it belongs on a document, one line per element. */
-export function formatRecipient(buyer: {
-    name: string;
-    company: string | null;
-    street: string | null;
-    postalCode: string | null;
-    city: string | null;
-    country: string | null;
-}) {
+/**
+ * Postal address as it belongs on a document, one line per element.
+ *
+ * DIN 5008: the country is written out, in the sender's language, and only
+ * on a foreign address — a German invoice to a German customer does not end
+ * in "Deutschland", and certainly not in "DE", which is what the ISO codes
+ * introduced in Phase 3 would otherwise have put there.
+ */
+export function formatRecipient(
+    buyer: {
+        name: string;
+        company: string | null;
+        street: string | null;
+        postalCode: string | null;
+        city: string | null;
+        country: string | null;
+    },
+    homeCountry = "DE",
+) {
+    const country = normaliseCountry(buyer.country);
+
     return [
         buyer.company,
         buyer.name,
         buyer.street,
         [buyer.postalCode, buyer.city].filter(Boolean).join(" ") || null,
-        buyer.country,
+        country === normaliseCountry(homeCountry)
+            ? null
+            : countryName(buyer.country),
     ]
         .filter(Boolean)
         .join("\n");

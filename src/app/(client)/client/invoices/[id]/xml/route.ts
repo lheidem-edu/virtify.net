@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
+import { db } from "@/db";
+import { sellerOf } from "@/server/billing/invoices/pdf";
+import { loadInvoice } from "@/server/billing/invoices/repository";
 import { documentViewer } from "@/server/documents/access";
-import { loadInvoice, xmlBuyer } from "@/server/documents/repository";
+import { xmlBuyer } from "@/server/documents/repository";
 import { renderXRechnung } from "@/server/documents/xrechnung";
 import { loadSettings } from "@/server/settings";
 
@@ -8,12 +11,12 @@ export async function GET(
     _request: Request,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const { customerId, isAdmin } = await documentViewer();
+    const { customerId, isAdmin } = await documentViewer("billing.read");
     const { id } = await params;
 
-    const loaded = await loadInvoice(id, customerId, isAdmin);
+    const loaded = await loadInvoice(id, customerId, isAdmin, db);
 
-    // XRechnung describes an issued invoice; a draft has no number to carry.
+    // XRechnung describes a finalized invoice; a draft has no number to carry.
     if (
         !loaded ||
         loaded.invoice.status === "draft" ||
@@ -22,19 +25,17 @@ export async function GET(
         notFound();
     }
 
-    const { invoice, buyer, totals } = loaded;
+    const { invoice, buyer, totals, taxNotes } = loaded;
     // Narrowed above; re-binding through the destructure loses it.
     const number = invoice.number as string;
 
-    const { operator, site } = await loadSettings();
+    const settings = await loadSettings();
 
     const xml = renderXRechnung({
-        seller: operator,
-        siteName: site.name,
+        seller: sellerOf(invoice, settings),
+        siteName: settings.site.name,
         number,
-        // A correction carries negative amounts, which a validator rejects
-        // under 380; 384 is the corrected-invoice code it belongs to.
-        typeCode: invoice.cancelsInvoiceId ? "384" : "380",
+        typeCode: "380",
         issuedAt: invoice.issuedAt ?? new Date(),
         dueAt: invoice.dueAt,
         buyerReference:
@@ -46,6 +47,7 @@ export async function GET(
             end: invoice.servicePeriodEnd,
         },
         note: invoice.note,
+        taxNotes,
         buyer: xmlBuyer(invoice, buyer),
         totals,
     });

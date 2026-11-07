@@ -5,8 +5,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+    DEFAULT_UNIT_CODE,
+    UNIT_CODES,
+} from "@/server/billing/invoices/totals";
 import { priceInputValue } from "@/server/documents/line-items";
-import { DEFAULT_UNIT_CODE, UNIT_CODES } from "@/server/documents/totals";
 
 const selectClass =
     "w-full rounded-lg border bg-transparent px-3 py-2 text-sm text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none dark:bg-input/30";

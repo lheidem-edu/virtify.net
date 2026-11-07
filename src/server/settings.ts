@@ -2,7 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { cache } from "react";
 import { db, schema } from "@/db";
-import { bank, operator, policy, site } from "@/lib/site";
+import { bank, operator, policy, revenue, site } from "@/lib/site";
 
 /**
  * The operator's details, from the database when they have been edited and
@@ -25,6 +25,8 @@ export type Settings = {
         country: string;
         email: string;
         vatId: string;
+        /** Steuernummer — § 14 Abs. 4 Nr. 2 UStG wants it or the USt-IdNr. */
+        taxNumber: string;
         phone: string;
     };
     bank: { name: string; iban: string; bic: string };
@@ -34,9 +36,37 @@ export type Settings = {
         dataRetrievalDays: number;
         securityMaintenanceNoticeHours: number;
     };
+    revenue: {
+        kleinunternehmerPreviousLimitCents: number;
+        kleinunternehmerCurrentLimitCents: number;
+        basis: RevenueBasis;
+    };
 };
 
-export const defaultSettings: Settings = { site, operator, bank, policy };
+/** Which date a paid invoice counts towards a calendar year. */
+export type RevenueBasis = "service" | "invoice" | "payment";
+
+export const REVENUE_BASES: RevenueBasis[] = ["service", "invoice", "payment"];
+
+export const REVENUE_BASIS_LABEL: Record<RevenueBasis, string> = {
+    service: "Leistungsdatum",
+    invoice: "Rechnungsdatum",
+    payment: "Zahlungseingang",
+};
+
+function revenueBasis(value: string): RevenueBasis {
+    return (REVENUE_BASES as string[]).includes(value)
+        ? (value as RevenueBasis)
+        : "service";
+}
+
+export const defaultSettings: Settings = {
+    site,
+    operator: { ...operator },
+    bank,
+    policy,
+    revenue: { ...revenue, basis: revenueBasis(revenue.basis) },
+};
 
 export const loadSettings = cache(async (): Promise<Settings> => {
     let row: typeof schema.siteSetting.$inferSelect | undefined;
@@ -71,6 +101,7 @@ export const loadSettings = cache(async (): Promise<Settings> => {
             country: row.operatorCountry,
             email: row.operatorEmail,
             vatId: row.operatorVatId,
+            taxNumber: row.operatorTaxNumber ?? "",
             phone: row.operatorPhone,
         },
         bank: {
@@ -83,6 +114,13 @@ export const loadSettings = cache(async (): Promise<Settings> => {
             paymentTermDays: row.paymentTermDays,
             dataRetrievalDays: row.dataRetrievalDays,
             securityMaintenanceNoticeHours: row.securityMaintenanceNoticeHours,
+        },
+        revenue: {
+            kleinunternehmerPreviousLimitCents:
+                row.kleinunternehmerPreviousLimitCents,
+            kleinunternehmerCurrentLimitCents:
+                row.kleinunternehmerCurrentLimitCents,
+            basis: revenueBasis(row.revenueBasis),
         },
     };
 });
@@ -101,6 +139,7 @@ export function legalValues(settings: Settings) {
         operatorCountry: settings.operator.country,
         operatorEmail: settings.operator.email,
         operatorVatId: settings.operator.vatId,
+        operatorTaxNumber: settings.operator.taxNumber,
         operatorPhone: settings.operator.phone,
 
         bankName: settings.bank.name,

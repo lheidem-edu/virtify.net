@@ -23,7 +23,9 @@ The build is planned in phases: see `docs/BUILD_PLAN.md`, state in `docs/PROGRES
 - **OpenAPI 3.1** generated from zod (`@asteasolutions/zod-to-openapi`), rendered with **Scalar**
   at `/api/docs`
 - **IDs: ULID**, prefixed (`invoice_01K…`) — see hard rule 1
-- Payments: **Stripe** + **PayPal** · PDF: `@react-pdf/renderer` · Mail: nodemailer/SMTP today,
+- Payments: **Stripe** + **PayPal** · PDF: `@react-pdf/renderer` · GiroCode: `qrcode-generator`
+  (zero dependencies; writing a QR encoder by hand means Reed-Solomon and mask selection with
+  nothing to validate against, on a code that asks for money) · Mail: nodemailer/SMTP today,
   Microsoft Graph from Phase 7
 - **Vitest** for unit/integration tests; Playwright for e2e from Phase 11
 - Formatter/linter: **Biome** (4 spaces, double quotes, trailing commas)
@@ -56,7 +58,7 @@ src/
     schema/_columns.ts   # shared helpers: ulidPk(), ulidFk(), timestamps(), money()
   server/                # domain logic, NO React here
     customers/  auth/  api/  api-keys/  audit/  documents/  payments/
-    catalog/  billing/  tax/  provisioning/  tickets/  jobs/  openapi/
+    catalog/  billing/  tax/  storage/  provisioning/  tickets/  jobs/  openapi/
   lib/                   # money, crypto, ulid, env, utils — framework-free
   components/            # shadcn (components/ui, not linted) + shared app UI
 ```
@@ -64,6 +66,11 @@ src/
 One price, one function: `src/server/billing/pricing.ts` computes every quote the storefront,
 the checkout and `POST /api/v1/products/{id}/quote` show. A second implementation anywhere —
 including in the browser — is how a shown price starts disagreeing with a charged one.
+
+One document arithmetic, one function: `src/server/billing/invoices/totals.ts` computes every
+total an invoice, a credit note or an offer shows. The rendered PDF of a finalized document is
+written once and kept in `src/server/storage`; it is never re-rendered on request, so a change
+to the template cannot restyle a document the customer already holds.
 
 Rule: pages, server actions and API route handlers are thin. Business logic lives in
 `src/server/**` as plain, testable TypeScript that takes a `db`/transaction as a parameter.
@@ -79,9 +86,15 @@ Server actions and `/api/v1` routes call the **same** service functions.
 2. **Money is integer minor units (cents)**, stored as `integer`/`bigint`. Never floats. All
    arithmetic, rounding (half-up per line) and formatting goes through `src/lib/money.ts`. Every
    amount has a `currency` next to it or on its parent.
-3. **Finalized invoices are immutable.** Corrections only via a Rechnungskorrektur (credit note).
-   Invoice numbers are gapless and sequential, assigned at finalization inside a transaction
-   (`document_counter` + `SELECT … FOR UPDATE`). Drafts have no number.
+3. **Finalized invoices are immutable.** Corrections only via a Rechnungskorrektur (credit
+   note), which has its own gapless range and copies the invoice's tax snapshot rather than
+   re-determining it. Invoice numbers are gapless and sequential, assigned at finalization
+   inside a transaction (`document_counter` + `SELECT … FOR UPDATE`). Drafts have no number.
+   Enforced in `src/server/billing/invoices` **and** by Postgres triggers (migration `0017`):
+   only `status`, `paid_at`, `cancelled_at`, `sent_at`, `credited_cents`, `updated_at` and the
+   PDF reference — once, from nothing to something — may change afterwards, a finalized invoice
+   cannot be deleted, and its positions cannot be written at all. A column added later is
+   immutable by default, because the trigger compares the whole row minus that list.
 4. **All multi-step writes run in a DB transaction.**
 5. **Authorization on every query.** Three guards, and nothing else is allowed to decide:
    - `getCurrentCustomer()` (`src/server/customers/current.ts`) is the only way client-area code
@@ -112,14 +125,21 @@ Server actions and `/api/v1` routes call the **same** service functions.
 ## Tax (pluggable, Kleinunternehmer now)
 
 - `src/server/tax` exposes `interface TaxStrategy { id; determine(ctx); invoiceNotes(ctx) }`.
+  A strategy is pure: it reads only the context it is handed and never the database, the clock
+  or the settings. `src/server/tax/mode.ts` resolves which one is in force, by date.
 - The active strategy comes from settings with an **effective date** (history table), so switching
   to regular VAT applies to invoices finalized from that date on, never retroactively.
 - `kleinunternehmer` (active): 0 % on all lines, category `E`, invoice note
   "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet." No tax column on the PDF.
 - `regular-vat` (implemented and tested, but disabled): DE 19 %, EU B2B with a VIES-validated VAT
   ID → reverse charge, EU B2C → OSS destination rate, non-EU → not taxable in DE.
-- Every invoice line snapshots `tax_strategy`, `tax_rate`, `tax_category`, `tax_rule`. Never a
-  live lookup.
+- Every invoice line snapshots `tax_strategy`, `tax_rate_bp` (basis points — an integer rate
+  cannot pick up a float's error), `tax_category` (UNTDID 5305) and `tax_rule`. Never a live
+  lookup. A credit note copies them from the invoice line it credits.
+- **The tax amount is per rate, on the sum of the lines at that rate** — not per line and then
+  added up. § 14 Abs. 4 Nr. 8 UStG and EN 16931 BR-CO-17 both want it that way, and summing
+  per-line roundings can land a cent away from it. The *net* of a line is still rounded once,
+  per line (rule 2). Lines therefore carry no tax amount at all.
 - Invoices carry all applicable § 14 UStG fields and the operator's Steuernummer.
 - **Threshold monitor:** track net revenue per calendar year against the § 19 limits
   (configurable, currently 25 000 € previous year / 100 000 € current year) and warn in the admin
@@ -134,6 +154,7 @@ npm run test | test:watch               # Vitest
 npm run lint | format | typecheck
 npm run openapi:generate                # writes public/openapi.json (also served live)
 npm run seed -- "Name" mail@example.net # Super Admin role + employee + 3 demo customers
+npm run staff:add -- "Name" mail@…      # the first employee, when there is none to invite from
 ```
 
 `npm run test` covers both suites. `tests/unit` is pure; `tests/integration` creates, migrates

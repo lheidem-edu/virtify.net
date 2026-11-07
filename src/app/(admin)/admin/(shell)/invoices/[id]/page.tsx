@@ -21,14 +21,17 @@ import {
     INVOICE_STATUS_TONE,
 } from "@/lib/format";
 import { requirePermission } from "@/server/auth/staff-session";
+import { showsTax } from "@/server/billing/invoices/pdf";
+import { loadInvoice } from "@/server/billing/invoices/repository";
 import { dateInputValue } from "@/server/documents/line-items";
+import { formatRate } from "@/server/documents/pdf";
 import {
     ANY_CUSTOMER,
     formatRecipient,
     listContracts,
-    loadInvoice,
     loadInvoicePayments,
 } from "@/server/documents/repository";
+import { TAX_STRATEGY_LABEL } from "@/server/tax";
 import {
     CancelInvoiceAction,
     DeleteInvoiceAction,
@@ -98,27 +101,14 @@ export default async function Page({
     const { invoice, items, buyer, totals } = loaded;
     const isDraft = invoice.status === "draft";
 
-    // Both directions of the correction pair: the invoice this one reverses,
-    // the one that reversed it. Neither is reachable from the row itself.
-    const [cancels] = invoice.cancelsInvoiceId
-        ? await db
-              .select({
-                  id: schema.invoice.id,
-                  number: schema.invoice.number,
-                  issuedAt: schema.invoice.issuedAt,
-              })
-              .from(schema.invoice)
-              .where(eq(schema.invoice.id, invoice.cancelsInvoiceId))
-        : [];
-
-    const [cancelledBy] = await db
-        .select({
-            id: schema.invoice.id,
-            number: schema.invoice.number,
-            issuedAt: schema.invoice.issuedAt,
-        })
-        .from(schema.invoice)
-        .where(eq(schema.invoice.cancelsInvoiceId, invoice.id));
+    // Corrections are documents of their own now; the invoice knows them by
+    // the reference they carry back to it.
+    const corrections = loaded.creditNotes;
+    const showTax = showsTax(loaded.effectiveTaxStrategy);
+    const openCents = Math.max(
+        (invoice.grossCents ?? totals.grossCents) - invoice.creditedCents,
+        0,
+    );
 
     const [contract] = invoice.contractId
         ? await db
@@ -147,11 +137,7 @@ export default async function Page({
     return (
         <>
             <PageHeader
-                title={
-                    cancels
-                        ? `Rechnungskorrektur ${invoice.number}`
-                        : `Rechnung ${invoice.number ?? "(Entwurf)"}`
-                }
+                title={`Rechnung ${invoice.number ?? "(Entwurf)"}`}
                 intro={`${buyer.email}${buyer.company ? ` — ${buyer.company}` : ""}`}
                 action={
                     <StatusBadge
@@ -215,26 +201,43 @@ export default async function Page({
                             "—"
                         )}
                     </Field>
-                    {cancels ? (
-                        <Field label="Korrigiert Rechnung">
-                            <Link
-                                href={`/admin/invoices/${cancels.id}`}
-                                className={`font-mono ${LINK}`}
-                            >
-                                {cancels.number}
-                            </Link>{" "}
-                            vom {formatDate(cancels.issuedAt)}
+                    <Field label="Besteuerung">
+                        {invoice.taxStrategy ? (
+                            <span>
+                                {TAX_STRATEGY_LABEL[
+                                    invoice.taxStrategy as keyof typeof TAX_STRATEGY_LABEL
+                                ] ?? invoice.taxStrategy}
+                            </span>
+                        ) : (
+                            <span className="text-muted-foreground">
+                                Wird beim Ausstellen festgeschrieben.
+                            </span>
+                        )}
+                    </Field>
+                    {invoice.creditedCents > 0 ? (
+                        <Field label="Korrigiert">
+                            <span className="font-mono">
+                                {formatPrice(invoice.creditedCents)}
+                            </span>
+                            <span className="mt-1 block text-muted-foreground text-xs">
+                                Offen: {formatPrice(openCents)}
+                            </span>
                         </Field>
                     ) : null}
-                    {cancelledBy ? (
-                        <Field label="Korrigiert durch">
-                            <Link
-                                href={`/admin/invoices/${cancelledBy.id}`}
-                                className={`font-mono ${LINK}`}
-                            >
-                                {cancelledBy.number}
-                            </Link>{" "}
-                            vom {formatDate(cancelledBy.issuedAt)}
+                    {corrections.length > 0 ? (
+                        <Field label="Rechnungskorrekturen">
+                            {corrections.map((entry) => (
+                                <span key={entry.id} className="block">
+                                    <Link
+                                        href={`/admin/credit-notes/${entry.id}`}
+                                        className={`font-mono ${LINK}`}
+                                    >
+                                        {entry.number}
+                                    </Link>{" "}
+                                    vom {formatDate(entry.issuedAt)} über{" "}
+                                    {formatPrice(entry.grossCents)}
+                                </span>
+                            ))}
                         </Field>
                     ) : null}
                 </dl>
@@ -264,7 +267,8 @@ export default async function Page({
                                 <TableHead>Bezeichnung</TableHead>
                                 <TableHead>Menge</TableHead>
                                 <TableHead>Einzelpreis</TableHead>
-                                <TableHead>Gesamt</TableHead>
+                                {showTax ? <TableHead>USt.</TableHead> : null}
+                                <TableHead>Netto</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -290,13 +294,50 @@ export default async function Page({
                                     <TableCell className="font-mono">
                                         {formatPrice(line.unitPriceCents)}
                                     </TableCell>
+                                    {showTax ? (
+                                        <TableCell className="font-mono">
+                                            {formatRate(line.taxRateBp)}
+                                        </TableCell>
+                                    ) : null}
                                     <TableCell className="font-mono">
-                                        {formatPrice(line.lineTotalCents)}
+                                        {formatPrice(line.netCents)}
                                     </TableCell>
                                 </TableRow>
                             ))}
+                            {showTax ? (
+                                <>
+                                    <TableRow>
+                                        <TableCell
+                                            colSpan={showTax ? 5 : 4}
+                                            className="font-medium"
+                                        >
+                                            Nettobetrag
+                                        </TableCell>
+                                        <TableCell className="font-mono">
+                                            {formatPrice(totals.netCents)}
+                                        </TableCell>
+                                    </TableRow>
+                                    {totals.groups.map((group) => (
+                                        <TableRow
+                                            key={`${group.category}-${group.rateBp}`}
+                                        >
+                                            <TableCell colSpan={5}>
+                                                USt. {formatRate(group.rateBp)}{" "}
+                                                auf{" "}
+                                                {formatPrice(group.netCents)}
+                                            </TableCell>
+                                            <TableCell className="font-mono">
+                                                {formatPrice(group.taxCents)}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </>
+                            ) : null}
                             <TableRow>
-                                <TableCell colSpan={4} className="font-medium">
+                                <TableCell
+                                    colSpan={showTax ? 5 : 4}
+                                    className="font-medium"
+                                >
                                     Gesamtbetrag
                                 </TableCell>
                                 <TableCell className="font-mono font-medium">
@@ -307,9 +348,14 @@ export default async function Page({
                     </Table>
                 </div>
 
-                <p className="mt-4 text-xs text-muted-foreground">
-                    Kein Ausweis der Umsatzsteuer nach § 19 UStG.
-                </p>
+                {loaded.taxNotes.map((note) => (
+                    <p
+                        key={note}
+                        className="mt-4 text-xs text-muted-foreground"
+                    >
+                        {note}
+                    </p>
+                ))}
             </div>
 
             {payments.length > 0 ? (
@@ -428,27 +474,25 @@ export default async function Page({
                         </>
                     ) : (
                         <>
-                            {/* A correction settles the original — there is
-                                nothing on it left to pay. */}
-                            {invoice.status === "issued" && !cancels ? (
+                            {invoice.status === "unpaid" ? (
                                 <MarkPaidForm invoiceId={invoice.id} />
                             ) : null}
                             {invoice.status === "paid" ? (
                                 <UnmarkPaidForm invoiceId={invoice.id} />
                             ) : null}
                             <DuplicateInvoiceAction invoiceId={invoice.id} />
-                            {invoice.status === "issued" ||
+                            {invoice.status === "unpaid" ||
                             invoice.status === "paid" ? (
                                 <ResendMailAction
                                     invoiceId={invoice.id}
                                     email={buyer.email}
                                 />
                             ) : null}
+                            {/* A fully corrected invoice has nothing left to
+                                take back, so the action disappears with it. */}
                             {invoice.number &&
-                            !cancels &&
-                            !cancelledBy &&
-                            (invoice.status === "issued" ||
-                                invoice.status === "paid") ? (
+                            invoice.status !== "cancelled" &&
+                            openCents > 0 ? (
                                 <CancelInvoiceAction
                                     invoiceId={invoice.id}
                                     number={invoice.number}

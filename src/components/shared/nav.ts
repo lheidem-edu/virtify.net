@@ -24,11 +24,17 @@ export const ACCOUNT_SETTINGS_NAV = [
 ] as const;
 
 export const ADMIN_NAV = [
+    { href: "/admin", label: "Übersicht", icon: "layout-dashboard" },
     { href: "/admin/customers", label: "Kunden", icon: "users" },
     { href: "/admin/catalog", label: "Katalog", icon: "package" },
     { href: "/admin/contracts", label: "Verträge", icon: "file-text" },
     { href: "/admin/offers", label: "Angebote", icon: "file-signature" },
     { href: "/admin/invoices", label: "Rechnungen", icon: "receipt" },
+    {
+        href: "/admin/credit-notes",
+        label: "Korrekturen",
+        icon: "receipt-text",
+    },
     { href: "/admin/legal", label: "Rechtstexte", icon: "scale" },
     { href: "/admin/api-keys", label: "API-Schlüssel", icon: "key" },
     { href: "/admin/settings", label: "Einstellungen", icon: "settings" },

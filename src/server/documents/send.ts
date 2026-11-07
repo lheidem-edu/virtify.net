@@ -1,10 +1,20 @@
 import "server-only";
+import { db } from "@/db";
 import { formatDate, formatPrice } from "@/lib/format";
-import { renderDocumentPdf } from "@/server/documents/pdf";
+import {
+    creditNotePdf,
+    invoicePdf,
+    sellerOf,
+} from "@/server/billing/invoices/pdf";
+import {
+    loadCreditNote,
+    loadInvoice,
+} from "@/server/billing/invoices/repository";
+import { renderDocumentPdf, sellerFromSettings } from "@/server/documents/pdf";
 import {
     formatRecipient,
+    loadBuyer,
     loadContract,
-    loadInvoice,
     loadOffer,
     xmlBuyer,
 } from "@/server/documents/repository";
@@ -41,7 +51,7 @@ export async function sendOfferMail(
         throw new Error("offer not found");
     }
 
-    const { offer, buyer, totals } = loaded;
+    const { offer, buyer, totals, taxNotes } = loaded;
 
     const pdf = await renderDocumentPdf({
         kind: "offer",
@@ -54,7 +64,12 @@ export async function sendOfferMail(
         introText: offer.introText,
         note: offer.note,
         totals,
-        details: loaded.items.map((item) => item.detail),
+        seller: sellerFromSettings(await loadSettings()),
+        // An offer is not a § 14 document, so it shows the tax it would be
+        // charged under today's strategy — including none at all.
+        showTax:
+            totals.taxCents !== 0 || totals.groups.some((g) => g.rateBp > 0),
+        taxNotes,
     });
 
     const transport = transportOrThrow();
@@ -130,53 +145,33 @@ export async function sendInvoiceMail(
     to: string,
     _name: string,
 ) {
-    const { operator, site } = await loadSettings();
+    const { site } = await loadSettings();
     const loaded = await loadInvoice(invoiceId, "", true);
 
     if (!loaded?.invoice.number) {
-        throw new Error("invoice not found or not issued");
+        throw new Error("invoice not found or not finalized");
     }
 
-    const { invoice, buyer, totals } = loaded;
+    const { invoice, buyer, totals, taxNotes } = loaded;
     // Narrowed by the guard above; the destructure loses that.
     const number = invoice.number as string;
 
-    // A correction is an invoice like any other — same series, same route —
-    // so it is recognised by what it points at rather than by a separate
-    // send path.
-    const original = invoice.cancelsInvoiceId
-        ? ((await loadInvoice(invoice.cancelsInvoiceId, "", true))?.invoice ??
-          null)
-        : null;
-    const label = original ? "Rechnungskorrektur" : "Rechnung";
-    const reference = original
-        ? `Korrektur zu Rechnung ${original.number} vom ${formatDate(original.issuedAt)}`
-        : null;
-
-    const pdf = await renderDocumentPdf({
-        kind: "invoice",
-        variant: original ? "correction" : null,
-        title: reference,
-        number,
-        customerNumber: buyer.customerNumber,
-        recipient: invoice.recipient ?? formatRecipient(buyer),
-        issuedAt: invoice.issuedAt ?? new Date(),
-        dueAt: invoice.dueAt,
-        servicePeriod: {
-            start: invoice.servicePeriodStart,
-            end: invoice.servicePeriodEnd,
-        },
-        introText: invoice.introText,
-        note: invoice.note,
-        totals,
-        details: loaded.items.map((item) => item.detail),
+    const result = await invoicePdf(db, invoiceId, {
+        customerId: "",
+        isAdmin: true,
     });
 
+    if (!result) {
+        throw new Error("invoice not found");
+    }
+
+    const seller = sellerOf(invoice, await loadSettings());
+
     const xml = renderXRechnung({
-        seller: operator,
+        seller,
         siteName: site.name,
         number,
-        typeCode: original ? "384" : "380",
+        typeCode: "380",
         issuedAt: invoice.issuedAt ?? new Date(),
         dueAt: invoice.dueAt,
         buyerReference:
@@ -188,23 +183,23 @@ export async function sendInvoiceMail(
             end: invoice.servicePeriodEnd,
         },
         note: invoice.note,
+        taxNotes,
         buyer: xmlBuyer(invoice, buyer),
         totals,
     });
 
     const transport = transportOrThrow();
+    const { operator } = await loadSettings();
 
     try {
         await transport.sendMail({
             from: await mailFrom(),
             to,
-            subject: `${label} ${number} — ${site.name}`,
+            subject: `Rechnung ${number} — ${site.name}`,
             text: [
                 "Sehr geehrte Damen und Herren,",
                 "",
-                original
-                    ? `im Anhang finden Sie die Rechnungskorrektur zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
-                    : "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
+                "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
                 "",
                 "Für Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung und danken Ihnen für die angenehme Zusammenarbeit.",
                 "",
@@ -214,13 +209,11 @@ export async function sendInvoiceMail(
                 `Alle Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/client/invoices`,
             ].join("\n"),
             html: await renderEmail({
-                preheader: `${label} ${number} über ${formatPrice(totals.grossCents)}.`,
-                heading: `${label} ${number}`,
+                preheader: `Rechnung ${number} über ${formatPrice(totals.grossCents)}.`,
+                heading: `Rechnung ${number}`,
                 intro: [
                     "Sehr geehrte Damen und Herren,",
-                    original
-                        ? `im Anhang finden Sie die Rechnungskorrektur zu Rechnung ${original.number}. Die ursprüngliche Rechnung ist damit vollständig aufgehoben; eine Zahlung ist hierauf nicht zu leisten.`
-                        : "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
+                    "im Anhang finden Sie Ihre aktuelle Rechnung. Sie liegt als PDF und zusätzlich als XRechnung im XML-Format bei.",
                 ],
                 action: {
                     label: "Rechnungen ansehen",
@@ -228,18 +221,7 @@ export async function sendInvoiceMail(
                 },
                 rowsTitle: "Eckdaten",
                 rows: [
-                    {
-                        label: original ? "Korrekturnummer" : "Rechnungsnummer",
-                        value: number,
-                    },
-                    ...(original
-                        ? [
-                              {
-                                  label: "Korrigiert",
-                                  value: original.number ?? "—",
-                              },
-                          ]
-                        : []),
+                    { label: "Rechnungsnummer", value: number },
                     { label: "Betrag", value: formatPrice(totals.grossCents) },
                     ...(invoice.dueAt
                         ? [
@@ -258,7 +240,7 @@ export async function sendInvoiceMail(
             attachments: [
                 {
                     filename: `${number}.pdf`,
-                    content: Buffer.from(pdf),
+                    content: result.bytes,
                     contentType: "application/pdf",
                 },
                 {
@@ -270,6 +252,114 @@ export async function sendInvoiceMail(
         });
     } catch (error) {
         logMailError("invoice mail", error);
+        throw error;
+    }
+}
+
+/**
+ * A Rechnungskorrektur goes out as its own document, with its own number and
+ * its own XRechnung (UNTDID 1001 type 381, positive amounts, referencing the
+ * invoice it corrects).
+ */
+export async function sendCreditNoteMail(
+    creditNoteId: string,
+    to: string,
+    _name: string,
+) {
+    const settings = await loadSettings();
+    const { operator, site } = settings;
+    const loaded = await loadCreditNote(creditNoteId, "", true);
+
+    if (!loaded) {
+        throw new Error("credit note not found");
+    }
+
+    const { creditNote, totals, invoice } = loaded;
+    const buyer = await loadBuyer(creditNote.customerId, db);
+
+    const result = await creditNotePdf(db, creditNoteId, {
+        customerId: "",
+        isAdmin: true,
+    });
+
+    if (!result) {
+        throw new Error("credit note not found");
+    }
+
+    const xml = renderXRechnung({
+        seller: sellerOf(creditNote, settings),
+        siteName: site.name,
+        number: creditNote.number,
+        typeCode: "381",
+        issuedAt: creditNote.issuedAt,
+        dueAt: null,
+        buyerReference:
+            creditNote.buyerReference ??
+            buyer.buyerReference ??
+            String(buyer.customerNumber ?? buyer.id),
+        servicePeriod: {
+            start: creditNote.servicePeriodStart,
+            end: creditNote.servicePeriodEnd,
+        },
+        note: creditNote.note,
+        taxNotes: creditNote.taxNote ? [creditNote.taxNote] : [],
+        precedingNumber: invoice?.number ?? null,
+        precedingIssuedAt: invoice?.issuedAt ?? null,
+        buyer: xmlBuyer(creditNote, buyer),
+        totals,
+    });
+
+    const transport = transportOrThrow();
+
+    try {
+        await transport.sendMail({
+            from: await mailFrom(),
+            to,
+            subject: `Rechnungskorrektur ${creditNote.number} — ${site.name}`,
+            text: [
+                "Sehr geehrte Damen und Herren,",
+                "",
+                `im Anhang finden Sie die Rechnungskorrektur zu Rechnung ${invoice?.number ?? ""}. Die korrigierten Positionen sind darin aufgeführt; eine Zahlung ist hierauf nicht zu leisten.`,
+                "",
+                "Mit freundlichen Grüßen",
+                operator.name,
+                "",
+                `Alle Belege finden Sie in Ihrem Kundenbereich: ${site.url}/client/invoices`,
+            ].join("\n"),
+            html: await renderEmail({
+                preheader: `Rechnungskorrektur ${creditNote.number} über ${formatPrice(totals.grossCents)}.`,
+                heading: `Rechnungskorrektur ${creditNote.number}`,
+                intro: [
+                    "Sehr geehrte Damen und Herren,",
+                    `im Anhang finden Sie die Rechnungskorrektur zu Rechnung ${invoice?.number ?? ""}. Eine Zahlung ist hierauf nicht zu leisten.`,
+                ],
+                action: {
+                    label: "Belege ansehen",
+                    url: `${site.url}/client/invoices`,
+                },
+                rowsTitle: "Eckdaten",
+                rows: [
+                    { label: "Korrekturnummer", value: creditNote.number },
+                    { label: "Korrigiert", value: invoice?.number ?? "—" },
+                    { label: "Betrag", value: formatPrice(totals.grossCents) },
+                ],
+                outro: [`Mit freundlichen Grüßen\n${operator.name}`],
+            }),
+            attachments: [
+                {
+                    filename: `${creditNote.number}.pdf`,
+                    content: result.bytes,
+                    contentType: "application/pdf",
+                },
+                {
+                    filename: `${creditNote.number}.xml`,
+                    content: xml,
+                    contentType: "application/xml",
+                },
+            ],
+        });
+    } catch (error) {
+        logMailError("credit note mail", error);
         throw error;
     }
 }

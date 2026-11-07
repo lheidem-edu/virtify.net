@@ -113,6 +113,20 @@
       "when": 1794043399401,
       "tag": "0015_magical_black_crow",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794048549086,
+      "tag": "0016_easy_morph",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794048695924,
+      "tag": "0017_cheerful_strong_guy",
+      "breakpoints": true
     }
   ]
 }

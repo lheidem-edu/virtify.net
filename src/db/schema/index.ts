@@ -15,3 +15,4 @@ export * from "./offers";
 export * from "./payments";
 export * from "./settings";
 export * from "./staff";
+export * from "./tax";

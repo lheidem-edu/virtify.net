@@ -1,4 +1,13 @@
-import { DEFAULT_UNIT_CODE, type LineItem } from "@/server/documents/totals";
+import { DEFAULT_UNIT_CODE } from "@/server/billing/invoices/totals";
+
+/** One row of the line-item form, before any tax is decided. */
+export type LineItem = {
+    description: string;
+    quantity: number;
+    unitCode: string;
+    unitPriceCents: number;
+    detail?: string | null;
+};
 
 /**
  * Line items arrive from the form as parallel arrays. Rows without a

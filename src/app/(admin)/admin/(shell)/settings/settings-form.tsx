@@ -126,12 +126,20 @@ export default function SettingsForm({
                         help="Nur auf Rechnungen und Angeboten, nicht im Impressum."
                     />
                 </div>
-                <Field
-                    id="operatorVatId"
-                    label="USt-IdNr."
-                    defaultValue={values.operatorVatId}
-                    help="Steht im Impressum und in der XRechnung."
-                />
+                <div className="grid gap-6 sm:grid-cols-2">
+                    <Field
+                        id="operatorVatId"
+                        label="USt-IdNr."
+                        defaultValue={values.operatorVatId}
+                        help="Steht im Impressum und in der XRechnung."
+                    />
+                    <Field
+                        id="operatorTaxNumber"
+                        label="Steuernummer"
+                        defaultValue={values.operatorTaxNumber}
+                        help="§ 14 Abs. 4 Nr. 2 UStG verlangt die Steuernummer oder die USt-IdNr. auf jeder Rechnung. Als Kleinunternehmer ist das meist diese."
+                    />
+                </div>
             </div>
 
             <div className="space-y-6">

@@ -5,6 +5,23 @@ export default defineConfig({
     resolve: {
         alias: {
             "@": fileURLToPath(new URL("./src", import.meta.url)),
+            /**
+             * @react-pdf/renderer imports named exports from
+             * `unicode-properties`, whose package is `"type": "module"` with a
+             * CommonJS `main`. Without the `import` condition — which must
+             * stay out of `ssr.resolve.conditions`, see below — the resolver
+             * picks the `.cjs` build and Vite cannot see the named exports in
+             * it, so rendering a PDF in a test fails on import with
+             * "does not provide an export named 'getCategory'". Pointing at
+             * the ESM build is the narrowest fix; Next's own bundler resolves
+             * it correctly and is untouched by this.
+             */
+            "unicode-properties": fileURLToPath(
+                new URL(
+                    "./node_modules/unicode-properties/dist/module.mjs",
+                    import.meta.url,
+                ),
+            ),
         },
     },
     /**
@@ -22,6 +39,12 @@ export default defineConfig({
      * Module]" before it opens a single connection.
      */
     ssr: {
+        /**
+         * Processed by Vite rather than handed to Node's resolver, so the
+         * `unicode-properties` alias above actually applies — an externalised
+         * dependency is resolved by Node and never sees it.
+         */
+        noExternal: [/@react-pdf\//, "unicode-properties", "fontkit", "pdfkit"],
         resolve: {
             conditions: ["react-server", "node", "require", "default"],
         },

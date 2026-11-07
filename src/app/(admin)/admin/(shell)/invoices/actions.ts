@@ -4,18 +4,33 @@ import { asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
-import { createId } from "@/lib/ulid";
+import type { Actor } from "@/server/audit";
 import { requirePermission } from "@/server/auth/staff-session";
-import { parseDate, readLineItems } from "@/server/documents/line-items";
-import { nextNumber } from "@/server/documents/numbering";
+import { storeFinalizedPdf } from "@/server/billing/invoices/pdf";
 import {
-    formatRecipient,
-    freezeBuyer,
-    loadBuyer,
-} from "@/server/documents/repository";
-import { sendInvoiceMail } from "@/server/documents/send";
+    createCreditNote,
+    createInvoiceDraft,
+    deleteInvoiceDraft,
+    finalizeInvoice,
+    InvoiceError,
+    markDocumentSent,
+    markInvoicePaid as markPaid,
+    unmarkInvoicePaid as unmarkPaid,
+    updateInvoiceDraft,
+} from "@/server/billing/invoices/service";
+import { notifyThresholds } from "@/server/billing/revenue-notify";
+import { parseDate, readLineItems } from "@/server/documents/line-items";
+import { loadBuyer } from "@/server/documents/repository";
+import { sendCreditNoteMail, sendInvoiceMail } from "@/server/documents/send";
 import { collectIssuedInvoice } from "@/server/payments/collect";
-import { loadSettings } from "@/server/settings";
+
+/**
+ * The admin area's invoice actions. Thin on purpose: every one of them checks
+ * the permission, turns a FormData into the service's input and translates
+ * the service's error into a sentence. The rules — what may be edited, how a
+ * number is assigned, what a correction is — live in
+ * `src/server/billing/invoices`, which the API routes call too.
+ */
 
 export type InvoiceState = {
     status:
@@ -31,188 +46,99 @@ export type InvoiceState = {
     message?: string;
 };
 
-/**
- * A contract may only be billed to the account it belongs to. The picker lists
- * every contract, so without this an invoice could carry another customer's
- * contract into its PDF and onto that contract's detail page.
- */
-async function assertContractBelongsTo(
-    tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-    contractId: string | null,
-    customerId: string,
-) {
-    if (!contractId) {
-        return;
+async function actorFor(permission: "billing.write") {
+    const session = await requirePermission(permission);
+
+    return {
+        type: "staff",
+        id: session.user.id,
+        label: session.user.email,
+    } satisfies Actor;
+}
+
+function failure(error: unknown, fallback: string): InvoiceState {
+    if (error instanceof InvoiceError) {
+        return { status: "error", message: error.message };
     }
 
-    const [contract] = await tx
-        .select({ customerId: schema.contract.customerId })
-        .from(schema.contract)
-        .where(eq(schema.contract.id, contractId));
+    console.error("[admin] invoice action failed:", error);
 
-    if (contract?.customerId !== customerId) {
-        throw new Error("contract-mismatch");
+    return { status: "error", message: fallback };
+}
+
+/** Draft input as the two forms post it. */
+function readDraft(data: FormData) {
+    const read = (name: string) => String(data.get(name) ?? "").trim();
+    const customerId = read("customerId");
+    const items = readLineItems(data);
+
+    if (!customerId) {
+        return { error: "Kein Konto ausgewählt." as const };
     }
+
+    if (!items) {
+        return {
+            error: "Mindestens eine Position mit gültiger Menge und Preis." as const,
+        };
+    }
+
+    return {
+        input: {
+            customerId,
+            contractId: read("contractId") || null,
+            introText: read("introText") || null,
+            note: read("note") || null,
+            servicePeriodStart: parseDate(read("servicePeriodStart")),
+            servicePeriodEnd: parseDate(read("servicePeriodEnd")),
+            items: items.map((item) => ({
+                description: item.description,
+                detail: item.detail ?? null,
+                quantity: item.quantity,
+                unitCode: item.unitCode,
+                unitPriceCents: item.unitPriceCents,
+            })),
+        },
+    };
 }
 
 export async function createInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requirePermission("billing.write");
+    const actor = await actorFor("billing.write");
+    const draft = readDraft(data);
 
-    const read = (name: string) => String(data.get(name) ?? "").trim();
-
-    const customerId = read("customerId");
-    const items = readLineItems(data);
-
-    if (!customerId) {
-        return { status: "error", message: "Kein Konto ausgewählt." };
+    if ("error" in draft) {
+        return { status: "error", message: draft.error };
     }
-
-    if (!items) {
-        return {
-            status: "error",
-            message: "Mindestens eine Position mit gültiger Menge und Preis.",
-        };
-    }
-
-    const id = createId("invoice");
 
     try {
-        await db.transaction(async (tx) => {
-            const contractId = read("contractId") || null;
-            await assertContractBelongsTo(tx, contractId, customerId);
+        const row = await createInvoiceDraft(db, draft.input, actor);
 
-            await tx.insert(schema.invoice).values({
-                id,
-                customerId,
-                contractId,
-                status: "draft",
-                introText: read("introText") || null,
-                note: read("note") || null,
-                servicePeriodStart: parseDate(read("servicePeriodStart")),
-                servicePeriodEnd: parseDate(read("servicePeriodEnd")),
-            });
+        revalidatePath("/admin/invoices");
 
-            await tx.insert(schema.invoiceItem).values(
-                items.map((item, index) => ({
-                    id: createId("invoiceitem"),
-                    invoiceId: id,
-                    position: index + 1,
-                    description: item.description,
-                    detail: item.detail ?? null,
-                    quantity: item.quantity,
-                    unitCode: item.unitCode,
-                    unitPriceCents: item.unitPriceCents,
-                })),
-            );
-        });
+        return { status: "created", message: row.id };
     } catch (error) {
-        console.error("[admin] creating invoice failed:", error);
-        return {
-            status: "error",
-            message:
-                error instanceof Error && error.message === "contract-mismatch"
-                    ? "Der Vertrag gehört zu einem anderen Konto."
-                    : "Die Rechnung konnte nicht angelegt werden.",
-        };
+        return failure(error, "Die Rechnung konnte nicht angelegt werden.");
     }
-
-    revalidatePath("/admin/invoices");
-
-    return { status: "created", message: id };
 }
 
-/**
- * The only mutable state an invoice ever has. Once a number is assigned the
- * document is frozen (§ 14 UStG numbering, AGB § 7 (7)) and PDF and XML
- * re-render from these rows, so an edit that reached past "draft" would
- * silently rewrite a document the customer already holds.
- *
- * Positions are deleted and reinserted rather than diffed: the loaders order
- * by `position`, and a full rewrite is what keeps that sequence dense.
- */
 export async function updateInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requirePermission("billing.write");
-
-    const read = (name: string) => String(data.get(name) ?? "").trim();
-
+    const actor = await actorFor("billing.write");
     const invoiceId = String(data.get("invoiceId") ?? "");
-    const customerId = read("customerId");
-    const items = readLineItems(data);
+    const draft = readDraft(data);
 
-    if (!customerId) {
-        return { status: "error", message: "Kein Konto ausgewählt." };
-    }
-
-    if (!items) {
-        return {
-            status: "error",
-            message: "Mindestens eine Position mit gültiger Menge und Preis.",
-        };
+    if ("error" in draft) {
+        return { status: "error", message: draft.error };
     }
 
     try {
-        await db.transaction(async (tx) => {
-            const [row] = await tx
-                .select()
-                .from(schema.invoice)
-                .where(eq(schema.invoice.id, invoiceId))
-                .for("update");
-
-            if (row?.status !== "draft") {
-                throw new Error("not-draft");
-            }
-
-            const contractId = read("contractId") || null;
-            await assertContractBelongsTo(tx, contractId, customerId);
-
-            await tx
-                .update(schema.invoice)
-                .set({
-                    customerId,
-                    contractId,
-                    introText: read("introText") || null,
-                    note: read("note") || null,
-                    servicePeriodStart: parseDate(read("servicePeriodStart")),
-                    servicePeriodEnd: parseDate(read("servicePeriodEnd")),
-                    updatedAt: new Date(),
-                })
-                .where(eq(schema.invoice.id, invoiceId));
-
-            await tx
-                .delete(schema.invoiceItem)
-                .where(eq(schema.invoiceItem.invoiceId, invoiceId));
-
-            await tx.insert(schema.invoiceItem).values(
-                items.map((item, index) => ({
-                    id: createId("invoiceitem"),
-                    invoiceId,
-                    position: index + 1,
-                    description: item.description,
-                    detail: item.detail ?? null,
-                    quantity: item.quantity,
-                    unitCode: item.unitCode,
-                    unitPriceCents: item.unitPriceCents,
-                })),
-            );
-        });
+        await updateInvoiceDraft(db, invoiceId, draft.input, actor);
     } catch (error) {
-        console.error("[admin] updating invoice failed:", error);
-        return {
-            status: "error",
-            message:
-                error instanceof Error && error.message === "not-draft"
-                    ? "Nur Entwürfe können bearbeitet werden."
-                    : error instanceof Error &&
-                        error.message === "contract-mismatch"
-                      ? "Der Vertrag gehört zu einem anderen Konto."
-                      : "Die Rechnung konnte nicht gespeichert werden.",
-        };
+        return failure(error, "Die Rechnung konnte nicht gespeichert werden.");
     }
 
     revalidatePath("/admin/invoices");
@@ -222,81 +148,73 @@ export async function updateInvoice(
 }
 
 /**
- * Last month's invoice is almost always this month's invoice. Copying one into
- * a fresh draft costs nothing from the RE- series — a draft has no number —
- * and saves retyping the positions of a recurring contract twelve times a
- * year. The service period moves on by a month; everything else is the
- * original's, including a correction's negative quantities, so duplicating one
- * of those is deliberate rather than accidental.
+ * Last month's invoice is almost always this month's invoice. Copying one
+ * into a fresh draft costs nothing from the RE- series — a draft has no
+ * number — and saves retyping the positions of a recurring contract twelve
+ * times a year. The service period moves on by a month; everything else is
+ * the original's.
  */
 export async function duplicateInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requirePermission("billing.write");
-
+    const actor = await actorFor("billing.write");
     const invoiceId = String(data.get("invoiceId") ?? "");
-    const copyId = createId("invoice");
 
     try {
-        await db.transaction(async (tx) => {
-            const [row] = await tx
-                .select()
-                .from(schema.invoice)
-                .where(eq(schema.invoice.id, invoiceId));
+        const [row] = await db
+            .select()
+            .from(schema.invoice)
+            .where(eq(schema.invoice.id, invoiceId));
 
-            if (!row) {
-                throw new Error("not-found");
-            }
+        if (!row) {
+            throw new InvoiceError(
+                "not-found",
+                "Diese Rechnung gibt es nicht.",
+            );
+        }
 
-            const items = await tx
-                .select()
-                .from(schema.invoiceItem)
-                .where(eq(schema.invoiceItem.invoiceId, invoiceId))
-                .orderBy(asc(schema.invoiceItem.position));
+        const items = await db
+            .select()
+            .from(schema.invoiceItem)
+            .where(eq(schema.invoiceItem.invoiceId, invoiceId))
+            .orderBy(asc(schema.invoiceItem.position));
 
-            if (items.length === 0) {
-                throw new Error("no-items");
-            }
+        if (items.length === 0) {
+            throw new InvoiceError(
+                "no-items",
+                "Diese Rechnung hat keine Positionen.",
+            );
+        }
 
-            await tx.insert(schema.invoice).values({
-                id: copyId,
+        const copy = await createInvoiceDraft(
+            db,
+            {
                 customerId: row.customerId,
                 contractId: row.contractId,
-                status: "draft",
                 introText: row.introText,
                 note: row.note,
                 servicePeriodStart: shiftMonth(row.servicePeriodStart),
                 servicePeriodEnd: shiftMonth(row.servicePeriodEnd),
-            });
-
-            await tx.insert(schema.invoiceItem).values(
-                items.map((item, index) => ({
-                    id: createId("invoiceitem"),
-                    invoiceId: copyId,
-                    position: index + 1,
+                items: items.map((item) => ({
                     description: item.description,
                     detail: item.detail,
                     quantity: item.quantity,
                     unitCode: item.unitCode,
                     unitPriceCents: item.unitPriceCents,
+                    servicePeriodStart: shiftMonth(item.servicePeriodStart),
+                    servicePeriodEnd: shiftMonth(item.servicePeriodEnd),
                 })),
-            );
-        });
+            },
+            actor,
+        );
+
+        revalidatePath("/admin/invoices");
+
+        return { status: "created", message: copy.id };
     } catch (error) {
-        console.error("[admin] duplicating invoice failed:", error);
-        return {
-            status: "error",
-            message:
-                error instanceof Error && error.message === "no-items"
-                    ? "Diese Rechnung hat keine Positionen."
-                    : "Die Rechnung konnte nicht dupliziert werden.",
-        };
+        return failure(error, "Die Rechnung konnte nicht dupliziert werden.");
     }
-
-    revalidatePath("/admin/invoices");
-
-    return { status: "created", message: copyId };
 }
 
 /** One calendar month on, clamped like § 188 BGB: 31.01. becomes 28.02. */
@@ -314,46 +232,17 @@ function shiftMonth(date: Date | null) {
     );
 }
 
-/**
- * A draft carries no number, so deleting it burns nothing and leaves no gap in
- * the RE- series that § 14 Abs. 4 Nr. 4 UStG requires to be unbroken. Anything
- * that has been issued is kept for the § 257 HGB / § 147 AO retention period
- * and is corrected by a Rechnungskorrektur instead.
- */
 export async function deleteInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requirePermission("billing.write");
-
+    const actor = await actorFor("billing.write");
     const invoiceId = String(data.get("invoiceId") ?? "");
 
     try {
-        await db.transaction(async (tx) => {
-            const [row] = await tx
-                .select()
-                .from(schema.invoice)
-                .where(eq(schema.invoice.id, invoiceId))
-                .for("update");
-
-            if (row?.status !== "draft") {
-                throw new Error("not-draft");
-            }
-
-            // invoice_item cascades, so the positions go with the row.
-            await tx
-                .delete(schema.invoice)
-                .where(eq(schema.invoice.id, invoiceId));
-        });
+        await deleteInvoiceDraft(db, invoiceId, actor);
     } catch (error) {
-        console.error("[admin] deleting invoice failed:", error);
-        return {
-            status: "error",
-            message:
-                error instanceof Error && error.message === "not-draft"
-                    ? "Nur Entwürfe können gelöscht werden."
-                    : "Die Rechnung konnte nicht gelöscht werden.",
-        };
+        return failure(error, "Die Rechnung konnte nicht gelöscht werden.");
     }
 
     revalidatePath("/admin/invoices");
@@ -363,94 +252,54 @@ export async function deleteInvoice(
 }
 
 /**
- * Issuing is the point of no return: the number required by § 14 Abs. 4 Nr. 4
- * UStG is assigned, the recipient and buyer reference are copied in, and the
- * document becomes read-only. The number comes from a counter locked inside
- * this transaction, so two concurrent issues cannot receive the same one.
+ * Finalizing is the point of no return: the number required by § 14 Abs. 4
+ * Nr. 4 UStG is assigned, the tax strategy in force at this instant is
+ * applied and frozen, and the document becomes read-only.
+ *
+ * The PDF, the mail and the collection all happen afterwards and
+ * independently of each other: neither a slow renderer, nor a mail server,
+ * nor a declined card may roll back a number that has been handed out.
  */
 export async function issueInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requirePermission("billing.write");
-
+    const actor = await actorFor("billing.write");
     const invoiceId = String(data.get("invoiceId") ?? "");
-    const { policy } = await loadSettings();
-    const paymentTermDays = policy.paymentTermDays;
 
+    let collects = false;
     let recipientEmail = "";
     let recipientName = "";
-    let collects = false;
 
     try {
-        await db.transaction(async (tx) => {
-            const [row] = await tx
-                .select()
-                .from(schema.invoice)
-                .where(eq(schema.invoice.id, invoiceId))
-                .for("update");
+        const { invoice } = await finalizeInvoice(db, invoiceId, actor);
 
-            if (row?.status !== "draft") {
-                throw new Error("not-draft");
-            }
+        const buyer = await loadBuyer(invoice.customerId, db);
+        recipientEmail = buyer.email;
+        recipientName = buyer.name;
 
-            const buyer = await loadBuyer(row.customerId, tx);
+        if (invoice.contractId) {
+            const [linked] = await db
+                .select({ paymentMethodId: schema.contract.paymentMethodId })
+                .from(schema.contract)
+                .where(eq(schema.contract.id, invoice.contractId));
 
-            if (row.contractId) {
-                const [linked] = await tx
-                    .select({
-                        paymentMethodId: schema.contract.paymentMethodId,
-                    })
-                    .from(schema.contract)
-                    .where(eq(schema.contract.id, row.contractId));
-
-                collects = Boolean(linked?.paymentMethodId);
-            }
-
-            const issuedAt = new Date();
-            const dueAt = new Date(issuedAt);
-            dueAt.setDate(dueAt.getDate() + paymentTermDays);
-
-            const number = await nextNumber(tx, "invoice", issuedAt);
-
-            await tx
-                .update(schema.invoice)
-                .set({
-                    number,
-                    status: "issued",
-                    issuedAt,
-                    dueAt,
-                    recipient: formatRecipient(buyer),
-                    buyerReference:
-                        buyer.buyerReference ??
-                        String(buyer.customerNumber ?? buyer.id),
-                    ...freezeBuyer(buyer),
-                    updatedAt: issuedAt,
-                })
-                .where(eq(schema.invoice.id, invoiceId));
-
-            recipientEmail = buyer.email;
-            recipientName = buyer.name;
-        });
+            collects = Boolean(linked?.paymentMethodId);
+        }
     } catch (error) {
-        console.error("[admin] issuing invoice failed:", error);
-        return {
-            status: "error",
-            message:
-                error instanceof Error && error.message === "not-draft"
-                    ? "Nur Entwürfe können ausgestellt werden."
-                    : "Die Rechnung konnte nicht ausgestellt werden.",
-        };
+        return failure(error, "Die Rechnung konnte nicht ausgestellt werden.");
     }
 
-    // Both of these run outside the transaction and independently of each
-    // other: neither a mail server nor a declined card may roll back an
-    // issued number, and a mail that does not go out is no reason to leave
-    // the money uncollected.
+    // The PDF is written here rather than inside the transaction: rendering
+    // takes a few hundred milliseconds, and holding the number counter's
+    // lock for all of them would turn a burst of renewals into a queue.
+    await storeFinalizedPdf(db, "invoice", invoiceId);
+
     let mailed = true;
 
     try {
         await sendInvoiceMail(invoiceId, recipientEmail, recipientName);
+        await markDocumentSent(db, "invoice", invoiceId);
     } catch (error) {
         console.error("[admin] invoice issued but mail failed:", error);
         mailed = false;
@@ -510,45 +359,22 @@ export async function issueInvoice(
     return { status: "issued" };
 }
 
-/** Records the incoming payment. Only an issued invoice can be paid — marking
- *  a draft would leave a "paid" invoice without a number. */
 export async function markInvoicePaid(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requirePermission("billing.write");
-
+    const actor = await actorFor("billing.write");
     const invoiceId = String(data.get("invoiceId") ?? "");
 
     try {
-        await db.transaction(async (tx) => {
-            const [row] = await tx
-                .select()
-                .from(schema.invoice)
-                .where(eq(schema.invoice.id, invoiceId))
-                .for("update");
-
-            if (row?.status !== "issued") {
-                throw new Error("not-issued");
-            }
-
-            const paidAt = new Date();
-
-            await tx
-                .update(schema.invoice)
-                .set({ status: "paid", paidAt, updatedAt: paidAt })
-                .where(eq(schema.invoice.id, invoiceId));
-        });
+        await markPaid(db, invoiceId, actor);
     } catch (error) {
-        console.error("[admin] marking invoice paid failed:", error);
-        return {
-            status: "error",
-            message:
-                error instanceof Error && error.message === "not-issued"
-                    ? "Nur ausgestellte Rechnungen können als bezahlt markiert werden."
-                    : "Die Zahlung konnte nicht vermerkt werden.",
-        };
+        return failure(error, "Die Zahlung konnte nicht vermerkt werden.");
     }
+
+    // Revenue is counted from paid invoices, so this is the other moment the
+    // § 19 figure can move.
+    await notifyThresholds(db);
 
     revalidatePath("/admin/invoices");
     revalidatePath(`/admin/invoices/${invoiceId}`);
@@ -557,46 +383,20 @@ export async function markInvoicePaid(
     return { status: "saved" };
 }
 
-/** The counterpart for a payment booked by mistake or later reversed. The
- *  document itself is untouched — only the payment record is taken back. */
 export async function unmarkInvoicePaid(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requirePermission("billing.write");
-
+    const actor = await actorFor("billing.write");
     const invoiceId = String(data.get("invoiceId") ?? "");
 
     try {
-        await db.transaction(async (tx) => {
-            const [row] = await tx
-                .select()
-                .from(schema.invoice)
-                .where(eq(schema.invoice.id, invoiceId))
-                .for("update");
-
-            if (row?.status !== "paid") {
-                throw new Error("not-paid");
-            }
-
-            await tx
-                .update(schema.invoice)
-                .set({
-                    status: "issued",
-                    paidAt: null,
-                    updatedAt: new Date(),
-                })
-                .where(eq(schema.invoice.id, invoiceId));
-        });
+        await unmarkPaid(db, invoiceId, actor);
     } catch (error) {
-        console.error("[admin] unmarking invoice paid failed:", error);
-        return {
-            status: "error",
-            message:
-                error instanceof Error && error.message === "not-paid"
-                    ? "Nur bezahlte Rechnungen können zurückgesetzt werden."
-                    : "Die Zahlung konnte nicht zurückgenommen werden.",
-        };
+        return failure(
+            error,
+            "Die Zahlung konnte nicht zurückgenommen werden.",
+        );
     }
 
     revalidatePath("/admin/invoices");
@@ -607,151 +407,58 @@ export async function unmarkInvoicePaid(
 }
 
 /**
- * A correction is never an edit: AGB § 7 (7) — "Eine ausgestellte Rechnung
- * wird nicht verändert. Korrekturen erfolgen durch Stornierung und
- * Neuausstellung." So the correction is a full invoice of its own, drawn from
- * same RE- series, carrying the original's lines with reversed signs.
- *
- * Everything frozen at issue time — recipient, buyer reference, service period
- * — is copied verbatim rather than recomputed from the customer's master data:
- * the pair must add up to zero for the same parties the original named, even
- * if the customer has moved since.
+ * Cancelling an invoice means issuing a full Rechnungskorrektur against it —
+ * AGB § 7 (7): "Eine ausgestellte Rechnung wird nicht verändert. Korrekturen
+ * erfolgen durch Stornierung und Neuausstellung."
  */
 export async function cancelInvoice(
     _previous: InvoiceState,
     data: FormData,
 ): Promise<InvoiceState> {
-    await requirePermission("billing.write");
-
+    const actor = await actorFor("billing.write");
     const invoiceId = String(data.get("invoiceId") ?? "");
-    const correctionId = createId("invoice");
+    const reason = String(data.get("reason") ?? "").trim() || null;
 
+    let creditNoteId = "";
     let recipientEmail = "";
     let recipientName = "";
 
     try {
-        await db.transaction(async (tx) => {
-            const [row] = await tx
-                .select()
-                .from(schema.invoice)
-                .where(eq(schema.invoice.id, invoiceId))
-                .for("update");
+        const [row] = await db
+            .select({ customerId: schema.invoice.customerId })
+            .from(schema.invoice)
+            .where(eq(schema.invoice.id, invoiceId));
 
-            // A correction is itself an issued invoice, so "issued or paid"
-            // would let one be reversed again into an endless chain.
-            if (
-                !row?.number ||
-                row.cancelsInvoiceId ||
-                (row.status !== "issued" && row.status !== "paid")
-            ) {
-                throw new Error("not-cancellable");
-            }
-
-            const [existing] = await tx
-                .select({ id: schema.invoice.id })
-                .from(schema.invoice)
-                .where(eq(schema.invoice.cancelsInvoiceId, invoiceId));
-
-            if (existing) {
-                throw new Error("not-cancellable");
-            }
-
-            const items = await tx
-                .select()
-                .from(schema.invoiceItem)
-                .where(eq(schema.invoiceItem.invoiceId, invoiceId))
-                .orderBy(asc(schema.invoiceItem.position));
-
-            const buyer = await loadBuyer(row.customerId, tx);
-
-            const issuedAt = new Date();
-            const number = await nextNumber(tx, "invoice", issuedAt);
-
-            await tx.insert(schema.invoice).values({
-                id: correctionId,
-                customerId: row.customerId,
-                contractId: row.contractId,
-                number,
-                status: "issued",
-                // The correction speaks about the original, so it carries the
-                // original's frozen buyer — not whoever the account is today.
-                recipient: row.recipient,
-                buyerReference: row.buyerReference,
-                // An invoice issued before the freeze existed has nothing to
-                // inherit; the correction then takes its own snapshot rather
-                // than leaving a document that can still change underneath it.
-                ...(row.buyerName
-                    ? {
-                          buyerName: row.buyerName,
-                          buyerStreet: row.buyerStreet,
-                          buyerPostalCode: row.buyerPostalCode,
-                          buyerCity: row.buyerCity,
-                          buyerCountry: row.buyerCountry,
-                          buyerVatId: row.buyerVatId,
-                          buyerEmail: row.buyerEmail,
-                      }
-                    : freezeBuyer(buyer)),
-                issuedAt,
-                // Nothing falls due on a correction; it settles the original.
-                dueAt: null,
-                servicePeriodStart: row.servicePeriodStart,
-                servicePeriodEnd: row.servicePeriodEnd,
-                cancelsInvoiceId: invoiceId,
-                // The document already says what a correction does; the note
-                // only has to name what it corrects, for the audit trail.
-                note: `Korrektur zu Rechnung ${row.number}.`,
-            });
-
-            // The reversal sits on the quantity, not on the price: EN 16931
-            // BR-27 forbids a negative item net price (BT-146), while a
-            // negative invoiced quantity (BT-129) is exactly how a corrected
-            // invoice is expressed. The line total comes out the same.
-            await tx.insert(schema.invoiceItem).values(
-                items.map((item, index) => ({
-                    id: createId("invoiceitem"),
-                    invoiceId: correctionId,
-                    position: index + 1,
-                    description: item.description,
-                    detail: item.detail,
-                    quantity: -item.quantity,
-                    unitCode: item.unitCode,
-                    unitPriceCents: item.unitPriceCents,
-                })),
+        if (!row) {
+            throw new InvoiceError(
+                "not-found",
+                "Diese Rechnung gibt es nicht.",
             );
+        }
 
-            await tx
-                .update(schema.invoice)
-                .set({
-                    status: "cancelled",
-                    cancelledAt: issuedAt,
-                    updatedAt: issuedAt,
-                })
-                .where(eq(schema.invoice.id, invoiceId));
+        const created = await createCreditNote(
+            db,
+            { invoiceId, kind: "full", reason },
+            actor,
+        );
 
-            recipientEmail = buyer.email;
-            recipientName = buyer.name;
-        });
+        creditNoteId = created.id;
+
+        const buyer = await loadBuyer(row.customerId, db);
+        recipientEmail = buyer.email;
+        recipientName = buyer.name;
     } catch (error) {
-        console.error("[admin] cancelling invoice failed:", error);
-        return {
-            status: "error",
-            message:
-                error instanceof Error && error.message === "not-cancellable"
-                    ? "Diese Rechnung kann nicht storniert werden."
-                    : "Die Rechnung konnte nicht storniert werden.",
-        };
+        return failure(error, "Die Rechnung konnte nicht storniert werden.");
     }
 
-    // Outside the transaction: the correction carries a number of its own,
-    // rolling it back over a failed mail would tear a gap into the series.
+    await storeFinalizedPdf(db, "creditNote", creditNoteId);
+
     try {
-        await sendInvoiceMail(correctionId, recipientEmail, recipientName);
+        await sendCreditNoteMail(creditNoteId, recipientEmail, recipientName);
+        await markDocumentSent(db, "creditNote", creditNoteId);
     } catch (error) {
         console.error("[admin] correction created but mail failed:", error);
-        // Deliberately not revalidated: a refresh re-renders the row this
-        // form lives in, unmounts it and takes the message with it. The
-        // mutation is committed either way and the sentence below says so;
-        // the next navigation picks up the new state.
+
         return {
             status: "error",
             message:
@@ -763,13 +470,13 @@ export async function cancelInvoice(
     revalidatePath(`/admin/invoices/${invoiceId}`);
     revalidatePath("/client/invoices");
 
-    return { status: "cancelled", message: correctionId };
+    return { status: "cancelled", message: creditNoteId };
 }
 
 /**
- * Sends the document again, for a mail that bounced or never arrived. It reads
- * only: number, recipient and every other frozen field stay as they were, so
- * the customer receives the same document a second time, not a new one.
+ * Sends the document again, for a mail that bounced or never arrived. It
+ * reads only: number, recipient and every other frozen field stay as they
+ * were, so the customer receives the same document a second time.
  */
 export async function resendInvoiceMail(
     _previous: InvoiceState,
@@ -787,26 +494,55 @@ export async function resendInvoiceMail(
 
         // A cancelled invoice is annulled: sending it again would put a
         // payable document the customer no longer owes back in their inbox.
-        // The correction itself is status "issued", so it stays resendable.
         if (
             !row?.number ||
-            (row.status !== "issued" && row.status !== "paid")
+            (row.status !== "unpaid" && row.status !== "paid")
         ) {
-            throw new Error("not-issued");
+            throw new InvoiceError(
+                "not-finalized",
+                "Nur ausgestellte Rechnungen können erneut versendet werden.",
+            );
         }
 
         const buyer = await loadBuyer(row.customerId, db);
 
         await sendInvoiceMail(invoiceId, buyer.email, buyer.name);
+        await markDocumentSent(db, "invoice", invoiceId);
     } catch (error) {
-        console.error("[admin] resending invoice mail failed:", error);
-        return {
-            status: "error",
-            message:
-                error instanceof Error && error.message === "not-issued"
-                    ? "Nur ausgestellte Rechnungen können erneut versendet werden."
-                    : "Der erneute Versand hat nicht geklappt.",
-        };
+        return failure(error, "Der erneute Versand hat nicht geklappt.");
+    }
+
+    return { status: "sent" };
+}
+
+/** Sends a Rechnungskorrektur again. */
+export async function resendCreditNoteMail(
+    _previous: InvoiceState,
+    data: FormData,
+): Promise<InvoiceState> {
+    await requirePermission("billing.write");
+
+    const creditNoteId = String(data.get("creditNoteId") ?? "");
+
+    try {
+        const [row] = await db
+            .select()
+            .from(schema.creditNote)
+            .where(eq(schema.creditNote.id, creditNoteId));
+
+        if (!row) {
+            throw new InvoiceError(
+                "not-found",
+                "Diese Rechnungskorrektur gibt es nicht.",
+            );
+        }
+
+        const buyer = await loadBuyer(row.customerId, db);
+
+        await sendCreditNoteMail(creditNoteId, buyer.email, buyer.name);
+        await markDocumentSent(db, "creditNote", creditNoteId);
+    } catch (error) {
+        return failure(error, "Der erneute Versand hat nicht geklappt.");
     }
 
     return { status: "sent" };

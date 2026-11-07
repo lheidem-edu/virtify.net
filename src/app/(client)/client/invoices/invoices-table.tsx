@@ -24,9 +24,9 @@ export type InvoiceRow = {
     paidAt: Date | null;
     email: string;
     amount: number;
-    /** A correction is issued like any other invoice but reverses one. */
-    isCorrection: boolean;
-    /** Issued, not a correction, not settled — decided on the server. */
+    /** What Rechnungskorrekturen have taken back off this invoice. */
+    credited: number;
+    /** Finalized, not settled, not corrected — decided on the server. */
     canPay: boolean;
 };
 
@@ -82,18 +82,22 @@ function buildColumns(
         {
             accessorKey: "status",
             header: "Status",
-            // A correction carries status "issued" like any other invoice;
-            // saying so would read as a second demand for money instead of
-            // its reversal.
-            cell: ({ row }) =>
-                row.original.isCorrection ? (
-                    <StatusBadge label="Korrektur" tone="neutral" />
-                ) : (
+            // A partly corrected invoice still stands for the rest, so it
+            // keeps its own status and says what was taken off underneath.
+            cell: ({ row }) => (
+                <>
                     <StatusBadge
                         label={INVOICE_STATUS_LABEL[row.original.status]}
                         tone={INVOICE_STATUS_TONE[row.original.status]}
                     />
-                ),
+                    {row.original.credited > 0 &&
+                    row.original.status !== "cancelled" ? (
+                        <span className="mt-1 block text-muted-foreground text-xs">
+                            {formatPrice(row.original.credited)} korrigiert
+                        </span>
+                    ) : null}
+                </>
+            ),
             filterFn: (row, id, value) => row.getValue(id) === value,
         },
         {

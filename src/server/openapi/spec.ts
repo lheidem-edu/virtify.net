@@ -72,6 +72,13 @@ export function buildSpec() {
                     "die daraus einen Preis macht.",
             },
             {
+                name: "Rechnungen",
+                description:
+                    "Rechnungen und ihre Positionen. Eine ausgestellte " +
+                    "Rechnung ist unveränderlich; korrigiert wird über eine " +
+                    "Rechnungskorrektur mit eigener Nummer.",
+            },
+            {
                 name: "Kunden",
                 description:
                     "Kundenkonten: Stammdaten, Status und Kundennummer. " +

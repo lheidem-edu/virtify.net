@@ -5,8 +5,8 @@ import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { db, schema } from "@/db";
 import { formatPrice } from "@/lib/format";
+import { loadInvoice } from "@/server/billing/invoices/repository";
 import { getCurrentCustomer } from "@/server/customers/current";
-import { loadInvoice } from "@/server/documents/repository";
 import {
     captureAndSettle,
     settleCheckoutReturn,

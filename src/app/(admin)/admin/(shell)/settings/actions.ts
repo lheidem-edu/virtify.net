@@ -27,6 +27,13 @@ const TEXT_FIELDS = [
     "bankBic",
 ] as const;
 
+/**
+ * Not required, unlike everything above: § 14 Abs. 4 Nr. 2 UStG wants the
+ * Steuernummer *or* the USt-IdNr., and an installation may genuinely hold
+ * only one of the two.
+ */
+const OPTIONAL_TEXT_FIELDS = ["operatorTaxNumber"] as const;
+
 const NUMBER_FIELDS = [
     "logRetentionDays",
     "paymentTermDays",
@@ -47,7 +54,7 @@ export async function saveSettings(
 
     const read = (name: string) => String(data.get(name) ?? "").trim();
 
-    const values: Record<string, string | number> = {};
+    const values: Record<string, string | number | null> = {};
 
     for (const field of TEXT_FIELDS) {
         const value = read(field);
@@ -72,6 +79,11 @@ export async function saveSettings(
 
     if (!String(values.operatorEmail).includes("@")) {
         return { status: "error", message: "Die E-Mail-Adresse ist ungültig." };
+    }
+
+    for (const field of OPTIONAL_TEXT_FIELDS) {
+        // Empty means "not held", not an empty line on the invoice.
+        values[field] = read(field) || null;
     }
 
     for (const field of NUMBER_FIELDS) {

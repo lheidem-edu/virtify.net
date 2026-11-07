@@ -191,7 +191,7 @@ export async function collectIssuedInvoice(invoiceId: string) {
         .where(
             and(
                 eq(schema.invoice.id, invoiceId),
-                eq(schema.invoice.status, "issued"),
+                eq(schema.invoice.status, "unpaid"),
                 isNull(schema.paymentMethod.revokedAt),
             ),
         );

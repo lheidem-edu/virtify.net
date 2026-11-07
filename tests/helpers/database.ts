@@ -95,7 +95,9 @@ export async function createTestDatabase(): Promise<{
     const target = new URL(url);
     target.pathname = `/${name}`;
 
-    const pool = new Pool({ connectionString: target.toString(), max: 2 });
+    // Room for the concurrency proofs: the gapless-numbering test opens
+    // twenty transactions at once and needs a connection for each.
+    const pool = new Pool({ connectionString: target.toString(), max: 25 });
 
     // A pool whose server goes away emits on the pool, not on the query. The
     // database is dropped out from under it at the end of every run, so

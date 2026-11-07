@@ -4,6 +4,8 @@ import { useActionState } from "react";
 import ConfirmAction from "@/components/shared/confirm-action";
 import FormStatus from "@/components/shared/form-status";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
     cancelInvoice,
     deleteInvoice,
@@ -113,11 +115,22 @@ export function CancelInvoiceAction({
             fields={{ invoiceId }}
             label="Korrigieren"
             title={`Rechnung ${number} korrigieren?`}
-            description="Es entsteht eine Rechnungskorrektur mit eigener Nummer und umgekehrten Vorzeichen, die dem Kunden sofort zugestellt wird. Die ursprüngliche Rechnung bleibt erhalten und gilt als aufgehoben."
+            description="Es entsteht eine Rechnungskorrektur mit eigener Nummer aus der RK-Reihe, die dem Kunden sofort zugestellt wird. Die ursprüngliche Rechnung bleibt unverändert erhalten und gilt als aufgehoben; der Steuersatz der Korrektur ist der, den die Rechnung trug."
             confirmLabel="Korrigieren und senden"
             variant="outline"
             confirmVariant="destructive"
-        />
+        >
+            <div className="space-y-2">
+                <Label htmlFor="reason">
+                    Grund (erscheint auf dem Dokument)
+                </Label>
+                <Input
+                    id="reason"
+                    name="reason"
+                    placeholder="z. B. Leistung wurde nicht erbracht"
+                />
+            </div>
+        </ConfirmAction>
     );
 }
 

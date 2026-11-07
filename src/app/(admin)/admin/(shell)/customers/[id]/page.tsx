@@ -5,6 +5,7 @@ import StatusBadge from "@/components/shared/status-badge";
 import { db } from "@/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import { requirePermission } from "@/server/auth/staff-session";
+import { listInvoices } from "@/server/billing/invoices/repository";
 import {
     auditTrail,
     getCustomer,
@@ -12,7 +13,6 @@ import {
 } from "@/server/customers/repository";
 import {
     listContracts,
-    listInvoices,
     listOffers,
     loadStoredMethodsFor,
 } from "@/server/documents/repository";

@@ -61,6 +61,17 @@ const schema = z.object({
     ),
     APP_ENCRYPTION_KEY_OLD: z.string().optional().default(""),
 
+    // --- Documents ------------------------------------------------------
+    DOCUMENT_STORAGE_PATH: z
+        .string()
+        .trim()
+        .optional()
+        .default(".data/documents")
+        .describe(
+            "Directory the rendered invoice and credit note PDFs are kept in; " +
+                "mount it as a volume, or a redeploy takes the documents with it",
+        ),
+
     // --- Mail -----------------------------------------------------------
     VIRTIFY_SMTP_HOST: z.string().optional().default(""),
     VIRTIFY_SMTP_EHLO: z.string().optional().default(""),
