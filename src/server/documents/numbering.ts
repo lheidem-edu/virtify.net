@@ -20,6 +20,13 @@ export const NUMBERING = {
      */
     creditNote: { pattern: "RK-{YEAR}-{SEQ}", pad: 4, perYear: true },
     offer: { pattern: "AN-{YEAR}-{SEQ}", pad: 4, perYear: true },
+    /**
+     * Bestellungen. An order is not a document § 14 UStG has anything to say
+     * about, so its numbers need not be gapless — but it is quoted in
+     * correspondence and on the first invoice, and the counter that gives
+     * out the other three costs nothing to reuse.
+     */
+    order: { pattern: "BS-{YEAR}-{SEQ}", pad: 4, perYear: true },
 } as const;
 
 /**

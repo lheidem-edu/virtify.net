@@ -26,6 +26,16 @@ async function SiteHeader() {
                     >
                         Produkte
                     </Link>
+                    {/* Deliberately without a count. Reading the cart cookie
+                        here would make every page of the storefront — the
+                        legal texts included — dynamic for the sake of a
+                        badge. */}
+                    <Link
+                        href="/cart"
+                        className="text-sm text-zinc-400 transition-colors hover:text-white"
+                    >
+                        Warenkorb
+                    </Link>
                     <Button
                         nativeButton={false}
                         render={<Link href="/client" />}

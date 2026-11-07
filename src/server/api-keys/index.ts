@@ -59,6 +59,12 @@ export const CUSTOMER_SCOPES = [
     // The catalog is what a customer orders from. Reading it is the first
     // step of every order, and nothing in it is anyone's private data.
     "catalog.read",
+    // A customer may see their own orders and place one. Placing one commits
+    // the account to paying for it, which is exactly what a customer key is
+    // for — and the acceptance of the AGB is still an explicit field on the
+    // request rather than something the key implies.
+    "orders.read",
+    "orders.write",
 ] as const satisfies readonly Permission[];
 
 export type CustomerScope = (typeof CUSTOMER_SCOPES)[number];

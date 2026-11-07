@@ -47,7 +47,7 @@ The build is planned in phases: see `docs/BUILD_PLAN.md`, state in `docs/PROGRES
 ```
 src/
   app/
-    (marketing)/        # public storefront, cart, checkout, legal pages
+    (marketing)/        # public storefront, /cart, /checkout, legal pages
     (client)/client/     # customer portal
     (admin)/admin/       # staff panel
     api/v1/              # public REST API (API-key auth), every route in the OpenAPI registry
@@ -59,13 +59,16 @@ src/
   server/                # domain logic, NO React here
     customers/  auth/  api/  api-keys/  audit/  documents/  payments/
     catalog/  billing/  tax/  storage/  provisioning/  tickets/  jobs/  openapi/
+  cart/  orders/           # the cart, and the one transaction that makes it an order
   lib/                   # money, crypto, ulid, env, utils — framework-free
   components/            # shadcn (components/ui, not linted) + shared app UI
 ```
 
 One price, one function: `src/server/billing/pricing.ts` computes every quote the storefront,
-the checkout and `POST /api/v1/products/{id}/quote` show. A second implementation anywhere —
-including in the browser — is how a shown price starts disagreeing with a charged one.
+the cart, the checkout and `POST /api/v1/products/{id}/quote` show. A second implementation
+anywhere — including in the browser — is how a shown price starts disagreeing with a charged
+one. A cart row therefore holds a *configuration* and no amounts at all; an order row holds the
+amounts, written by that same function inside the transaction that also writes the invoice.
 
 One document arithmetic, one function: `src/server/billing/invoices/totals.ts` computes every
 total an invoice, a credit note or an offer shows. The rendered PDF of a finalized document is
@@ -95,7 +98,15 @@ Server actions and `/api/v1` routes call the **same** service functions.
    PDF reference — once, from nothing to something — may change afterwards, a finalized invoice
    cannot be deleted, and its positions cannot be written at all. A column added later is
    immutable by default, because the trigger compares the whole row minus that list.
-4. **All multi-step writes run in a DB transaction.**
+4. **All multi-step writes run in a DB transaction.** The checkout is the longest of them:
+   `placeOrder()` in `src/server/orders/service.ts` writes the order, one subscription per
+   billing rhythm, a service per provisionable unit and the finalized first invoice together or
+   not at all. It reprices every line from the catalog *inside* that transaction — nothing the
+   browser sent is ever a price — takes the cart row `FOR UPDATE` so a double submit produces
+   one order rather than two, and redeems a coupon with a conditional
+   `UPDATE … WHERE redemptions < max_redemptions`. The invoice is built by
+   `createInvoiceDraftIn` / `finalizeInvoiceIn`, the invoicing engine's own functions with the
+   transaction handed in: there is no second finalization path and never will be.
 5. **Authorization on every query.** Three guards, and nothing else is allowed to decide:
    - `getCurrentCustomer()` (`src/server/customers/current.ts`) is the only way client-area code
      learns which rows it may touch. No page under `(client)` takes a customer id from the
@@ -107,6 +118,12 @@ Server actions and `/api/v1` routes call the **same** service functions.
      customer key sees that customer, a staff key sees what its owner's roles grant *today*.
 
    A caller who may not see a row is told 404, never 403 — 403 confirms the id exists.
+
+   A guest at the checkout has no customer yet, so a fourth identity exists and only there: a
+   **cart** is named by a 32-byte secret in an httpOnly cookie, stored hashed (`hashToken`,
+   as an API key is). The cart's ULID is not a credential and never appears in a request. On
+   sign-in the cart is claimed or merged; a cart that already belongs to another account is
+   left alone, so a shared browser cannot carry one customer's basket into another's.
 6. **Secrets at rest are encrypted** (AES-256-GCM, key from `APP_ENCRYPTION_KEY`): server API
    tokens, gateway credentials, Graph secrets, service passwords. Use `src/lib/crypto.ts`.
 7. **Webhooks and jobs are idempotent.** Store provider event IDs and dedupe.

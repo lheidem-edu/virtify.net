@@ -143,3 +143,61 @@ export async function loadSectionRows(documentId: string) {
 export function defaultDocument(kind: LegalKind) {
     return DEFAULTS[kind];
 }
+
+/**
+ * Which fassung of a legal document is in force right now, as a thing that
+ * can be stored on an order.
+ *
+ * § 21 of the terms promises six weeks' notice before a change applies,
+ * which is only worth anything if what a customer accepted on a given day
+ * can still be produced. The checkout therefore writes the version down
+ * rather than a boolean, and `label` carries the answer in words for the
+ * case where no version has been published at all — "Fassung null" is not
+ * something to tell a judge.
+ */
+export type LegalVersionRef = {
+    documentId: string | null;
+    version: number | null;
+    label: string;
+};
+
+export async function currentLegalVersion(
+    executor: Pick<typeof db, "select">,
+    kind: LegalKind,
+): Promise<LegalVersionRef> {
+    const [row] = await executor
+        .select({
+            id: schema.legalDocument.id,
+            version: schema.legalDocument.version,
+            effectiveFrom: schema.legalDocument.effectiveFrom,
+        })
+        .from(schema.legalDocument)
+        .where(
+            and(
+                eq(schema.legalDocument.kind, kind),
+                eq(schema.legalDocument.status, "published"),
+                lte(schema.legalDocument.effectiveFrom, new Date()),
+            ),
+        )
+        .orderBy(
+            desc(schema.legalDocument.effectiveFrom),
+            desc(schema.legalDocument.version),
+        )
+        .limit(1);
+
+    if (!row) {
+        return {
+            documentId: null,
+            version: null,
+            label: `Eingebaute Fassung, Stand ${legalUpdated}`,
+        };
+    }
+
+    return {
+        documentId: row.id,
+        version: row.version,
+        label: row.effectiveFrom
+            ? `Fassung ${row.version}, gültig ab ${dateLabel.format(row.effectiveFrom)}`
+            : `Fassung ${row.version}`,
+    };
+}

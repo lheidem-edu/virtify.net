@@ -122,6 +122,23 @@ export async function createInvoiceDraft(
     input: InvoiceDraftInput,
     actor: Actor,
 ) {
+    return db.transaction((tx) => createInvoiceDraftIn(tx, input, actor));
+}
+
+/**
+ * The same thing inside a transaction the caller already owns.
+ *
+ * The checkout needs the order, the subscriptions, the services and the
+ * first invoice to commit together or not at all (rule 4), and an invoice
+ * that opened a transaction of its own would commit on its own. Everything
+ * in this module therefore has an `…In(tx)` form, and the exported
+ * convenience wrappers are nothing but `db.transaction(…)` around it.
+ */
+export async function createInvoiceDraftIn(
+    tx: Tx,
+    input: InvoiceDraftInput,
+    actor: Actor,
+) {
     if (input.items.length === 0) {
         throw new InvoiceError(
             "no-items",
@@ -131,58 +148,56 @@ export async function createInvoiceDraft(
 
     const id = createId("invoice");
 
-    return db.transaction(async (tx) => {
-        // Checked rather than left to the foreign key, so an unknown or
-        // soft-deleted account produces a sentence instead of a 500.
-        const [customer] = await tx
-            .select({ id: schema.customer.id })
-            .from(schema.customer)
-            .where(
-                and(
-                    eq(schema.customer.id, input.customerId),
-                    isNull(schema.customer.deletedAt),
-                ),
-            );
+    // Checked rather than left to the foreign key, so an unknown or
+    // soft-deleted account produces a sentence instead of a 500.
+    const [customer] = await tx
+        .select({ id: schema.customer.id })
+        .from(schema.customer)
+        .where(
+            and(
+                eq(schema.customer.id, input.customerId),
+                isNull(schema.customer.deletedAt),
+            ),
+        );
 
-        if (!customer) {
-            throw new InvoiceError(
-                "not-found",
-                "Dieses Kundenkonto gibt es nicht.",
-            );
-        }
+    if (!customer) {
+        throw new InvoiceError(
+            "not-found",
+            "Dieses Kundenkonto gibt es nicht.",
+        );
+    }
 
-        await assertContractBelongsTo(tx, input.contractId, input.customerId);
+    await assertContractBelongsTo(tx, input.contractId, input.customerId);
 
-        const [row] = await tx
-            .insert(schema.invoice)
-            .values({
-                id,
-                customerId: input.customerId,
-                contractId: input.contractId ?? null,
-                status: "draft",
-                introText: input.introText ?? null,
-                note: input.note ?? null,
-                servicePeriodStart: input.servicePeriodStart ?? null,
-                servicePeriodEnd: input.servicePeriodEnd ?? null,
-            })
-            .returning();
+    const [row] = await tx
+        .insert(schema.invoice)
+        .values({
+            id,
+            customerId: input.customerId,
+            contractId: input.contractId ?? null,
+            status: "draft",
+            introText: input.introText ?? null,
+            note: input.note ?? null,
+            servicePeriodStart: input.servicePeriodStart ?? null,
+            servicePeriodEnd: input.servicePeriodEnd ?? null,
+        })
+        .returning();
 
-        await tx.insert(schema.invoiceItem).values(itemRows(id, input.items));
+    await tx.insert(schema.invoiceItem).values(itemRows(id, input.items));
 
-        await audit(tx, {
-            actor,
-            action: "invoice.create",
-            entityType: "invoice",
-            entityId: id,
-            after: {
-                customerId: input.customerId,
-                contractId: input.contractId ?? null,
-                positions: input.items.length,
-            },
-        });
-
-        return row;
+    await audit(tx, {
+        actor,
+        action: "invoice.create",
+        entityType: "invoice",
+        entityId: id,
+        after: {
+            customerId: input.customerId,
+            contractId: input.contractId ?? null,
+            positions: input.items.length,
+        },
     });
+
+    return row;
 }
 
 /**
@@ -350,128 +365,165 @@ export async function finalizeInvoice(
     actor: Actor,
     options: FinalizeOptions = {},
 ) {
-    const at = options.now ?? new Date();
+    const resolved = await resolveFinalizeOptions(options);
+
+    return db.transaction((tx) =>
+        finalizeInvoiceIn(tx, invoiceId, actor, resolved),
+    );
+}
+
+/** Everything `finalizeInvoiceIn` must be told rather than look up itself. */
+export type ResolvedFinalizeOptions = {
+    at: Date;
+    settings: Settings;
+    termDays: number;
+};
+
+/**
+ * Loads what the finalization needs *before* the transaction opens. Reading
+ * the settings inside it would hold the number counter's row lock across a
+ * query that has nothing to do with numbering.
+ */
+export async function resolveFinalizeOptions(
+    options: FinalizeOptions = {},
+): Promise<ResolvedFinalizeOptions> {
     const settings = options.settings ?? (await loadSettings());
-    const termDays = options.paymentTermDays ?? settings.policy.paymentTermDays;
 
-    return db.transaction(async (tx) => {
-        const row = await lockInvoice(tx, invoiceId);
+    return {
+        at: options.now ?? new Date(),
+        settings,
+        termDays: options.paymentTermDays ?? settings.policy.paymentTermDays,
+    };
+}
 
-        if (row.status !== "draft") {
-            throw new InvoiceError(
-                "not-draft",
-                "Nur Entwürfe können ausgestellt werden.",
-            );
+/**
+ * Finalization inside a transaction the caller already owns — the form the
+ * checkout uses, so the order and its first invoice commit together.
+ */
+export async function finalizeInvoiceIn(
+    tx: Tx,
+    invoiceId: string,
+    actor: Actor,
+    resolved: ResolvedFinalizeOptions,
+) {
+    const { at, settings, termDays } = resolved;
+
+    const row = await lockInvoice(tx, invoiceId);
+
+    if (row.status !== "draft") {
+        throw new InvoiceError(
+            "not-draft",
+            "Nur Entwürfe können ausgestellt werden.",
+        );
+    }
+
+    const items = await tx
+        .select()
+        .from(schema.invoiceItem)
+        .where(eq(schema.invoiceItem.invoiceId, invoiceId))
+        .orderBy(asc(schema.invoiceItem.position));
+
+    if (items.length === 0) {
+        throw new InvoiceError(
+            "no-items",
+            "Eine Rechnung ohne Positionen kann nicht ausgestellt werden.",
+        );
+    }
+
+    const buyer = await loadBuyer(row.customerId, tx);
+
+    let determined: Awaited<ReturnType<typeof determineTax>>;
+
+    try {
+        determined = await determineTax(tx, buyer, settings, at);
+    } catch (error) {
+        // A strategy that cannot decide stops the finalization rather
+        // than guessing a rate onto a legal document.
+        if (error instanceof TaxDeterminationError) {
+            throw new InvoiceError("tax", error.message);
         }
 
-        const items = await tx
-            .select()
-            .from(schema.invoiceItem)
-            .where(eq(schema.invoiceItem.invoiceId, invoiceId))
-            .orderBy(asc(schema.invoiceItem.position));
+        throw error;
+    }
 
-        if (items.length === 0) {
-            throw new InvoiceError(
-                "no-items",
-                "Eine Rechnung ohne Positionen kann nicht ausgestellt werden.",
-            );
-        }
+    const { strategy, determination, notes } = determined;
 
-        const buyer = await loadBuyer(row.customerId, tx);
+    const lines: TaxedLineInput[] = items.map((item) => ({
+        description: item.description,
+        detail: item.detail,
+        quantity: item.quantity,
+        unitCode: item.unitCode,
+        unitPriceCents: item.unitPriceCents,
+        taxRateBp: determination.rateBp,
+        taxCategory: determination.category,
+        taxRule: determination.rule,
+        servicePeriodStart: item.servicePeriodStart,
+        servicePeriodEnd: item.servicePeriodEnd,
+    }));
 
-        let determined: Awaited<ReturnType<typeof determineTax>>;
+    const totals = calculateTotals(lines);
 
-        try {
-            determined = await determineTax(tx, buyer, settings, at);
-        } catch (error) {
-            // A strategy that cannot decide stops the finalization rather
-            // than guessing a rate onto a legal document.
-            if (error instanceof TaxDeterminationError) {
-                throw new InvoiceError("tax", error.message);
-            }
-
-            throw error;
-        }
-
-        const { strategy, determination, notes } = determined;
-
-        const lines: TaxedLineInput[] = items.map((item) => ({
-            description: item.description,
-            detail: item.detail,
-            quantity: item.quantity,
-            unitCode: item.unitCode,
-            unitPriceCents: item.unitPriceCents,
-            taxRateBp: determination.rateBp,
-            taxCategory: determination.category,
-            taxRule: determination.rule,
-            servicePeriodStart: item.servicePeriodStart,
-            servicePeriodEnd: item.servicePeriodEnd,
-        }));
-
-        const totals = calculateTotals(lines);
-
-        // The lines are written before the invoice leaves `draft`: once it
-        // has, the trigger on invoice_item refuses every write to them.
-        for (const [index, item] of items.entries()) {
-            await tx
-                .update(schema.invoiceItem)
-                .set({
-                    taxStrategy: strategy.id,
-                    taxRateBp: determination.rateBp,
-                    taxCategory: determination.category,
-                    taxRule: determination.rule,
-                    netCents: totals.lines[index].netCents,
-                })
-                .where(eq(schema.invoiceItem.id, item.id));
-        }
-
-        const dueAt = new Date(at.getTime() + termDays * 86_400_000);
-        const number = await nextNumber(tx, "invoice", at);
-
-        const [finalized] = await tx
-            .update(schema.invoice)
+    // The lines are written before the invoice leaves `draft`: once it
+    // has, the trigger on invoice_item refuses every write to them.
+    for (const [index, item] of items.entries()) {
+        await tx
+            .update(schema.invoiceItem)
             .set({
-                number,
-                status: "unpaid",
-                issuedAt: at,
-                dueAt,
-                recipient: formatRecipient(buyer, settings.operator.country),
-                buyerReference:
-                    buyer.buyerReference ??
-                    String(buyer.customerNumber ?? buyer.id),
-                buyerCustomerNumber: buyer.customerNumber,
-                ...freezeBuyer(buyer),
-                ...freezeSeller(settings),
                 taxStrategy: strategy.id,
-                taxNote: notes.join(" ") || null,
-                netCents: totals.netCents,
-                taxCents: totals.taxCents,
-                grossCents: totals.grossCents,
-                updatedAt: at,
-            })
-            .where(eq(schema.invoice.id, invoiceId))
-            .returning();
-
-        await audit(tx, {
-            actor,
-            action: "invoice.finalize",
-            entityType: "invoice",
-            entityId: invoiceId,
-            before: { status: "draft", number: null },
-            after: {
-                status: "unpaid",
-                number,
-                taxStrategy: strategy.id,
-                taxRule: determination.rule,
                 taxRateBp: determination.rateBp,
-                netCents: totals.netCents,
-                taxCents: totals.taxCents,
-                grossCents: totals.grossCents,
-            },
-        });
+                taxCategory: determination.category,
+                taxRule: determination.rule,
+                netCents: totals.lines[index].netCents,
+            })
+            .where(eq(schema.invoiceItem.id, item.id));
+    }
 
-        return { invoice: finalized, totals, number };
+    const dueAt = new Date(at.getTime() + termDays * 86_400_000);
+    const number = await nextNumber(tx, "invoice", at);
+
+    const [finalized] = await tx
+        .update(schema.invoice)
+        .set({
+            number,
+            status: "unpaid",
+            issuedAt: at,
+            dueAt,
+            recipient: formatRecipient(buyer, settings.operator.country),
+            buyerReference:
+                buyer.buyerReference ??
+                String(buyer.customerNumber ?? buyer.id),
+            buyerCustomerNumber: buyer.customerNumber,
+            ...freezeBuyer(buyer),
+            ...freezeSeller(settings),
+            taxStrategy: strategy.id,
+            taxNote: notes.join(" ") || null,
+            netCents: totals.netCents,
+            taxCents: totals.taxCents,
+            grossCents: totals.grossCents,
+            updatedAt: at,
+        })
+        .where(eq(schema.invoice.id, invoiceId))
+        .returning();
+
+    await audit(tx, {
+        actor,
+        action: "invoice.finalize",
+        entityType: "invoice",
+        entityId: invoiceId,
+        before: { status: "draft", number: null },
+        after: {
+            status: "unpaid",
+            number,
+            taxStrategy: strategy.id,
+            taxRule: determination.rule,
+            taxRateBp: determination.rateBp,
+            netCents: totals.netCents,
+            taxCents: totals.taxCents,
+            grossCents: totals.grossCents,
+        },
     });
+
+    return { invoice: finalized, totals, number };
 }
 
 export type CreditNoteInput = {

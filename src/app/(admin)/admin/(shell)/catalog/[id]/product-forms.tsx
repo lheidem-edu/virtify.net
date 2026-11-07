@@ -15,6 +15,7 @@ import {
     OPTION_TYPES,
     PRODUCT_STATUSES,
     PRODUCT_TYPES,
+    PROVISIONING_MODES,
     toInput,
 } from "../labels";
 import {
@@ -41,6 +42,7 @@ export type ProductFields = {
     module: string;
     moduleConfig: string;
     maxQuantity: number;
+    provisioningMode: "manual" | "auto_on_payment";
     deleted: boolean;
 };
 
@@ -106,6 +108,16 @@ export function ProductEditForm({
                     label="Status"
                     options={PRODUCT_STATUSES}
                     defaultValue={product.status}
+                />
+                <SelectField
+                    id="product-provisioningMode"
+                    name="provisioningMode"
+                    // Not "Bereitstellung": the module select further down
+                    // already carries that word, and two fields with one
+                    // label is how an operator sets the wrong one.
+                    label="Einrichtung der Leistung"
+                    options={PROVISIONING_MODES}
+                    defaultValue={product.provisioningMode}
                 />
                 <div className="space-y-2">
                     <Label htmlFor="product-maxQuantity">

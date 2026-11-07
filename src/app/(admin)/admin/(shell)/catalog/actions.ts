@@ -209,6 +209,7 @@ export async function addProduct(
         module: optional(data, "module") ?? "none",
         moduleConfig: {},
         maxQuantity: integer(data, "maxQuantity", 1),
+        provisioningMode: optional(data, "provisioningMode") ?? "manual",
     });
 
     if (!parsed.success) {

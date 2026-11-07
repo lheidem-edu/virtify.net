@@ -1,10 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPrice } from "@/lib/format";
+import { addToCart } from "../../cart/actions";
 import { type QuoteView, requestQuote } from "./actions";
 
 /**
@@ -102,6 +104,41 @@ export default function Configurator({
     const [submittedCoupon, setSubmittedCoupon] = useState("");
     const [view, setView] = useState<QuoteView>(initial);
     const [pending, startTransition] = useTransition();
+    const [adding, startAdding] = useTransition();
+    const [addError, setAddError] = useState<string | null>(null);
+    const router = useRouter();
+
+    /**
+     * Hands the configuration to the server and goes to the cart. The
+     * selection travels; the price does not — the cart prices it again from
+     * the catalog, as does the checkout after it.
+     */
+    function add() {
+        setAddError(null);
+
+        startAdding(async () => {
+            const result = await addToCart({
+                productId,
+                cycle,
+                currency,
+                quantity,
+                options: Object.entries(selected).map(([optionId, entry]) => ({
+                    optionId,
+                    valueId: entry.valueId,
+                    quantity: entry.quantity,
+                })),
+                couponCode: submittedCoupon || null,
+            });
+
+            if (!result.ok) {
+                setAddError(result.message ?? "Das hat nicht geklappt.");
+
+                return;
+            }
+
+            router.push("/cart");
+        });
+    }
 
     useEffect(() => {
         startTransition(async () => {
@@ -409,12 +446,27 @@ export default function Configurator({
                             ) : null}
                         </div>
 
-                        <p className="border-t pt-6 text-xs leading-5 text-zinc-500">
-                            Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.
-                            Die Bestellung über das Portal folgt in einem
-                            späteren Schritt — bis dahin richten wir Instanzen
-                            auf Anfrage ein.
-                        </p>
+                        <div className="space-y-3 border-t pt-6">
+                            <Button
+                                type="button"
+                                className="w-full"
+                                disabled={adding || pending}
+                                onClick={add}
+                            >
+                                {adding
+                                    ? "Wird hinzugefügt …"
+                                    : "In den Warenkorb"}
+                            </Button>
+                            {addError ? (
+                                <p className="text-xs text-destructive">
+                                    {addError}
+                                </p>
+                            ) : null}
+                            <p className="text-xs leading-5 text-zinc-500">
+                                Gemäß § 19 UStG wird keine Umsatzsteuer
+                                berechnet.
+                            </p>
+                        </div>
                     </>
                 ) : null}
             </aside>

@@ -23,6 +23,11 @@ export const PRODUCT_STATUSES = [
     { value: "retired", label: "Eingestellt" },
 ];
 
+export const PROVISIONING_MODES = [
+    { value: "manual", label: "Erst nach Freigabe" },
+    { value: "auto_on_payment", label: "Automatisch nach Zahlung" },
+];
+
 export const CYCLES = [
     { value: "monthly", label: "Monatlich" },
     { value: "quarterly", label: "Vierteljährlich" },

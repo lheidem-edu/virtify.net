@@ -38,6 +38,14 @@ export const CODE_NOT_APPLICABLE =
 export type QuoteResult = {
     detail: ProductDetail;
     quote: Quote;
+    /**
+     * What the chosen options resolved to — names and prices, not just ids.
+     * Returned rather than re-derived by the caller: the checkout snapshots
+     * these onto the order and the subscription, and resolving them a second
+     * time somewhere else is how a snapshot starts describing a different
+     * configuration from the one that was priced.
+     */
+    selections: QuoteSelection[];
 };
 
 /**
@@ -189,7 +197,7 @@ export async function quoteProductDetail(
         quote.couponError = CODE_NOT_APPLICABLE;
     }
 
-    return { detail, quote };
+    return { detail, quote, selections };
 }
 
 /** The same thing starting from a product row. */

@@ -25,6 +25,10 @@
             "description": "Produkte, Preise und Zusatzleistungen — und die Funktion, die daraus einen Preis macht."
         },
         {
+            "name": "Bestellungen",
+            "description": "Der Kaufvorgang: eine Bestellung und alles, was in derselben Transaktion aus ihr entsteht — Abonnements, Leistungen und die erste Rechnung."
+        },
+        {
             "name": "Rechnungen",
             "description": "Rechnungen und ihre Positionen. Eine ausgestellte Rechnung ist unveränderlich; korrigiert wird über eine Rechnungskorrektur mit eigener Nummer."
         },
@@ -1316,6 +1320,659 @@
                     "items"
                 ],
                 "description": "Ein neuer Rechnungsentwurf. Er bekommt keine Nummer und keine Steuer — beides entsteht erst beim Ausstellen."
+            },
+            "OrderCreate": {
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Für welches Kundenkonto bestellt wird. Pflicht für einen Mitarbeiterschlüssel; bei einem Kundenschlüssel wird das Feld ignoriert und für dessen eigenes Konto bestellt.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "product_id": {
+                                    "type": "string",
+                                    "description": "Das Produkt — technische ID oder Kürzel.",
+                                    "example": "vps-m"
+                                },
+                                "cycle": {
+                                    "type": "string",
+                                    "enum": [
+                                        "monthly",
+                                        "quarterly",
+                                        "semiannual",
+                                        "annual",
+                                        "biennial",
+                                        "onetime"
+                                    ],
+                                    "description": "Der Abrechnungszeitraum. `onetime` ist ein einmaliger Verkauf ohne Verlängerung und ohne Testphase.",
+                                    "example": "monthly"
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "default": "EUR",
+                                    "description": "Währung nach ISO 4217.",
+                                    "example": "EUR"
+                                },
+                                "quantity": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 999,
+                                    "default": 1,
+                                    "description": "Wie viele Einheiten des Produkts.",
+                                    "example": 1
+                                },
+                                "options": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "option_id": {
+                                                "type": "string",
+                                                "description": "Welche Option gewählt wurde.",
+                                                "example": "configoption_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                            },
+                                            "value_id": {
+                                                "type": "string",
+                                                "description": "Welcher Wert dieser Option.",
+                                                "example": "configoptionvalue_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                            },
+                                            "quantity": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9999,
+                                                "default": 1,
+                                                "description": "Einheiten bei `quantity`-Optionen; bei `select` immer 1.",
+                                                "example": 1
+                                            }
+                                        },
+                                        "required": [
+                                            "option_id",
+                                            "value_id"
+                                        ]
+                                    },
+                                    "default": [],
+                                    "description": "Die gewählten Zusatzleistungen. Eine Option, die es nicht gibt, lässt die Bestellung scheitern statt übergangen zu werden."
+                                },
+                                "coupon_code": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "description": "Ein Gutscheincode für diese Position. Er wird bei der Bestellung eingelöst und zählt einmal je Bestellung, nicht je Position.",
+                                    "example": "WILLKOMMEN"
+                                }
+                            },
+                            "required": [
+                                "product_id",
+                                "cycle"
+                            ]
+                        },
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "description": "Was bestellt wird, Position für Position."
+                    },
+                    "payment_option": {
+                        "type": "string",
+                        "enum": [
+                            "bank_transfer"
+                        ],
+                        "description": "Wie bezahlt werden soll. Zurzeit nur `bank_transfer`; Stripe und PayPal folgen in Phase 5.",
+                        "example": "bank_transfer"
+                    },
+                    "auto_charge": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Ob wiederkehrende Beträge später automatisch eingezogen werden dürfen. Phase 5 wertet das aus.",
+                        "example": false
+                    },
+                    "accept_terms": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Bestätigung der AGB. Ohne sie wird die Bestellung mit 422 abgelehnt; die geltende Fassung wird mit Zeitstempel an der Bestellung gespeichert.",
+                        "example": true
+                    },
+                    "accept_withdrawal": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Bestätigung der Widerrufsbelehrung. Pflicht, wenn das Konto eine Privatperson ist; bei einer Firma ohne Bedeutung, denn ihr steht kein Widerrufsrecht zu.",
+                        "example": true
+                    },
+                    "request_immediate_start": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Das ausdrückliche Verlangen nach § 356 Abs. 4 BGB, vor Ablauf der Widerrufsfrist mit der Leistung zu beginnen. Pflicht für eine Privatperson.",
+                        "example": true
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Eine interne Notiz zur Bestellung.",
+                        "example": null
+                    }
+                },
+                "required": [
+                    "items",
+                    "payment_option"
+                ],
+                "description": "Eine Bestellung. Jeder Preis wird beim Anlegen neu aus dem Katalog berechnet — übermittelte Beträge gibt es nicht und würden auch nicht geglaubt."
+            },
+            "OrderItem": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Position.",
+                        "example": "orderitem_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "position": {
+                        "type": "integer",
+                        "description": "Laufende Nummer innerhalb der Bestellung.",
+                        "example": 1
+                    },
+                    "product_id": {
+                        "type": "string",
+                        "description": "Das bestellte Produkt.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Der Produktname zum Zeitpunkt der Bestellung.",
+                        "example": "VPS M"
+                    },
+                    "cycle": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semiannual",
+                            "annual",
+                            "biennial",
+                            "onetime"
+                        ],
+                        "description": "Der Abrechnungszeitraum. `onetime` ist ein einmaliger Verkauf ohne Verlängerung und ohne Testphase.",
+                        "example": "monthly"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "Währung aller Beträge dieser Position.",
+                        "example": "EUR"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "description": "Bestellte Einheiten.",
+                        "example": 1
+                    },
+                    "unit_price_cents": {
+                        "type": "integer",
+                        "description": "Grundpreis je Einheit und Zeitraum, in Cent.",
+                        "example": 1999
+                    },
+                    "setup_fee_cents": {
+                        "type": "integer",
+                        "description": "Einmalige Einrichtungsgebühr, in Cent.",
+                        "example": 1000
+                    },
+                    "trial_days": {
+                        "type": "integer",
+                        "description": "Freie Tage vor der ersten laufenden Abrechnung.",
+                        "example": 0
+                    },
+                    "recurring_gross_cents": {
+                        "type": "integer",
+                        "description": "Grundpreis und Optionen für einen Zeitraum, vor Gutschein.",
+                        "example": 2499
+                    },
+                    "recurring_discount_cents": {
+                        "type": "integer",
+                        "description": "Was der Gutschein von einem Zeitraum abzieht.",
+                        "example": 625
+                    },
+                    "first_period_cents": {
+                        "type": "integer",
+                        "description": "Was ein Zeitraum kostet, solange der Gutschein gilt.",
+                        "example": 1874
+                    },
+                    "renewal_cents": {
+                        "type": "integer",
+                        "description": "Was ein Zeitraum kostet, sobald er nicht mehr gilt.",
+                        "example": 2499
+                    },
+                    "setup_cents": {
+                        "type": "integer",
+                        "description": "Einrichtungsgebühren nach Gutschein, in Cent.",
+                        "example": 1000
+                    },
+                    "due_today_cents": {
+                        "type": "integer",
+                        "description": "Was diese Position auf die erste Rechnung gebracht hat — nach einer etwaigen anteiligen Berechnung. Die Summe über alle Positionen ist der Nettobetrag der Rechnung.",
+                        "example": 2874
+                    },
+                    "coupon_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der eingelöste Gutscheincode, sonst `null`.",
+                        "example": "WILLKOMMEN"
+                    },
+                    "discount_periods": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Für wie viele Zeiträume der Gutschein gilt. `null` heißt dauerhaft, `0` heißt: keiner angewandt.",
+                        "example": 1
+                    }
+                },
+                "required": [
+                    "id",
+                    "position",
+                    "product_id",
+                    "description",
+                    "cycle",
+                    "currency",
+                    "quantity",
+                    "unit_price_cents",
+                    "setup_fee_cents",
+                    "trial_days",
+                    "recurring_gross_cents",
+                    "recurring_discount_cents",
+                    "first_period_cents",
+                    "renewal_cents",
+                    "setup_cents",
+                    "due_today_cents",
+                    "coupon_code",
+                    "discount_periods"
+                ],
+                "description": "Eine Position der Bestellung."
+            },
+            "SubscriptionItem": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Abo-Position.",
+                        "example": "subscriptionitem_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "product_id": {
+                        "type": "string",
+                        "description": "Das Produkt, das abgerechnet wird.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Der Produktname zum Zeitpunkt des Verkaufs.",
+                        "example": "VPS M"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "description": "Abgerechnete Einheiten.",
+                        "example": 1
+                    },
+                    "unit_price_cents": {
+                        "type": "integer",
+                        "description": "Grundpreis je Einheit und Zeitraum, wie verkauft, in Cent.",
+                        "example": 1999
+                    },
+                    "recurring_gross_cents": {
+                        "type": "integer",
+                        "description": "Was diese Position je Zeitraum kostet, vor Gutschein — die Grundlage jeder Verlängerungsrechnung.",
+                        "example": 2499
+                    }
+                },
+                "required": [
+                    "id",
+                    "product_id",
+                    "description",
+                    "quantity",
+                    "unit_price_cents",
+                    "recurring_gross_cents"
+                ],
+                "description": "Eine Position eines Abonnements, mit Preisstand."
+            },
+            "Subscription": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Abonnements.",
+                        "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "trialing",
+                            "active",
+                            "past_due",
+                            "paused",
+                            "cancelled",
+                            "ended"
+                        ],
+                        "description": "`trialing` innerhalb der Testphase, `active` laufend, `past_due` mit offener Rechnung, `cancelled` gekündigt, `ended` beendet.",
+                        "example": "active"
+                    },
+                    "cycle": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semiannual",
+                            "annual",
+                            "biennial",
+                            "onetime"
+                        ],
+                        "description": "Der Abrechnungszeitraum. `onetime` ist ein einmaliger Verkauf ohne Verlängerung und ohne Testphase.",
+                        "example": "monthly"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "Währung des Abonnements nach ISO 4217.",
+                        "example": "EUR"
+                    },
+                    "current_period_start": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Beginn des bezahlten Zeitraums, in UTC.",
+                        "example": "2026-11-07T10:00:00.000Z"
+                    },
+                    "current_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende des bezahlten Zeitraums, in UTC — zugleich der Beginn des nächsten. `null` bei einem einmaligen Verkauf.",
+                        "example": "2026-12-07T10:00:00.000Z"
+                    },
+                    "next_billing_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann die nächste Rechnung fällig wird; `null`, wenn keine folgt.",
+                        "example": "2026-12-07T10:00:00.000Z"
+                    },
+                    "trial_ends_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende der Testphase, falls es eine gibt.",
+                        "example": null
+                    },
+                    "auto_charge": {
+                        "type": "boolean",
+                        "description": "Ob die Verlängerung automatisch eingezogen werden darf.",
+                        "example": false
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SubscriptionItem"
+                        },
+                        "description": "Was das Abonnement abrechnet."
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "cycle",
+                    "currency",
+                    "current_period_start",
+                    "current_period_end",
+                    "next_billing_at",
+                    "trial_ends_at",
+                    "auto_charge",
+                    "items"
+                ],
+                "description": "Ein Abonnement — die Abrechnungsvereinbarung selbst, nicht die eines Zahlungsdienstleisters."
+            },
+            "Service": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Leistung.",
+                        "example": "service_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "provisioning",
+                            "active",
+                            "suspended",
+                            "terminated"
+                        ],
+                        "description": "`pending` bestellt und noch nicht eingerichtet, `provisioning` in Einrichtung, `active` nutzbar, `suspended` gesperrt, `terminated` beendet.",
+                        "example": "pending"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Wie die Leistung dem Kunden gegenüber heißt.",
+                        "example": "VPS M"
+                    },
+                    "product_id": {
+                        "type": "string",
+                        "description": "Das Produkt, aus dem sie entstanden ist.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "subscription_item_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Abo-Position, die sie bezahlt.",
+                        "example": null
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "label",
+                    "product_id",
+                    "subscription_item_id"
+                ],
+                "description": "Eine bereitzustellende Leistung. In Phase 4 entsteht sie `pending`; eingerichtet wird sie ab Phase 8."
+            },
+            "Order": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Bestellung.",
+                        "example": "order_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "number": {
+                        "type": "string",
+                        "description": "Die Bestellnummer.",
+                        "example": "BS-2026-0001"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "active",
+                            "cancelled",
+                            "fraud"
+                        ],
+                        "description": "`pending` ist aufgegeben und noch nicht angenommen — es wird nichts bereitgestellt. `active` ist angenommen, `cancelled` storniert, `fraud` als Betrug abgelehnt.",
+                        "example": "pending"
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Das Kundenkonto, dem sie gehört.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "Währung aller Beträge nach ISO 4217.",
+                        "example": "EUR"
+                    },
+                    "net_cents": {
+                        "type": "integer",
+                        "description": "Nettobetrag der ersten Rechnung, in Cent. `0`, wenn keine ausgestellt wurde — etwa weil alles in der Testphase ist.",
+                        "example": 2999
+                    },
+                    "tax_cents": {
+                        "type": "integer",
+                        "description": "Steuerbetrag der ersten Rechnung, in Cent. Unter § 19 UStG 0.",
+                        "example": 0
+                    },
+                    "gross_cents": {
+                        "type": "integer",
+                        "description": "Bruttobetrag der ersten Rechnung, in Cent.",
+                        "example": 2999
+                    },
+                    "payment_option": {
+                        "type": "string",
+                        "enum": [
+                            "bank_transfer"
+                        ],
+                        "description": "Wie bezahlt werden soll. Zurzeit nur `bank_transfer`; Stripe und PayPal folgen in Phase 5.",
+                        "example": "bank_transfer"
+                    },
+                    "auto_charge": {
+                        "type": "boolean",
+                        "description": "Ob wiederkehrende Beträge automatisch eingezogen werden dürfen.",
+                        "example": false
+                    },
+                    "invoice_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die erste Rechnung, falls eine ausgestellt wurde.",
+                        "example": null
+                    },
+                    "invoice_number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Ihre Nummer.",
+                        "example": "RE-2026-0012"
+                    },
+                    "terms_version": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Die Fassung der AGB, die bei der Bestellung galt. `null`, solange keine veröffentlicht ist und die eingebaute Fassung gilt.",
+                        "example": 3
+                    },
+                    "terms_label": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Dieselbe Fassung in Worten, für Belege.",
+                        "example": "Fassung 3, gültig ab 1. Oktober 2026"
+                    },
+                    "terms_accepted_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Wann die AGB bestätigt wurden, in UTC.",
+                        "example": "2026-11-07T10:00:00.000Z"
+                    },
+                    "withdrawal_accepted_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann die Widerrufsbelehrung bestätigt wurde. `null` bei einer Firma, der kein Widerrufsrecht zusteht.",
+                        "example": "2026-11-07T10:00:00.000Z"
+                    },
+                    "is_consumer": {
+                        "type": "boolean",
+                        "description": "Ob das Konto bei der Bestellung eine Privatperson war.",
+                        "example": true
+                    },
+                    "placed_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Wann bestellt wurde, in UTC.",
+                        "example": "2026-11-07T10:00:00.000Z"
+                    },
+                    "accepted_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann die Bestellung angenommen wurde.",
+                        "example": null
+                    },
+                    "cancelled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie storniert oder abgelehnt wurde.",
+                        "example": null
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/OrderItem"
+                        },
+                        "description": "Die Positionen der Bestellung."
+                    },
+                    "subscriptions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Subscription"
+                        },
+                        "description": "Die Abonnements, die daraus entstanden sind — eines je Abrechnungsrhythmus."
+                    },
+                    "services": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Service"
+                        },
+                        "description": "Die Leistungen, die bereitzustellen sind."
+                    }
+                },
+                "required": [
+                    "id",
+                    "number",
+                    "status",
+                    "customer_id",
+                    "currency",
+                    "net_cents",
+                    "tax_cents",
+                    "gross_cents",
+                    "payment_option",
+                    "auto_charge",
+                    "invoice_id",
+                    "invoice_number",
+                    "terms_version",
+                    "terms_label",
+                    "terms_accepted_at",
+                    "withdrawal_accepted_at",
+                    "is_consumer",
+                    "placed_at",
+                    "accepted_at",
+                    "cancelled_at",
+                    "items",
+                    "subscriptions",
+                    "services"
+                ],
+                "description": "Eine Bestellung mit allem, was aus ihr entstanden ist: Positionen, Abonnements, Leistungen und die erste Rechnung."
             },
             "ProductPricing": {
                 "type": "object",
@@ -3101,6 +3758,181 @@
                                         "status",
                                         "detail"
                                     ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/orders": {
+            "post": {
+                "tags": [
+                    "Bestellungen"
+                ],
+                "summary": "Bestellung aufgeben",
+                "description": "Legt eine Bestellung an und führt sie in **einer** Transaktion aus: Bestellung und Positionen, je Abrechnungsrhythmus ein Abonnement mit eingefrorenen Preisen, für jede bereitzustellende Einheit eine Leistung im Zustand `pending`, und die erste Rechnung, ausgestellt mit fortlaufender Nummer und eingefrorenem Steuer-Snapshot. Fällt heute nichts an — etwa weil alles in der Testphase ist —, wird gar keine Rechnung ausgestellt statt einer über 0,00 €.\n\nJeder Preis wird dabei neu aus dem Katalog berechnet, von derselben Funktion, die den Shop-Preis anzeigt. Ein Gutscheincode wird eingelöst und zählt einmal je Bestellung.\n\nDie Bestätigung der AGB ist Pflicht, bei einer Privatperson zusätzlich die der Widerrufsbelehrung und das ausdrückliche Verlangen nach § 356 Abs. 4 BGB. Die geltende Fassung der AGB wird mit Zeitstempel an der Bestellung gespeichert. Benötigt `orders.write`; ein Kundenschlüssel darf das für sein eigenes Konto.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/OrderCreate"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Die angelegte Bestellung.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Order"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/orders/{id}": {
+            "get": {
+                "tags": [
+                    "Bestellungen"
+                ],
+                "summary": "Bestellung ansehen",
+                "description": "Eine Bestellung mit ihren Positionen, den Abonnements und den Leistungen, die aus ihr entstanden sind. Ein Kundenschlüssel sieht nur die eigenen; eine fremde Bestellung wird mit 404 beantwortet und nie mit 403, denn 403 würde bestätigen, dass es die ID gibt. Benötigt `orders.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID der Bestellung.",
+                            "example": "order_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID der Bestellung.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Die Bestellung.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Order"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
                                 }
                             }
                         }

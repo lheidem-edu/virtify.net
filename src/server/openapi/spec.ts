@@ -72,6 +72,13 @@ export function buildSpec() {
                     "die daraus einen Preis macht.",
             },
             {
+                name: "Bestellungen",
+                description:
+                    "Der Kaufvorgang: eine Bestellung und alles, was in " +
+                    "derselben Transaktion aus ihr entsteht — Abonnements, " +
+                    "Leistungen und die erste Rechnung.",
+            },
+            {
                 name: "Rechnungen",
                 description:
                     "Rechnungen und ihre Positionen. Eine ausgestellte " +

@@ -97,6 +97,13 @@ export const ID_PREFIX = {
     coupon: "coupon",
     taxMode: "taxmode",
     revenueNotice: "revenuenotice",
+    cart: "cart",
+    cartItem: "cartitem",
+    order: "order",
+    orderItem: "orderitem",
+    subscription: "subscription",
+    subscriptionItem: "subscriptionitem",
+    service: "service",
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIX)[keyof typeof ID_PREFIX];

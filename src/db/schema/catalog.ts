@@ -72,6 +72,20 @@ export const productStatus = pgEnum("product_status", [
     "retired",
 ]);
 
+/**
+ * Whether ordering a product sets its service up by itself.
+ *
+ * `manual` means a person accepts the order first, which is the right
+ * default: an order nobody looked at is how a stolen card becomes a running
+ * server. `auto_on_payment` is for products the operator is happy to hand
+ * out the moment the money arrives — Phase 5 is what notices the payment,
+ * Phase 8 what acts on it.
+ */
+export const provisioningMode = pgEnum("provisioning_mode", [
+    "manual",
+    "auto_on_payment",
+]);
+
 export const productGroup = pgTable(
     "product_group",
     {
@@ -130,6 +144,15 @@ export const product = pgTable(
 
         /** How many of this a single order may take. */
         maxQuantity: integer("max_quantity").notNull().default(1),
+
+        /**
+         * Auto-provision on payment, or wait for a person. Snapshotted onto
+         * every service at checkout, so changing it never reaches an order
+         * that has already been placed.
+         */
+        provisioningMode: provisioningMode("provisioning_mode")
+            .notNull()
+            .default("manual"),
 
         /** Rule 10: never hard-delete something an invoice could point at. */
         deletedAt: timestamp("deleted_at"),

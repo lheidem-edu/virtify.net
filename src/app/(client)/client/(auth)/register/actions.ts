@@ -46,14 +46,23 @@ export async function registerAccount(
     _previous: RegisterState,
     data: FormData,
 ): Promise<RegisterState> {
+    /**
+     * `FormData.get` answers `null` for a field the form did not render, and
+     * an optional zod string does not accept `null` — so a caller that
+     * leaves out the company field gets "expected string, received null"
+     * instead of a registration. The checkout's inline sign-up renders only
+     * name, address and password, which is exactly that case.
+     */
+    const field = (name: string) => data.get(name) ?? undefined;
+
     const parsed = schema.safeParse({
-        name: data.get("name"),
-        email: data.get("email"),
-        password: data.get("password"),
+        name: field("name"),
+        email: field("email"),
+        password: field("password"),
         kind: String(data.get("kind") ?? "private"),
-        company: data.get("company"),
+        company: field("company"),
         country: String(data.get("country") ?? "DE") || "DE",
-        vatId: data.get("vatId"),
+        vatId: field("vatId"),
     });
 
     if (!parsed.success) {

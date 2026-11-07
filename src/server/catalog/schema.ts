@@ -133,6 +133,13 @@ export const productInputSchema = z.object({
         .default("none"),
     moduleConfig: z.record(z.string(), z.unknown()).default({}),
     maxQuantity: z.number().int().min(1).max(999).default(1),
+    /**
+     * Optional rather than defaulted, so every existing caller that builds a
+     * `ProductInput` by hand keeps compiling and the column's own default —
+     * `manual`, the safe one — applies when nothing is said. A product that
+     * provisions itself is a decision somebody has to make on purpose.
+     */
+    provisioningMode: z.enum(["manual", "auto_on_payment"]).optional(),
 });
 
 export type ProductInput = z.infer<typeof productInputSchema>;

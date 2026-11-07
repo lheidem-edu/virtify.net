@@ -35,6 +35,8 @@ export type Settings = {
         paymentTermDays: number;
         dataRetrievalDays: number;
         securityMaintenanceNoticeHours: number;
+        /** 1–28, or 0 to bill on the day of the order. */
+        billingAnchorDay: number;
     };
     revenue: {
         kleinunternehmerPreviousLimitCents: number;
@@ -114,6 +116,7 @@ export const loadSettings = cache(async (): Promise<Settings> => {
             paymentTermDays: row.paymentTermDays,
             dataRetrievalDays: row.dataRetrievalDays,
             securityMaintenanceNoticeHours: row.securityMaintenanceNoticeHours,
+            billingAnchorDay: row.billingAnchorDay,
         },
         revenue: {
             kleinunternehmerPreviousLimitCents:

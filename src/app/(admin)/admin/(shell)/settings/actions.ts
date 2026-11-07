@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
 import { requirePermission } from "@/server/auth/staff-session";
+import { MAX_ANCHOR_DAY } from "@/server/billing/periods";
 import { SETTINGS_ID } from "@/server/settings";
 
 export type SettingsState = {
@@ -40,6 +41,14 @@ const NUMBER_FIELDS = [
     "dataRetrievalDays",
     "securityMaintenanceNoticeHours",
 ] as const;
+
+/**
+ * The day of the month every subscription is billed on, or 0 for "on the day
+ * it was ordered". Checked apart from the other numbers because its range is
+ * a rule rather than a preference: 29, 30 and 31 do not exist in every month,
+ * and a billing day that silently moves is one nobody can reconcile.
+ */
+const BILLING_ANCHOR_FIELD = "billingAnchorDay";
 
 /**
  * The operator's own details. Everything here is quoted somewhere a customer
@@ -98,6 +107,17 @@ export async function saveSettings(
 
         values[field] = value;
     }
+
+    const anchor = Number.parseInt(read(BILLING_ANCHOR_FIELD), 10);
+
+    if (!Number.isInteger(anchor) || anchor < 0 || anchor > MAX_ANCHOR_DAY) {
+        return {
+            status: "error",
+            message: `Der Abrechnungstag muss zwischen 1 und ${MAX_ANCHOR_DAY} liegen — oder 0 für „am Bestelltag“.`,
+        };
+    }
+
+    values[BILLING_ANCHOR_FIELD] = anchor;
 
     try {
         await db

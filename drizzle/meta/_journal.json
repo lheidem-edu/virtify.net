@@ -134,6 +134,13 @@
       "when": 1794048695925,
       "tag": "0018_watchful_wild_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794054763426,
+      "tag": "0019_cart_orders_subscriptions",
+      "breakpoints": true
     }
   ]
 }

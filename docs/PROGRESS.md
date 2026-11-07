@@ -585,15 +585,152 @@ Still open in this phase:
 - [ ] The operator's Steuernummer is a settings field and is still empty on a fresh
       installation. § 14 Abs. 4 Nr. 2 UStG wants it or the USt-IdNr.; the USt-IdNr. is filled.
 
-## Phases 4–11
+## Phase 4 — Cart, checkout, orders · done
+
+`npm run typecheck`, `npm run lint` and `npm run test` (360 tests) are green, the app builds,
+`public/openapi.json` is regenerated, and the whole path — product page → cart → guest checkout
+→ sign-in → order → invoice → admin decision — was clicked through against the dev database.
+
+**Something can be bought now.** The chain is cart → order → subscription → service → invoice,
+and it is written in **one transaction**.
+
+- [x] `cart` + `cart_item`, migration `0019`. **A cart stores a configuration, never a price**:
+      which product, which cycle, which options, how many, and a coupon code. Every figure it
+      shows is produced by `quoteProductDetail()` at the moment it is shown, so there is no
+      stored total to go stale and nothing a browser could have written. A guest cart is
+      reachable by exactly one thing — a 32-byte secret in an httpOnly cookie, stored **hashed**
+      the way an API key is — so one guest's cookie can never reach another's cart, and the
+      row's ULID is not a credential.
+- [x] **Merge on sign-in.** `claimCartForCustomer()` runs in a transaction on whatever page is
+      rendered next: with no cart of their own the guest cart simply becomes the account's, with
+      one the items are moved and the guest cart is closed as `merged` so the move stays
+      visible. A cart that belongs to *another* account is never claimed — a shared browser must
+      not carry one customer's basket into another's. Idempotent, because the page it runs on
+      may be rendered twice.
+- [x] `order` + `order_item`, numbered `BS-{YEAR}-{0000}` from the same gapless counter the
+      documents use. The order stores what was agreed — per item the catalog cell, the quote's
+      totals, the coupon and the full line breakdown — plus the accepted AGB **fassung** with
+      its timestamp, the Widerrufsbelehrung and the § 356 Abs. 4 BGB request, the chosen payment
+      option, the auto-charge opt-in, and the IP and user agent as evidence.
+- [x] `subscription` + `subscription_item` with the price snapshot a renewal will need, and
+      `service` rows in `pending` — one per ordered unit, because three VPS are three machines.
+      `service.credentials_encrypted` exists for Phase 8 to put secrets in (rule 6); nothing
+      writes it yet.
+- [x] **The first invoice goes through Phase 3's engine, not beside it.** `finalizeInvoice` was
+      split into `finalizeInvoiceIn(tx, …)` and a wrapper, so the checkout hands in its own
+      transaction and the tax strategy is still resolved by the finalization date, the snapshot
+      still frozen, the number still taken under the counter's row lock. There is no second
+      finalization path. The PDF is rendered after the commit, as everywhere else.
+- [x] `product.provisioning_mode` (`manual` | `auto_on_payment`), snapshotted onto every service
+      so changing a product cannot change an order already placed. `site_setting.billing_anchor_day`
+      (0–28) switches billing-day alignment on.
+- [x] Storefront: "In den Warenkorb" on the product page, `/cart` (quantity, coupon, remove) and
+      `/checkout` with inline sign-in **and** sign-up, the billing address, the three
+      confirmations, bank transfer and the auto-charge opt-in.
+- [x] `/client/orders` and `/client/orders/{id}` — the page the checkout lands on.
+      `/admin/orders` with a status filter, `/admin/orders/{id}` with accept, cancel and mark
+      fraud behind `orders.write`.
+- [x] API: `POST /api/v1/orders` and `GET /api/v1/orders/{id}` under the `Bestellungen` tag.
+      The POST creates and fills a cart **inside the same transaction** that checks it out, so
+      the API and the storefront take the identical path and a refused call leaves nothing
+      behind. New permissions `orders.read` / `orders.write`, both in `CUSTOMER_SCOPES` — a
+      customer key orders for its own account and `customer_id` is ignored for it.
+
+**Tests (61 new, 360 in all).**
+
+- `tests/unit/periods.test.ts` — months added on the Berlin calendar with the day clamped
+  (31.01. + 1 = 28.02.), the wall-clock time kept across a DST change, the two clock-change days
+  counted as one day each, the anchor as the next occurrence strictly after the instant, and
+  proration with concrete cents (1 of 30 days of 19,99 € → 0,67 €; 24 of 365 of 199,90 € →
+  13,14 €; exactly half → 10,00 €, rounded away from zero on both signs).
+- `tests/unit/order-lines.test.ts` — what a quote puts on the first invoice: the period and the
+  setup fee on day one, the quantity kept on the line and multiplied once, a trial contributing
+  only its one-off lines, a trial with no setup fee contributing **none**, the discount as its
+  own negative line, the fixed coupon's one budget across both sides, proration on the recurring
+  lines and only those, and the UN/ECE unit code per cycle. Every case also asserts that the
+  lines add up to `dueTodayCents`.
+- `tests/integration/orders.test.ts` — the order total **is** the invoice total and the per-item
+  figures add up to it; one subscription per rhythm with frozen prices; a service per unit and
+  none for a pure `subscription` product; a trial issuing no invoice and burning no invoice
+  number; proration against the anchor; a coupon redeemed once per order and refused when used
+  up; **two concurrent checkouts of one cart producing exactly one order**; a foreign cart
+  refused; the three confirmations; a Firma not being asked for a Widerruf; an incomplete
+  billing address refused; the four guest-cart cases; accept/cancel/fraud and their effect on
+  the subscriptions and services.
+- `tests/integration/orders-api.test.ts` — the two endpoints through the real handlers: 401, 403
+  without `orders.write`, a customer key's `customer_id` ignored, a staff key required to name
+  one, 422 naming the field, a foreign order 404 and never 403, and the PDF stored after the
+  commit.
+
+Decided in this phase, open to being overruled:
+
+- **A coupon belongs to a cart item, not to the cart.** `calculateQuote()` discounts one
+  configured product; a cart-level coupon would need a second arithmetic to spread a fixed
+  amount over several items, which is the one thing this codebase does not allow itself. One
+  order redeems a code once however many lines carry it.
+- **A code that was typed in but is not on the quote stops the order.** Both the cart and the
+  checkout reprice on every render, so the customer normally watches it fall away — what is left
+  is the race, and charging the undiscounted price there would be the panel quietly taking more
+  than the screen said a moment earlier.
+- **Subscriptions are grouped by rhythm, not merely by cycle:** cycle × currency × trial days ×
+  coupon. With no coupon and no trial that is exactly "one subscription per billing cycle", which
+  is what the plan asks. The other two parts are rhythm too — a subscription has one
+  `trial_ends_at` and one discount counter, so two items whose free days or whose coupon differ
+  cannot share one without one of them being billed on the other's schedule.
+- **A one-off sale still gets a subscription**, with `next_billing_at` null. It is what owns the
+  service and records what was bought; the alternative is a second kind of parent for a service
+  and two code paths through the checkout.
+- **An order whose first charge is zero issues no invoice at all**, rather than one over 0,00 €.
+  The subscription carries the obligation and the first invoice comes when the trial ends.
+- **The billing anchor applies to every cycle, annual included**, and there is no minimum length:
+  ordering on the 31st with the anchor on the 1st buys one day and is charged for one day.
+  Aligning only short cycles would be a rule with no principle behind it, and rolling a stub into
+  the next period would charge for a month that was not agreed.
+- **Proration is applied to the unit price, not to the line total**, so the line still says how
+  many of the thing was bought and its own multiplication still adds up to its net.
+- **A consumer is asked for the § 356 Abs. 4 BGB request as well**, because the service starts
+  immediately; a Firma is asked for neither that nor the Widerrufsbelehrung (§ 312g i. V. m.
+  § 13 BGB) and both columns stay null, with `is_consumer` snapshotted on the order.
+- **Accepting an order does not touch its invoice, and neither does marking it fraud.** A
+  finalized invoice is cancelled by a Rechnungskorrektur and by nothing else (rule 3), so the
+  admin is told to issue one rather than having one issued under a button that says "stornieren".
+  Fraud does cancel the subscriptions and terminate the services.
+- **The marketing header's cart link carries no count.** Reading the cart cookie there would make
+  every page of the storefront — the legal texts included — dynamic for the sake of a badge.
+- **A cart is not audited.** Rule 8 lists customers, subscriptions, services, invoices, payments,
+  tickets and settings; a basket is none of those. `order.place` and every decision are.
+
+Found while building, and fixed:
+
+- **The inline sign-up at the checkout could not register anybody.** `registerAccount` read
+  `company` and `vatId` with `data.get(…)`, which answers `null` for a field the form did not
+  render, and an optional zod string does not accept `null` — so a form carrying only name,
+  address and password got "expected string, received null" instead of an account. An absent
+  optional field is `undefined` now.
+- **Two fields on the product form were both labelled "Bereitstellung"** — the new approval mode
+  and the provisioning module. The first is "Einrichtung der Leistung" now.
+
+Still open in this phase:
+
+- [ ] **Nothing collects the money.** Bank transfer is the only payment option; the enum already
+      has `stripe` and `paypal` and `order.auto_charge` is stored and read by nobody. Phase 5.
+- [ ] **Nothing renews a subscription.** The periods, the price snapshots and
+      `discount_periods_remaining` are all written for Phase 6, and nothing advances them.
+- [ ] **A service never leaves `pending`.** There is no module to run and no queue to run it in;
+      `provisioning_mode` is recorded so Phase 8 knows which ones it may take by itself.
+- [ ] **Abandoned carts are never swept.** `cart.last_seen_at` is written and nothing reads it.
+- [ ] **No `GET /api/v1/orders` list.** The plan asked for two endpoints and that is what is there.
+- [ ] The storefront's "Gemäß § 19 UStG …" note is still hard-coded in three places rather than
+      coming from the tax strategy. It is right today and wrong the day the switch is thrown.
+
+## Phases 5–11
 
 | Phase | State | Notes |
 |---|---|---|
-| 4 Cart, checkout, orders | not started | `contract` and `offer` exist and are created by hand in the admin area; there is no cart, no self-service order. |
 | 5 Payments | existing, partial | Stripe + PayPal, stored payment methods, off-session collection, webhooks with dedupe, settlement in one transaction. Missing: the `PaymentGateway` interface the plan asks for, bank transfer as a gateway, partial payments, overpayment → credit ledger, refunds, disputes, gateway credentials in encrypted settings. Settlement now also runs the § 19 threshold check. |
-| 6 Subscriptions, dunning | not started | No pg-boss, no renewal run, no dunning, no proration. `contract` carries the term arithmetic (`src/lib/documents/contract-term.ts`) but nothing bills it automatically. |
+| 6 Subscriptions, dunning | not started | No pg-boss, no renewal run, no dunning. Phase 4 wrote the `subscription` table, the period arithmetic (`src/server/billing/periods.ts`, with proration) and the price snapshots a renewal needs; nothing advances them. The older `contract` table still exists beside it and is created by hand. |
 | 7 Ticketing (M365 Graph) | not started | Mail goes out over SMTP via nodemailer. |
-| 8 Provisioning (Proxmox) | not started | Phase 2 put the registry interface and the `none` module in `src/server/provisioning`; the lifecycle methods and the Proxmox module are this phase's. |
+| 8 Provisioning (Proxmox) | not started | Phase 2 put the registry interface and the `none` module in `src/server/provisioning`; Phase 4 added the `service` table, which fills with `pending` rows and never empties. The lifecycle methods and the Proxmox module are this phase's. |
 | 9 Client portal polish, i18n | not started | German only, no i18n layer, no `email_templates`. |
 | 10 Reports, webhooks, API | not started | |
 | 11 Hardening, deploy | not started | |

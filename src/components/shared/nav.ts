@@ -7,6 +7,7 @@
  */
 export const ACCOUNT_NAV = [
     { href: "/client", label: "Übersicht", icon: "layout-dashboard" },
+    { href: "/client/orders", label: "Bestellungen", icon: "shopping-cart" },
     { href: "/client/contracts", label: "Verträge", icon: "file-text" },
     { href: "/client/offers", label: "Angebote", icon: "file-signature" },
     { href: "/client/invoices", label: "Rechnungen", icon: "receipt" },
@@ -27,6 +28,7 @@ export const ADMIN_NAV = [
     { href: "/admin", label: "Übersicht", icon: "layout-dashboard" },
     { href: "/admin/customers", label: "Kunden", icon: "users" },
     { href: "/admin/catalog", label: "Katalog", icon: "package" },
+    { href: "/admin/orders", label: "Bestellungen", icon: "shopping-cart" },
     { href: "/admin/contracts", label: "Verträge", icon: "file-text" },
     { href: "/admin/offers", label: "Angebote", icon: "file-signature" },
     { href: "/admin/invoices", label: "Rechnungen", icon: "receipt" },

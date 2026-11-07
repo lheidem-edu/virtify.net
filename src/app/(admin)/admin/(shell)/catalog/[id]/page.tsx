@@ -107,6 +107,7 @@ export default async function Page({
                         name: product.name,
                         type: product.type,
                         status: product.status,
+                        provisioningMode: product.provisioningMode,
                         tagline: product.tagline ?? "",
                         description: product.description ?? "",
                         sortOrder: product.sortOrder,

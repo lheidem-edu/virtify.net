@@ -48,6 +48,11 @@ export const policy = {
     dataRetrievalDays: 14,
     /** Minimum notice for urgent security maintenance, in hours. */
     securityMaintenanceNoticeHours: 24,
+    /**
+     * Day of the month every subscription is billed on, 1–28; `0` bills on
+     * the day of the order. See the settings schema.
+     */
+    billingAnchorDay: 0,
 } as const;
 
 /**

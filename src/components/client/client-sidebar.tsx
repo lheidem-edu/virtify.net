@@ -11,6 +11,7 @@ import {
     Scale,
     Settings,
     Shield,
+    ShoppingCart,
     User,
     UserCog,
     Users,
@@ -52,6 +53,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     shield: Shield,
     users: Users,
     key: KeyRound,
+    "shopping-cart": ShoppingCart,
 };
 
 function NavGroup({

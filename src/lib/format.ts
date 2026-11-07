@@ -158,3 +158,57 @@ export function formatDateRange(
 
     return `${from} – ${formatDate(end)}`;
 }
+
+export const ORDER_STATUS_LABEL = {
+    pending: "Offen",
+    active: "Angenommen",
+    cancelled: "Storniert",
+    fraud: "Betrug",
+} as const;
+
+export const ORDER_STATUS_TONE = {
+    pending: "warning",
+    active: "positive",
+    cancelled: "muted",
+    fraud: "muted",
+} as const;
+
+export const SUBSCRIPTION_STATUS_LABEL = {
+    trialing: "Testphase",
+    active: "Aktiv",
+    past_due: "Überfällig",
+    paused: "Pausiert",
+    cancelled: "Gekündigt",
+    ended: "Beendet",
+} as const;
+
+export const SUBSCRIPTION_STATUS_TONE = {
+    trialing: "warning",
+    active: "positive",
+    past_due: "warning",
+    paused: "neutral",
+    cancelled: "muted",
+    ended: "muted",
+} as const;
+
+export const SERVICE_STATUS_LABEL = {
+    pending: "Wartet",
+    provisioning: "In Einrichtung",
+    active: "Aktiv",
+    suspended: "Gesperrt",
+    terminated: "Beendet",
+} as const;
+
+export const SERVICE_STATUS_TONE = {
+    pending: "warning",
+    provisioning: "warning",
+    active: "positive",
+    suspended: "warning",
+    terminated: "muted",
+} as const;
+
+export const PAYMENT_OPTION_LABEL = {
+    bank_transfer: "Überweisung",
+    stripe: "Karte (Stripe)",
+    paypal: "PayPal",
+} as const;

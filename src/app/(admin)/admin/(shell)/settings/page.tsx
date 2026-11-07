@@ -55,6 +55,7 @@ export default async function Page() {
                         logRetentionDays: policy.logRetentionDays,
                         paymentTermDays: policy.paymentTermDays,
                         dataRetrievalDays: policy.dataRetrievalDays,
+                        billingAnchorDay: policy.billingAnchorDay,
                         securityMaintenanceNoticeHours:
                             policy.securityMaintenanceNoticeHours,
                     }}

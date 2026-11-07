@@ -68,5 +68,18 @@ export const siteSetting = pgTable("site_setting", {
      */
     revenueBasis: text("revenue_basis").notNull().default("service"),
 
+    /**
+     * The day of the month every subscription is to be billed on, 1–28, or
+     * `0` for "bill on the day it was ordered".
+     *
+     * With an anchor set, a subscription's first period is short and charged
+     * pro rata, and every period after it runs anchor to anchor — which is
+     * what makes one invoice run per month possible instead of one per
+     * customer per day. Capped at 28 because the 29th, 30th and 31st do not
+     * exist in every month, and a billing day that silently moves is a
+     * billing day nobody can reconcile.
+     */
+    billingAnchorDay: integer("billing_anchor_day").notNull().default(0),
+
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -196,6 +196,13 @@ export default function SettingsForm({
                         type="number"
                     />
                     <Field
+                        id="billingAnchorDay"
+                        label="Abrechnungstag im Monat (0 = am Bestelltag)"
+                        defaultValue={values.billingAnchorDay}
+                        type="number"
+                        help="1 bis 28. Mit einem Abrechnungstag wird der erste Zeitraum anteilig berechnet und danach läuft jeder Zeitraum von Stichtag zu Stichtag."
+                    />
+                    <Field
                         id="securityMaintenanceNoticeHours"
                         label="Vorlauf für Sicherheitswartung in Stunden"
                         defaultValue={values.securityMaintenanceNoticeHours}
