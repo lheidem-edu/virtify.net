@@ -1,5 +1,12 @@
 import type { BillingCycle } from "@/db/schema/catalog";
-import { add, basisPoints, format, multiply, subtract } from "@/lib/money";
+import {
+    add,
+    basisPoints,
+    format,
+    multiply,
+    prorate,
+    subtract,
+} from "@/lib/money";
 
 /**
  * The one price function.
@@ -70,6 +77,15 @@ export type QuoteInput = {
     coupon?: QuoteCoupon | null;
     /** Defaults to now; passed in by tests and by anything with a fake clock. */
     now?: Date;
+    /**
+     * The short first period, when the operator aligns billing to a fixed day
+     * of the month. Prorating belongs **here** and not in whatever builds the
+     * invoice later: the figure under "Heute fällig" and the figure on the
+     * first invoice have to be the same number, and they only are if one
+     * function produces both. Leaving it out bills a whole period, which is
+     * what happens with no billing anchor set.
+     */
+    firstPeriod?: { usedDays: number; periodDays: number; prorated: boolean };
 };
 
 export type QuoteLine = {
@@ -79,6 +95,12 @@ export type QuoteLine = {
     quantity: number;
     unitAmountCents: number;
     amountCents: number;
+    /**
+     * The unit amount for a *whole* period. Equal to `unitAmountCents`
+     * except on a first period cut short to reach the billing anchor, where
+     * that one is prorated and this one is what every period after it costs.
+     */
+    periodUnitAmountCents?: number;
     /** `true`: every period. `false`: once, at the start. */
     recurring: boolean;
     optionId?: string;
@@ -305,6 +327,55 @@ export function calculateQuote(input: QuoteInput): Quote {
         }
     }
 
+    /**
+     * A first period cut short to reach the billing anchor is charged for the
+     * days it covers. The **unit** price is prorated, not the line total, so
+     * the line still reads "2 × 9,67 €" and its own multiplication still adds
+     * up to its net — the property `calculateTotals` relies on when it
+     * recomputes the invoice.
+     *
+     * It happens before the coupon, deliberately: a fixed-amount code is then
+     * capped by `discountOn` against the amount actually being charged, so a
+     * 20,00 € code on a one-day stub cannot discount more than the stub costs
+     * and drive a finalized invoice negative.
+     */
+    const period = input.firstPeriod;
+
+    /**
+     * What a whole period costs, before any of it is cut away. Every period
+     * after the first is a whole one, so this — and not the prorated figure
+     * — is what "Danach je Zeitraum" and the subscription's own price
+     * snapshot are.
+     */
+    const wholePeriodGrossCents = add(
+        ...lines
+            .filter((line) => line.kind === "base" || line.kind === "option")
+            .map((line) => line.amountCents),
+    );
+
+    for (const line of lines) {
+        // What a whole period of this line costs, kept beside what is being
+        // charged for the short one: the subscription renews at the former,
+        // and a snapshot that took the stub's price would bill 15,99 € a
+        // month for ever on a 19,99 € tariff.
+        line.periodUnitAmountCents = line.unitAmountCents;
+    }
+
+    if (period?.prorated && period.periodDays > 0) {
+        for (const line of lines) {
+            if (line.kind !== "base" && line.kind !== "option") {
+                continue;
+            }
+
+            line.unitAmountCents = prorate(
+                line.unitAmountCents,
+                period.usedDays,
+                period.periodDays,
+            );
+            line.amountCents = multiply(line.unitAmountCents, line.quantity);
+        }
+    }
+
     const recurringGrossCents = add(
         ...lines
             .filter((line) => line.kind === "base" || line.kind === "option")
@@ -423,8 +494,14 @@ export function calculateQuote(input: QuoteInput): Quote {
     const renewalCents = oneOff
         ? 0
         : applied?.duration === "forever"
-          ? firstPeriodCents
-          : recurringGrossCents;
+          ? // A code that runs forever keeps discounting, but a short first
+            // period is short only once: the renewal is the whole period
+            // less the discount that whole period would attract.
+            subtract(
+                wholePeriodGrossCents,
+                discountOn(wholePeriodGrossCents, applied),
+            )
+          : wholePeriodGrossCents;
 
     /**
      * The trial defers the period, not the setup fee: the work of setting the
@@ -450,7 +527,14 @@ export function calculateQuote(input: QuoteInput): Quote {
         totals: {
             currency: pricing.currency,
             cycle: pricing.cycle,
-            recurringGrossCents,
+            /**
+             * What a *whole* period of the recurring lines costs, before any
+             * coupon and before a short first period is cut out of it. It is
+             * what a subscription renews at, which is why it is this figure
+             * and not the stub's — `firstPeriodCents` is the one being
+             * charged today.
+             */
+            recurringGrossCents: wholePeriodGrossCents,
             recurringDiscountCents,
             firstPeriodCents,
             renewalCents,

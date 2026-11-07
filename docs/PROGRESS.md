@@ -587,7 +587,7 @@ Still open in this phase:
 
 ## Phase 4 — Cart, checkout, orders · done
 
-`npm run typecheck`, `npm run lint` and `npm run test` (360 tests) are green, the app builds,
+`npm run typecheck`, `npm run lint` and `npm run test` (367 tests) are green, the app builds,
 `public/openapi.json` is regenerated, and the whole path — product page → cart → guest checkout
 → sign-in → order → invoice → admin decision — was clicked through against the dev database.
 
@@ -710,8 +710,76 @@ Found while building, and fixed:
 - **Two fields on the product form were both labelled "Bereitstellung"** — the new approval mode
   and the provisioning module. The first is "Einrichtung der Leistung" now.
 
+### Reviewed after the fact, and fixed
+
+Seven readers over the diff, every finding put to two skeptics told to refute it, the survivors
+re-derived by hand and the load-bearing ones reproduced against the running app. Nineteen
+candidates, fifteen survived, ten distinct defects — five lenses had independently found the
+same one. All ten are fixed; 367 tests, up from 360.
+
+- **The cart showed one price and the invoice charged another.** With a billing anchor set,
+  proration happened only when the invoice was built: the checkout printed "Heute fällig
+  29,99 €", the customer ticked the AGB box against that number, and the finalized invoice said
+  25,99 €. That is the one rule this panel is built around — one price, one function — and it
+  was broken on every surface at once, which is why five of the seven readers found it.
+  Proration now happens **in the quote** (`QuoteInput.firstPeriod`), so the configurator, the
+  cart, the checkout, `POST /api/v1/products/{id}/quote` and the invoice are one arithmetic.
+  `buildInvoiceLines` no longer prices anything at all.
+- **A coupon could drive a finalized invoice below zero.** The discount was computed on a whole
+  period while the base lines were prorated afterwards, so a code covering the full period came
+  out larger than the stub it was discounting: 10,00 € × 2 with a 20,00 € code on 30 November
+  finalized an invoice over **minus one cent**, with a gapless number on it. Computing the
+  discount after the proration caps it against what is actually being charged.
+- **A trial's first paid period was billed by nobody.** The subscription was written with
+  `next_billing_at` a whole cycle *after* the trial ended, while the checkout deliberately puts
+  no recurring line on any invoice during a trial. An annual tariff with 14 free days gave away
+  14 days and then a year: the order page said "nächste Abrechnung 21.11.2027" directly under a
+  cart that had promised the first charge after the free days. The current period is the trial
+  now, and the next invoice falls due the day it ends. Phase 6's renewal reads that column.
+- **The Leistungszeitraum claimed a day it did not cover.** `BillingPeriod.end` is exclusive —
+  the instant the next period begins — and was written unchanged into the line's service period,
+  so the PDF and the XRechnung's BG-26 both ran a day past the detail text beside them and
+  overlapped the next invoice. § 14 Abs. 4 Nr. 6 UStG wants the period the supply was rendered
+  in; the line now ends at the last instant it covers.
+- **An order placed on the anchor day was stamped "anteilig für 30 von 30 Tagen"** at the full
+  price, on an immutable document. `prorated` compared instants where it had to compare days.
+- **An order discounted to exactly 0,00 € still burned an invoice number.** The guard counted
+  lines, not cents, and a 100 % coupon leaves a base line and a discount line that cancel. The
+  schema's own comment had always said such an order issues no invoice; now it doesn't.
+- **`POST /api/v1/orders` answered an unknown `customer_id` with a bare 500.** The cart was
+  inserted before anything checked the account existed, so the foreign key fired before the
+  service's own sentence about it could. It is a documented 422 problem+json again.
+- **The order recorded an AGB fassung the buyer may never have seen.** The checkout resolved it
+  while rendering and the submit looked it up *again*, so a version published in between was
+  stored as accepted — on the document that is the evidence of the contract. The form carries
+  the fassung it printed, and an order whose terms moved underneath it stops and asks again.
+- **A line added mid-checkout was silently stranded.** The lock is on the `cart` row and
+  Postgres does not extend it to `cart_item`, so a second tab could insert a line that committed
+  into a cart about to be closed: the customer was told it was in the basket, the order did not
+  contain it, and their next basket was empty. The count is re-read under the lock now.
+- **On a phone the total sat below the order button.** The two columns only exist from `lg` up;
+  below it the grid collapsed in source order with the summary after the form. § 312j Abs. 2 BGB
+  wants the Gesamtpreis "unmittelbar bevor der Verbraucher seine Bestellung abgibt". The summary
+  comes first in the DOM and is moved back to the right-hand column by `order`.
+
+Two more came out of the fix itself and were caught in the browser, not by a test: with
+proration moved into the quote, "Danach je Zeitraum" and the subscription's own price snapshot
+both inherited the *stub's* price — a 19,99 € tariff renewing at 15,99 € for ever. A whole
+period is kept beside the short one (`QuoteLine.periodUnitAmountCents`) and is what renews.
+
+One finding was refuted and is recorded here because it is a fair question rather than a bug:
+the checkout **requires** a consumer to tick "ich verlange ausdrücklich den sofortigen
+Leistungsbeginn". § 356 Abs. 4 BGB frames that as the consumer's choice, so conditioning the
+sale on it is a policy decision, not a deviation from the withdrawal regime — the box is
+unticked by default, nothing shortens the 14 days, and the § 356 Abs. 4 confirmation that the
+right *lapses* is deliberately not collected. Worth a second opinion before go-live.
+
 Still open in this phase:
 
+- [ ] **The Widerrufsbelehrung has no version of its own.** The order stores the AGB document,
+      version and label; the Widerrufsbelehrung gets only a timestamp. Both links point at
+      `/terms` and one document covers both today, so the AGB version identifies it — but the
+      moment they become separate documents that stops being true.
 - [ ] **Nothing collects the money.** Bank transfer is the only payment option; the enum already
       has `stripe` and `paypal` and `order.auto_charge` is stored and read by nobody. Phase 5.
 - [ ] **Nothing renews a subscription.** The periods, the price snapshots and

@@ -1,7 +1,6 @@
 import type { BillingCycle } from "@/db/schema/catalog";
 import { multiply } from "@/lib/money";
 import type { BillingPeriod } from "@/server/billing/periods";
-import { proratedUnitPrice } from "@/server/billing/periods";
 import type { Quote, QuoteLine } from "@/server/billing/pricing";
 
 /**
@@ -59,10 +58,11 @@ export const ONE_OFF_UNIT = "C62";
  * A trial defers the *period*, not the setup fee — Phase 2's decision, and
  * what every panel this replaces does — so a trialing item contributes only
  * its one-off lines, and an item that is nothing but a trial contributes
- * none at all. When the first period was cut short to reach the billing
- * anchor, the recurring lines are prorated on the **unit price**, so the
- * line still says how many of the thing was bought and its own
- * multiplication still adds up to its net.
+ * none at all.
+ *
+ * It computes no amount of its own, not even a prorated one: a short first
+ * period is already priced in the quote this is handed, so the invoice says
+ * exactly what the checkout said.
  */
 export function buildInvoiceLines(
     quote: Quote,
@@ -91,7 +91,11 @@ function recurringLine(
     cycle: BillingCycle,
     period: BillingPeriod,
 ): BuiltLine {
-    const unitPriceCents = proratedUnitPrice(line.unitAmountCents, period);
+    // The amount is the quote's, untouched. Proration already happened there
+    // — see `QuoteInput.firstPeriod` — because the figure the customer
+    // confirmed and the figure on the invoice have to come out of one
+    // function. Prorating again here would halve a stub twice.
+    const unitPriceCents = line.unitAmountCents;
 
     return {
         description: line.label,
@@ -100,9 +104,24 @@ function recurringLine(
         unitCode: UNIT_CODE[cycle],
         unitPriceCents,
         servicePeriodStart: period.start,
-        servicePeriodEnd: period.end,
+        servicePeriodEnd: lastCoveredInstant(period),
         netCents: multiply(unitPriceCents, line.quantity),
     };
+}
+
+/**
+ * The last instant the period actually covers.
+ *
+ * `BillingPeriod.end` is exclusive — it is the instant the next period
+ * begins — so writing it as the line's Leistungszeitraum would claim a day
+ * the customer has not paid for, and the *next* invoice would claim it
+ * again. § 14 Abs. 4 Nr. 6 UStG wants the period the supply was rendered in,
+ * and EN 16931 BG-26 is read inclusively by every validator. `periodDetail`
+ * already prints the same corrected day; this is the machine-readable half
+ * of the statement saying the same thing.
+ */
+function lastCoveredInstant(period: BillingPeriod): Date | null {
+    return period.end ? new Date(period.end.getTime() - 1) : null;
 }
 
 function oneOffLine(line: QuoteLine): BuiltLine {

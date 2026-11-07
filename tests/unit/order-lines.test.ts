@@ -27,6 +27,13 @@ function quoteFor(options: {
     quantity?: number;
     coupon?: QuoteCoupon | null;
     cycle?: "monthly" | "annual" | "onetime";
+    /**
+     * A short first period. It is priced in the **quote** — see
+     * `QuoteInput.firstPeriod` — and not by `buildInvoiceLines`, because the
+     * figure the checkout shows and the figure on the invoice have to come
+     * out of one function.
+     */
+    period?: { usedDays: number; periodDays: number; prorated: boolean };
 }) {
     return calculateQuote({
         product: { id: "product_X", name: "VPS M" },
@@ -40,6 +47,7 @@ function quoteFor(options: {
         quantity: options.quantity ?? 1,
         coupon: options.coupon ?? null,
         now: NOW,
+        firstPeriod: options.period,
     });
 }
 
@@ -92,7 +100,11 @@ describe("the first invoice's lines", () => {
             netCents: 1999,
         });
         expect(lines[0].servicePeriodStart).toEqual(WHOLE_MONTH.start);
-        expect(lines[0].servicePeriodEnd).toEqual(WHOLE_MONTH.end);
+        // The last instant covered, not the exclusive end: the next period
+        // starts at WHOLE_MONTH.end and would otherwise claim the same day.
+        expect(lines[0].servicePeriodEnd).toEqual(
+            new Date((WHOLE_MONTH.end as Date).getTime() - 1),
+        );
 
         expect(lines[1]).toMatchObject({
             description: "Einrichtung: VPS M",
@@ -195,7 +207,11 @@ describe("the first invoice's lines", () => {
     });
 
     it("prorates the recurring lines, and only those", () => {
-        const quote = quoteFor({ priceCents: 1999, setupFeeCents: 1000 });
+        const quote = quoteFor({
+            priceCents: 1999,
+            setupFeeCents: 1000,
+            period: ANCHORED,
+        });
         const lines = buildInvoiceLines(quote, ANCHORED, { trialing: false });
 
         expect(ANCHORED.usedDays).toBe(24);
@@ -216,8 +232,34 @@ describe("the first invoice's lines", () => {
         expect(sum(lines)).toBe(2599);
     });
 
+    it("prorates only the first period, never the renewal", () => {
+        const quote = quoteFor({
+            priceCents: 1999,
+            setupFeeCents: 1000,
+            period: ANCHORED,
+        });
+
+        // 24 of 30 days today…
+        expect(quote.totals.dueTodayCents).toBe(2599);
+        expect(quote.totals.firstPeriodCents).toBe(1599);
+        // …and a whole period every time after that. A renewal that
+        // inherited the stub's price would quote 15,99 € a month for ever.
+        expect(quote.totals.renewalCents).toBe(1999);
+        // The same figure the subscription's price snapshot is taken from.
+        expect(quote.totals.recurringGrossCents).toBe(1999);
+
+        const base = quote.lines.find((line) => line.kind === "base");
+
+        expect(base?.unitAmountCents).toBe(1599);
+        expect(base?.periodUnitAmountCents).toBe(1999);
+    });
+
     it("prorates a discount line with the gross it belongs to", () => {
-        const quote = quoteFor({ priceCents: 1999, coupon: coupon({}) });
+        const quote = quoteFor({
+            priceCents: 1999,
+            coupon: coupon({}),
+            period: ANCHORED,
+        });
         const lines = buildInvoiceLines(quote, ANCHORED, { trialing: false });
 
         // 19,99 € × 24/30 → 15,99 €; 5,00 € × 24/30 = 4,00 € exactly.

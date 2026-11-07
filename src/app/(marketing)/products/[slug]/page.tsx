@@ -6,6 +6,7 @@ import { quoteProductDetail } from "@/server/billing/quote";
 import { serializeQuote } from "@/server/catalog/api";
 import { loadSellableProduct } from "@/server/catalog/lookup";
 import { cyclesOffered } from "@/server/catalog/repository";
+import { loadSettings } from "@/server/settings";
 import Configurator, { type OptionView } from "./configurator";
 
 export const dynamic = "force-dynamic";
@@ -96,13 +97,23 @@ export default async function Page({
             : [];
     });
 
-    const { quote } = await quoteProductDetail(db, detail, {
-        cycle: cycles[0],
-        currency: CURRENCY,
-        quantity: 1,
-        options: preselected,
-        couponCode: null,
-    });
+    // The billing anchor is part of what this costs today, so the
+    // configurator quotes with it — the same call the cart, the checkout and
+    // the first invoice make.
+    const settings = await loadSettings();
+
+    const { quote } = await quoteProductDetail(
+        db,
+        detail,
+        {
+            cycle: cycles[0],
+            currency: CURRENCY,
+            quantity: 1,
+            options: preselected,
+            couponCode: null,
+        },
+        { anchorDay: settings.policy.billingAnchorDay },
+    );
 
     return (
         <>

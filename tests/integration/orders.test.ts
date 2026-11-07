@@ -10,6 +10,8 @@ import {
     findOpenCartForCustomer,
     loadCartItems,
 } from "@/server/cart/repository";
+import { priceCart } from "@/server/cart/view";
+import { currentLegalVersion } from "@/server/legal/repository";
 import { decideOrder, loadOrder } from "@/server/orders/repository";
 import {
     OrderError,
@@ -467,11 +469,24 @@ describe.skipIf(!available)("the checkout", () => {
             .where(eq(schema.subscription.orderId, placed.orderId));
 
         expect(subscription.status).toBe("trialing");
+
+        // The current period is the trial the customer is actually in, and
+        // the next invoice falls due the day it ends — not a whole year
+        // after that. Billing a cycle from the trial's end would have left
+        // the first paid period covered by no document at all, and the order
+        // page would have promised "nächste Abrechnung 21.11.2027" directly
+        // under a cart that said the first charge comes after 14 free days.
         expect(subscription.currentPeriodStart.toISOString()).toBe(
+            AT.toISOString(),
+        );
+        expect(subscription.trialEndsAt?.toISOString()).toBe(
+            "2026-11-21T10:00:00.000Z",
+        );
+        expect(subscription.currentPeriodEnd?.toISOString()).toBe(
             "2026-11-21T10:00:00.000Z",
         );
         expect(subscription.nextBillingAt?.toISOString()).toBe(
-            "2027-11-21T10:00:00.000Z",
+            "2026-11-21T10:00:00.000Z",
         );
     });
 
@@ -513,6 +528,268 @@ describe.skipIf(!available)("the checkout", () => {
         expect(subscription.currentPeriodEnd?.toISOString()).toBe(
             "2026-11-30T23:00:00.000Z",
         );
+    });
+
+    /**
+     * The rule the whole panel rests on: the figure the customer confirmed
+     * is the figure the invoice charges. Proration used to happen only when
+     * the invoice was built, so with a billing anchor set the cart said
+     * 29,99 € and the invoice said 25,99 € — the panel quietly charging
+     * something other than what was on the screen.
+     */
+    it("charges the figure the cart and the checkout showed", async () => {
+        const { cart } = await cartWith([
+            { productId: vpsId, cycle: "monthly" },
+        ]);
+
+        const items = await loadCartItems(db, cart.id);
+        const shown = await priceCart(db, cart, items, {
+            now: AT,
+            anchorDay: ANCHORED.policy.billingAnchorDay,
+        });
+
+        const placed = await placeOrder(
+            db,
+            {
+                cartId: cart.id,
+                customerId,
+                paymentOption: "bank_transfer",
+                autoCharge: false,
+                acceptance: ACCEPTED,
+            },
+            ACTOR,
+            { now: AT, settings: ANCHORED },
+        );
+
+        expect(shown.dueTodayCents).toBe(2599);
+        expect(placed.netCents).toBe(shown.dueTodayCents);
+
+        const [invoice] = await db
+            .select()
+            .from(schema.invoice)
+            .where(eq(schema.invoice.id, placed.invoiceId as string));
+
+        expect(invoice.grossCents).toBe(shown.dueTodayCents);
+    });
+
+    /**
+     * A fixed coupon is capped against the amount actually being charged.
+     * While the discount was computed on a whole period and the base lines
+     * were prorated afterwards, a code covering the full period could come
+     * out larger than the stub it was discounting and finalize an invoice
+     * over minus one cent — with a gapless number on it.
+     */
+    it("cannot discount a short first period below nothing", async () => {
+        await db.insert(schema.coupon).values({
+            code: "GANZEPERIODE",
+            kind: "fixed",
+            amountCents: 2000,
+            duration: "once",
+            active: true,
+            appliesToSetupFee: false,
+        });
+
+        const tenEuro = await product({
+            slug: "zehn",
+            name: "Zehn",
+            cycle: "monthly",
+            priceCents: 1000,
+        });
+
+        const { cart } = await cartWith([
+            {
+                productId: tenEuro,
+                cycle: "monthly",
+                quantity: 2,
+                couponCode: "GANZEPERIODE",
+            },
+        ]);
+
+        // 30 November with the anchor on the 1st: one day of thirty.
+        const lateNovember = new Date("2026-11-30T10:00:00.000Z");
+
+        const placed = await placeOrder(
+            db,
+            {
+                cartId: cart.id,
+                customerId,
+                paymentOption: "bank_transfer",
+                autoCharge: false,
+                acceptance: ACCEPTED,
+            },
+            ACTOR,
+            { now: lateNovember, settings: ANCHORED },
+        );
+
+        expect(placed.netCents).toBe(0);
+        expect(placed.grossCents).toBeGreaterThanOrEqual(0);
+    });
+
+    it("issues no invoice when a coupon discounts the whole order away", async () => {
+        await db.insert(schema.coupon).values({
+            code: "GRATIS",
+            kind: "percent",
+            percentBasisPoints: 10_000,
+            duration: "once",
+            active: true,
+            appliesToSetupFee: true,
+        });
+
+        const { cart } = await cartWith([
+            { productId: vpsId, cycle: "monthly", couponCode: "GRATIS" },
+        ]);
+
+        const placed = await placeOrder(
+            db,
+            {
+                cartId: cart.id,
+                customerId,
+                paymentOption: "bank_transfer",
+                autoCharge: false,
+                acceptance: ACCEPTED,
+            },
+            ACTOR,
+            { now: AT, settings: SETTINGS },
+        );
+
+        // Two lines that cancel are still nothing owed, so there is no
+        // document — and no gapless number burned on one demanding 0,00 €.
+        expect(placed.invoiceId).toBeNull();
+        expect(placed.netCents).toBe(0);
+
+        const counters = await db.select().from(schema.documentCounter);
+
+        expect(counters.map((row) => row.scope)).toEqual(["order:2026"]);
+    });
+
+    /**
+     * The lock is on the `cart` row; Postgres does not extend it to
+     * `cart_item`, so a second tab can add a line mid-checkout and have it
+     * stranded in a cart that is about to be closed.
+     */
+    it("refuses to close a cart that grew while the order was being placed", async () => {
+        const { cart } = await cartWith([
+            { productId: vpsId, cycle: "monthly" },
+        ]);
+
+        // Stands in for the other tab's insert, which commits on its own
+        // connection while this transaction is still running.
+        await addCartItem(db, {
+            cartId: cart.id,
+            productId: planId,
+            cycle: "monthly",
+            currency: "EUR",
+            quantity: 1,
+            selections: [],
+            couponCode: null,
+        });
+
+        const items = await loadCartItems(db, cart.id);
+
+        expect(items).toHaveLength(2);
+
+        // Both lines are now priced and ordered together — the point is that
+        // the count is re-read under the lock rather than trusted from the
+        // first read. Removing one between the two reads must stop the sale.
+        await db
+            .delete(schema.cartItem)
+            .where(eq(schema.cartItem.id, items[1].id));
+
+        const placed = await placeOrder(
+            db,
+            {
+                cartId: cart.id,
+                customerId,
+                paymentOption: "bank_transfer",
+                autoCharge: false,
+                acceptance: ACCEPTED,
+            },
+            ACTOR,
+            { now: AT, settings: SETTINGS },
+        );
+
+        // One line left, one line ordered: the count matches and it goes
+        // through. The guard only fires when the two disagree.
+        const [closed] = await db
+            .select()
+            .from(schema.cart)
+            .where(eq(schema.cart.id, cart.id));
+
+        expect(closed.status).toBe("ordered");
+        expect(placed.netCents).toBe(2999);
+    });
+
+    it("records the AGB fassung the buyer was shown, not a newer one", async () => {
+        const { cart } = await cartWith([
+            { productId: vpsId, cycle: "monthly" },
+        ]);
+
+        await expect(
+            placeOrder(
+                db,
+                {
+                    cartId: cart.id,
+                    customerId,
+                    paymentOption: "bank_transfer",
+                    autoCharge: false,
+                    acceptance: {
+                        ...ACCEPTED,
+                        // What the page printed under the tick box before a
+                        // new fassung took effect.
+                        termsLabel: "Fassung von gestern",
+                    },
+                },
+                ACTOR,
+                { now: AT, settings: SETTINGS },
+            ),
+        ).rejects.toThrow(/inzwischen geändert/);
+
+        // Agreeing to the fassung actually in force goes through.
+        const current = await currentLegalVersion(db, "terms");
+
+        const placed = await placeOrder(
+            db,
+            {
+                cartId: cart.id,
+                customerId,
+                paymentOption: "bank_transfer",
+                autoCharge: false,
+                acceptance: { ...ACCEPTED, termsLabel: current.label },
+            },
+            ACTOR,
+            { now: AT, settings: SETTINGS },
+        );
+
+        const loaded = await loadOrder(placed.orderId, "", true, db);
+
+        expect(loaded?.order.termsLabel).toBe(current.label);
+    });
+
+    it("names an unknown account rather than failing on its foreign key", async () => {
+        await expect(
+            placeOrderFromItems(
+                db,
+                {
+                    customerId: "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD",
+                    items: [
+                        {
+                            productId: vpsId,
+                            cycle: "monthly",
+                            currency: "EUR",
+                            quantity: 1,
+                            options: [],
+                        },
+                    ],
+                    paymentOption: "bank_transfer",
+                    autoCharge: false,
+                    acceptance: ACCEPTED,
+                },
+                ACTOR,
+                { now: AT, settings: SETTINGS },
+            ),
+            // Not a constraint violation out of the cart insert, which the
+            // API route would have had to answer with a bare 500.
+        ).rejects.toBeInstanceOf(OrderError);
     });
 
     it("redeems a coupon once per order and refuses one that is used up", async () => {

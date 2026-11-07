@@ -6,6 +6,7 @@ import { serializeQuote } from "@/server/catalog/api";
 import { loadSellableProduct } from "@/server/catalog/lookup";
 import { CatalogError } from "@/server/catalog/repository";
 import { quoteRequestSchema } from "@/server/catalog/schema";
+import { loadSettings } from "@/server/settings";
 
 /**
  * The storefront's live price.
@@ -48,7 +49,12 @@ export async function requestQuote(input: unknown): Promise<QuoteView> {
     }
 
     try {
-        const { quote } = await quoteProductDetail(db, detail, parsed.data);
+        const settings = await loadSettings();
+        // The same billing anchor the cart and the checkout quote
+        // with, so one figure is shown everywhere.
+        const { quote } = await quoteProductDetail(db, detail, parsed.data, {
+            anchorDay: settings.policy.billingAnchorDay,
+        });
 
         return { ok: true, quote: serializeQuote(quote) };
     } catch (error) {

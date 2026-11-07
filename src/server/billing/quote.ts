@@ -1,7 +1,9 @@
 import type { BillingCycle } from "@/db/schema/catalog";
+import { firstPeriod } from "@/server/billing/periods";
 import {
     calculateQuote,
     type Quote,
+    type QuoteInput,
     type QuoteSelection,
 } from "@/server/billing/pricing";
 import {
@@ -144,12 +146,50 @@ function resolveSelections(
     return selections;
 }
 
+/**
+ * The operator's billing anchor, where the caller knows it.
+ *
+ * It belongs in the quote because it changes what is charged today: with an
+ * anchor set, the first period runs only as far as the next anchor day and
+ * is priced for those days. A caller that leaves it out gets a whole first
+ * period — which is the right answer when no anchor is configured, and the
+ * wrong one when there is, so every surface that shows "Heute fällig" has to
+ * pass it.
+ */
+export type QuoteContext = {
+    now?: Date;
+    /** 1–28, or 0 to bill from the day of the order. */
+    anchorDay?: number;
+};
+
+function periodFor(
+    cycle: BillingCycle,
+    context: QuoteContext,
+): QuoteInput["firstPeriod"] {
+    if (!context.anchorDay) {
+        return undefined;
+    }
+
+    const period = firstPeriod({
+        start: context.now ?? new Date(),
+        cycle,
+        anchorDay: context.anchorDay,
+    });
+
+    return {
+        usedDays: period.usedDays,
+        periodDays: period.periodDays,
+        prorated: period.prorated,
+    };
+}
+
 export async function quoteProductDetail(
     db: Executor,
     detail: ProductDetail,
     request: QuoteRequest,
-    now?: Date,
+    context: QuoteContext = {},
 ): Promise<QuoteResult> {
+    const now = context.now;
     const cell = detail.pricing.find(
         (row) =>
             row.cycle === (request.cycle as BillingCycle) &&
@@ -186,6 +226,7 @@ export async function quoteProductDetail(
         quantity: request.quantity,
         coupon: couponRow ? toQuoteCoupon(couponRow) : null,
         now,
+        firstPeriod: periodFor(cell.cycle, context),
     });
 
     // Every code that does not work gets the same answer, whatever the
@@ -205,7 +246,7 @@ export async function quoteProduct(
     db: Executor,
     product: ProductDetail["product"],
     request: QuoteRequest,
-    now?: Date,
+    context: QuoteContext = {},
 ): Promise<QuoteResult> {
     const detail = await loadProductDetail(db, product);
 
@@ -213,5 +254,5 @@ export async function quoteProduct(
         throw new CatalogError("Dieses Produkt gibt es nicht.");
     }
 
-    return quoteProductDetail(db, detail, request, now);
+    return quoteProductDetail(db, detail, request, context);
 }

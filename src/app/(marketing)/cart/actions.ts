@@ -13,6 +13,7 @@ import { currentCart, requireCart } from "@/server/cart/session";
 import { loadSellableProduct } from "@/server/catalog/lookup";
 import { CatalogError } from "@/server/catalog/repository";
 import { quoteRequestSchema } from "@/server/catalog/schema";
+import { loadSettings } from "@/server/settings";
 
 /**
  * The cart's writes.
@@ -60,7 +61,12 @@ export async function addToCart(input: unknown): Promise<CartActionResult> {
     try {
         // Priced before it is stored, so an impossible configuration is
         // refused while the customer is still looking at the form.
-        await quoteProductDetail(db, detail, parsed.data);
+        const settings = await loadSettings();
+        // The same billing anchor the cart and the checkout quote
+        // with, so one figure is shown everywhere.
+        await quoteProductDetail(db, detail, parsed.data, {
+            anchorDay: settings.policy.billingAnchorDay,
+        });
     } catch (error) {
         if (error instanceof CatalogError) {
             return { ok: false, message: error.message };

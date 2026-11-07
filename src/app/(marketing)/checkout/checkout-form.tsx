@@ -72,6 +72,9 @@ export default function CheckoutForm({
                     ))}
                 </div>
                 <input type="hidden" name="kind" value={kind} />
+                {/* The fassung this page printed, so the order records what
+                    was read rather than whatever is current at submit. */}
+                <input type="hidden" name="termsLabel" value={termsLabel} />
 
                 <div className="grid gap-6 sm:grid-cols-2">
                     <Field

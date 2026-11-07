@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
 import type { BillingCycle, CartItem, Customer, Product } from "@/db/schema";
-import { add } from "@/lib/money";
+import { add, multiply } from "@/lib/money";
 import { createId } from "@/lib/ulid";
 import { type Actor, audit } from "@/server/audit";
 import {
@@ -13,10 +13,11 @@ import {
 } from "@/server/billing/invoices/service";
 import { firstPeriod } from "@/server/billing/periods";
 import type { Quote, QuoteSelection } from "@/server/billing/pricing";
-import { CODE_NOT_APPLICABLE } from "@/server/billing/quote";
+import { CODE_NOT_APPLICABLE, type QuoteContext } from "@/server/billing/quote";
 import {
     addCartItem,
     closeCart,
+    countCartItems,
     createCart,
     loadCartItems,
     lockCart,
@@ -72,6 +73,7 @@ export type OrderErrorCode =
     | "cart-closed"
     | "cart-foreign"
     | "cart-empty"
+    | "cart-changed"
     | "item"
     | "coupon"
     | "customer"
@@ -91,6 +93,12 @@ export class OrderError extends Error {
 
 /** What the customer ticked and chose at the checkout. */
 export type OrderAcceptance = {
+    /**
+     * The label of the AGB fassung the checkout printed under the tick box.
+     * Null from a caller that never showed one — `/api/v1/orders`, where the
+     * key's owner is agreeing on their own account.
+     */
+    termsLabel?: string | null;
     /** AGB. Required of everybody. */
     terms: boolean;
     /** Widerrufsbelehrung. Required of a Verbraucher, meaningless to a Firma. */
@@ -269,7 +277,12 @@ async function placeOrderIn(
         throw new OrderError("cart-empty", "Der Warenkorb ist leer.");
     }
 
-    const entries = await priceEntries(tx, items, at);
+    // The same billing anchor the cart and the checkout quoted with, so the
+    // invoice charges the figure the customer confirmed.
+    const entries = await priceEntries(tx, items, {
+        now: at,
+        anchorDay: settings.policy.billingAnchorDay,
+    });
 
     for (const entry of entries) {
         if (entry.quote.totals.currency !== customer.currency) {
@@ -284,6 +297,27 @@ async function placeOrderIn(
     const isConsumer = customer.kind === "private";
 
     assertAcceptance(input.acceptance, isConsumer);
+
+    /**
+     * The fassung the buyer actually read, not the one that is current now.
+     *
+     * The checkout resolves the AGB while it renders and prints the label
+     * under the tick box; publishing a new version takes effect the moment
+     * its date arrives. Looking it up again here and storing *that* would
+     * record the customer as having accepted terms they were never shown —
+     * on an order that is the evidence of the contract. If it has moved
+     * between the page and the button, the order stops and the customer
+     * sees the new wording before agreeing to it.
+     */
+    if (
+        input.acceptance.termsLabel &&
+        input.acceptance.termsLabel !== terms.label
+    ) {
+        throw new OrderError(
+            "terms",
+            "Die Allgemeinen Geschäftsbedingungen wurden inzwischen geändert. Bitte lesen und bestätigen Sie die neue Fassung.",
+        );
+    }
 
     /**
      * A code that was typed into the cart but is not on the quote stops the
@@ -431,9 +465,22 @@ async function placeOrderIn(
             status: trialing ? "trialing" : "active",
             cycle,
             currency: lead.quote.totals.currency,
-            currentPeriodStart: billingStart,
-            currentPeriodEnd: period.end,
-            nextBillingAt: period.end,
+            /**
+             * The current period is the one the customer is in *now*, and
+             * `next_billing_at` is when the next invoice falls due — which
+             * for a trial is the day the free days end, not a whole cycle
+             * after that.
+             *
+             * Writing `billingStart + one cycle` here skipped the first paid
+             * period entirely: nothing had invoiced it (the checkout drops
+             * every recurring line while trialing) and nothing would, because
+             * the renewal run reads this column. The order page also told the
+             * customer "nächste Abrechnung" a year after the cart had
+             * promised the first charge right after the trial.
+             */
+            currentPeriodStart: at,
+            currentPeriodEnd: trialing ? billingStart : period.end,
+            nextBillingAt: trialing ? billingStart : period.end,
             trialEndsAt: trialing ? billingStart : null,
             autoCharge: input.autoCharge,
             couponId: lead.quote.coupon?.id ?? null,
@@ -521,7 +568,21 @@ async function placeOrderIn(
     let taxCents = 0;
     let grossCents = 0;
 
-    if (invoiceLines.length > 0) {
+    /**
+     * An order whose whole first charge is zero — everything on trial, or
+     * discounted to nothing — issues no invoice at all rather than a 0,00 €
+     * document, which is what `src/db/schema/orders.ts` has always said it
+     * does. Counting the lines was not the same test: a 100 % coupon leaves
+     * a base line and a discount line that cancel, so two lines summing to
+     * nothing burned a gapless number on a document demanding nothing.
+     */
+    const firstChargeCents = add(
+        ...invoiceLines.map((line) =>
+            multiply(line.unitPriceCents, line.quantity),
+        ),
+    );
+
+    if (invoiceLines.length > 0 && firstChargeCents !== 0) {
         const draft = await createInvoiceDraftIn(
             tx,
             {
@@ -556,6 +617,24 @@ async function placeOrderIn(
             updatedAt: at,
         })
         .where(eq(schema.order.id, orderId));
+
+    /**
+     * The lock is on the `cart` row, and Postgres does not extend it to
+     * `cart_item`: a second tab can insert a line while this order is being
+     * placed, and the insert commits happily. Closing the cart then strands
+     * that line in a cart nothing ever looks at again — the customer is told
+     * "liegt im Warenkorb", and their next basket is empty.
+     *
+     * Counting again under the lock catches it. Rolling the whole order back
+     * is the right answer rather than ordering the extra line: the customer
+     * confirmed a total that did not include it.
+     */
+    if ((await countCartItems(tx, cart.id)) !== items.length) {
+        throw new OrderError(
+            "cart-changed",
+            "Der Warenkorb hat sich während der Bestellung geändert. Bitte prüfen Sie ihn und bestellen Sie erneut.",
+        );
+    }
 
     await closeCart(tx, cart.id, { status: "ordered", orderId });
 
@@ -663,13 +742,19 @@ async function loadOrderingCustomer(
     return row;
 }
 
-/** The base price per period, as the catalog had it — from the quote's own
- *  base line, so it is the figure that was charged and not a second lookup. */
+/**
+ * The base price for a whole period, as the catalog had it — from the
+ * quote's own base line, so it is the figure that was quoted and not a
+ * second lookup.
+ *
+ * Deliberately the *whole* period and not what is being charged today: this
+ * is the subscription's price snapshot, and a first period cut short to
+ * reach the billing anchor is short exactly once.
+ */
 function unitPriceOf(entry: PricedEntry): number {
-    return (
-        entry.quote.lines.find((line) => line.kind === "base")
-            ?.unitAmountCents ?? 0
-    );
+    const base = entry.quote.lines.find((line) => line.kind === "base");
+
+    return base?.periodUnitAmountCents ?? base?.unitAmountCents ?? 0;
 }
 
 function setupFeeOf(entry: PricedEntry): number {
@@ -688,12 +773,12 @@ function setupFeeOf(entry: PricedEntry): number {
 async function priceEntries(
     tx: Tx,
     items: CartItem[],
-    at: Date,
+    context: QuoteContext,
 ): Promise<PricedEntry[]> {
     const entries: PricedEntry[] = [];
 
     for (const item of items) {
-        const priced = await priceCartItem(tx, item, at);
+        const priced = await priceCartItem(tx, item, context);
 
         if (!priced.quote || !priced.detail) {
             throw new OrderError(
@@ -753,6 +838,13 @@ export async function placeOrderFromItems(
     const finalizeOptions = await resolveFinalizeOptions({ now: at, settings });
 
     return db.transaction(async (tx) => {
+        // Before the cart, because the cart carries the foreign key: an
+        // unknown or soft-deleted account would otherwise surface as a
+        // constraint violation out of `createCart` — a 500 with Next's own
+        // body rather than the documented 422 problem+json, and the
+        // service's own sentence about it would never be reached.
+        await loadOrderingCustomer(tx, input.customerId);
+
         const { cart } = await createCart(tx, {
             customerId: input.customerId,
         });

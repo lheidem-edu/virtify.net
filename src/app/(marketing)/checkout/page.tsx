@@ -9,6 +9,7 @@ import { currentCart } from "@/server/cart/session";
 import { priceCart } from "@/server/cart/view";
 import { customerForUser } from "@/server/customers/repository";
 import { currentLegalVersion } from "@/server/legal/repository";
+import { loadSettings } from "@/server/settings";
 import CheckoutForm from "./checkout-form";
 import CheckoutIdentity from "./identity";
 
@@ -36,7 +37,13 @@ export default async function Page() {
         redirect("/cart");
     }
 
-    const priced = await priceCart(db, cart, items);
+    // The billing anchor belongs in the quote: with one set, the first
+    // period is short and is priced for the days it covers. Leaving it out
+    // here would print a figure the invoice then contradicts.
+    const settings = await loadSettings();
+    const priced = await priceCart(db, cart, items, {
+        anchorDay: settings.policy.billingAnchorDay,
+    });
 
     if (!priced.orderable) {
         // Something in the basket cannot be priced any more. The cart page
@@ -62,29 +69,18 @@ export default async function Page() {
             </section>
 
             <section className="px-6 py-16 md:px-10">
+                {/*
+                 * § 312j Abs. 2 BGB wants the Gesamtpreis and the wesentliche
+                 * Merkmale "unmittelbar bevor der Verbraucher seine Bestellung
+                 * abgibt". The two columns only exist from `lg` up; below it
+                 * the grid collapses in source order, so with the form first
+                 * a phone showed the total *under* the ordering button. The
+                 * summary therefore comes first in the DOM and is moved back
+                 * to the right-hand column by `order` once there are columns
+                 * to move it between.
+                 */}
                 <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_22rem]">
-                    <div>
-                        {account ? (
-                            <CheckoutForm
-                                customer={{
-                                    kind: account.customer.kind,
-                                    name: account.customer.name,
-                                    company: account.customer.company,
-                                    street: account.customer.street,
-                                    postalCode: account.customer.postalCode,
-                                    city: account.customer.city,
-                                    country: account.customer.country,
-                                    vatId: account.customer.vatId,
-                                    phone: account.customer.phone,
-                                }}
-                                termsLabel={terms.label}
-                            />
-                        ) : (
-                            <CheckoutIdentity />
-                        )}
-                    </div>
-
-                    <aside className="h-fit space-y-6 rounded-lg border p-6 lg:sticky lg:top-24">
+                    <aside className="h-fit space-y-6 rounded-lg border p-6 lg:order-2 lg:sticky lg:top-24">
                         <h2 className="text-sm font-medium tracking-tight">
                             Bestellung
                         </h2>
@@ -144,6 +140,27 @@ export default async function Page() {
                             </Link>
                         </p>
                     </aside>
+
+                    <div className="lg:order-1">
+                        {account ? (
+                            <CheckoutForm
+                                customer={{
+                                    kind: account.customer.kind,
+                                    name: account.customer.name,
+                                    company: account.customer.company,
+                                    street: account.customer.street,
+                                    postalCode: account.customer.postalCode,
+                                    city: account.customer.city,
+                                    country: account.customer.country,
+                                    vatId: account.customer.vatId,
+                                    phone: account.customer.phone,
+                                }}
+                                termsLabel={terms.label}
+                            />
+                        ) : (
+                            <CheckoutIdentity />
+                        )}
+                    </div>
                 </div>
             </section>
         </>

@@ -6,6 +6,7 @@ import { CYCLE_LABEL } from "@/server/billing/pricing";
 import { loadCartItems } from "@/server/cart/repository";
 import { currentCart } from "@/server/cart/session";
 import { priceCart } from "@/server/cart/view";
+import { loadSettings } from "@/server/settings";
 import CartLines from "./cart-lines";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,15 @@ export const metadata = {
 export default async function Page() {
     const cart = await currentCart();
     const items = cart ? await loadCartItems(db, cart.id) : [];
-    const priced = cart ? await priceCart(db, cart, items) : null;
+    // The billing anchor belongs in the quote: with one set, the first
+    // period is short and is priced for the days it covers. Leaving it out
+    // here would print a figure the invoice then contradicts.
+    const settings = await loadSettings();
+    const priced = cart
+        ? await priceCart(db, cart, items, {
+              anchorDay: settings.policy.billingAnchorDay,
+          })
+        : null;
 
     return (
         <>

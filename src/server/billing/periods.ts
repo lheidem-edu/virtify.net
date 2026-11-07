@@ -155,7 +155,16 @@ export function firstPeriod(input: {
         end,
         usedDays,
         periodDays,
-        prorated: end.getTime() !== full.getTime(),
+        /**
+         * Whether the customer is actually being charged for less than a
+         * period — in days, which is what the price is computed from, not in
+         * instants. An order placed on the anchor day itself at any time
+         * other than midnight ends a few hours short of a whole month but
+         * still covers all 30 of its days, and stamping that line "anteilig
+         * für 30 von 30 Tagen" at the full price on an immutable invoice is
+         * a sentence nobody can make sense of.
+         */
+        prorated: usedDays < periodDays,
     };
 }
 

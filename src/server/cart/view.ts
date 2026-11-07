@@ -1,7 +1,7 @@
 import type { BillingCycle, Cart, CartItem } from "@/db/schema";
 import { add } from "@/lib/money";
 import type { Quote, QuoteSelection } from "@/server/billing/pricing";
-import { quoteProductDetail } from "@/server/billing/quote";
+import { type QuoteContext, quoteProductDetail } from "@/server/billing/quote";
 import type { CartSelection } from "@/server/cart/repository";
 import { loadSellableProduct } from "@/server/catalog/lookup";
 import {
@@ -85,7 +85,7 @@ export function readSelections(value: unknown): CartSelection[] {
 export async function priceCartItem(
     db: Executor,
     item: CartItem,
-    now?: Date,
+    context: QuoteContext = {},
 ): Promise<CartEntry> {
     const detail = await loadSellableProduct(db, item.productId);
 
@@ -110,7 +110,7 @@ export async function priceCartItem(
                 options: readSelections(item.selections),
                 couponCode: item.couponCode,
             },
-            now,
+            context,
         );
 
         return { item, detail, quote, selections, problem: null };
@@ -133,12 +133,12 @@ export async function priceCart(
     db: Executor,
     cart: Cart,
     items: CartItem[],
-    now?: Date,
+    context: QuoteContext = {},
 ): Promise<PricedCart> {
     const entries: CartEntry[] = [];
 
     for (const item of items) {
-        entries.push(await priceCartItem(db, item, now));
+        entries.push(await priceCartItem(db, item, context));
     }
 
     const priced = entries.filter((entry) => entry.quote !== null);

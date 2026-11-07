@@ -107,6 +107,7 @@ export async function submitOrder(
                 paymentOption: "bank_transfer",
                 autoCharge: data.get("autoCharge") === "on",
                 acceptance: {
+                    termsLabel: String(data.get("termsLabel") ?? "") || null,
                     terms: data.get("acceptTerms") === "on",
                     withdrawal: data.get("acceptWithdrawal") === "on",
                     immediateStart: data.get("immediateStart") === "on",
