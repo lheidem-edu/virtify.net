@@ -18,6 +18,9 @@ export const PERMISSIONS = {
     "offers.write": "Angebote anlegen, senden und zurückziehen",
     "contracts.read": "Verträge ansehen",
     "contracts.write": "Verträge anlegen und ändern",
+    "catalog.read": "Produkte, Optionen und Gutscheine ansehen",
+    "catalog.write":
+        "Produkte, Preise, Optionen und Gutscheine anlegen und ändern",
     "payments.read": "Zahlungen und Zahlungsmittel ansehen",
     "payments.write": "Zahlungen erfassen und erstatten",
     "tickets.read": "Tickets ansehen",

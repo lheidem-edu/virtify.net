@@ -19,17 +19,25 @@ async function SiteHeader() {
                     <Wordmark name={site.name} />
                 </Link>
 
-                <Button
-                    nativeButton={false}
-                    render={<Link href="/client" />}
-                    variant="outline"
-                    size="sm"
-                    className="group/link gap-2"
-                >
-                    <CircleUser className="size-4 text-muted-foreground transition-colors group-hover/link:text-current" />
-                    Kundenbereich
-                    <ArrowRight className="size-3.5 -translate-x-0.5 opacity-0 transition-all group-hover/link:translate-x-0 group-hover/link:opacity-100" />
-                </Button>
+                <nav className="flex items-center gap-4">
+                    <Link
+                        href="/products"
+                        className="text-sm text-zinc-400 transition-colors hover:text-white"
+                    >
+                        Produkte
+                    </Link>
+                    <Button
+                        nativeButton={false}
+                        render={<Link href="/client" />}
+                        variant="outline"
+                        size="sm"
+                        className="group/link gap-2"
+                    >
+                        <CircleUser className="size-4 text-muted-foreground transition-colors group-hover/link:text-current" />
+                        Kundenbereich
+                        <ArrowRight className="size-3.5 -translate-x-0.5 opacity-0 transition-all group-hover/link:translate-x-0 group-hover/link:opacity-100" />
+                    </Button>
+                </nav>
             </div>
         </header>
     );
@@ -75,6 +83,7 @@ async function SiteFooter() {
                             Konto
                         </h2>
                         <ul className="space-y-2">
+                            <FooterLink href="/products">Produkte</FooterLink>
                             <FooterLink href="/client/login">
                                 Anmelden
                             </FooterLink>

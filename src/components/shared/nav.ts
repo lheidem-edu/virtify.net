@@ -25,6 +25,7 @@ export const ACCOUNT_SETTINGS_NAV = [
 
 export const ADMIN_NAV = [
     { href: "/admin/customers", label: "Kunden", icon: "users" },
+    { href: "/admin/catalog", label: "Katalog", icon: "package" },
     { href: "/admin/contracts", label: "Verträge", icon: "file-text" },
     { href: "/admin/offers", label: "Angebote", icon: "file-signature" },
     { href: "/admin/invoices", label: "Rechnungen", icon: "receipt" },

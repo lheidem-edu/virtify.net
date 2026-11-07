@@ -56,10 +56,14 @@ src/
     schema/_columns.ts   # shared helpers: ulidPk(), ulidFk(), timestamps(), money()
   server/                # domain logic, NO React here
     customers/  auth/  api/  api-keys/  audit/  documents/  payments/
-    billing/  tax/  provisioning/  tickets/  jobs/  openapi/
+    catalog/  billing/  tax/  provisioning/  tickets/  jobs/  openapi/
   lib/                   # money, crypto, ulid, env, utils — framework-free
   components/            # shadcn (components/ui, not linted) + shared app UI
 ```
+
+One price, one function: `src/server/billing/pricing.ts` computes every quote the storefront,
+the checkout and `POST /api/v1/products/{id}/quote` show. A second implementation anywhere —
+including in the browser — is how a shown price starts disagreeing with a charged one.
 
 Rule: pages, server actions and API route handlers are thin. Business logic lives in
 `src/server/**` as plain, testable TypeScript that takes a `db`/transaction as a parameter.

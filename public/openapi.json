@@ -21,6 +21,10 @@
             "description": "Erreichbarkeit und Fassung der Schnittstelle."
         },
         {
+            "name": "Katalog",
+            "description": "Produkte, Preise und Zusatzleistungen — und die Funktion, die daraus einen Preis macht."
+        },
+        {
             "name": "Kunden",
             "description": "Kundenkonten: Stammdaten, Status und Kundennummer. Ein Kundenschlüssel sieht hier ausschließlich das eigene Konto."
         }
@@ -564,6 +568,810 @@
                     "time",
                     "commit"
                 ]
+            },
+            "ProductPricing": {
+                "type": "object",
+                "properties": {
+                    "cycle": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semiannual",
+                            "annual",
+                            "biennial",
+                            "onetime"
+                        ],
+                        "description": "Der Abrechnungszeitraum. `onetime` ist ein einmaliger Verkauf ohne Verlängerung und ohne Testphase.",
+                        "example": "monthly"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "Währung dieser Zelle nach ISO 4217.",
+                        "example": "EUR"
+                    },
+                    "price_cents": {
+                        "type": "integer",
+                        "description": "Laufender Preis für einen Zeitraum, in ganzen Cent.",
+                        "example": 1999
+                    },
+                    "setup_fee_cents": {
+                        "type": "integer",
+                        "description": "Einmalige Einrichtungsgebühr, in ganzen Cent.",
+                        "example": 1000
+                    },
+                    "trial_days": {
+                        "type": "integer",
+                        "description": "Freie Tage vor der ersten laufenden Abrechnung. `0` heißt: sofort. Die Einrichtungsgebühr wird auch während einer Testphase sofort berechnet.",
+                        "example": 0
+                    }
+                },
+                "required": [
+                    "cycle",
+                    "currency",
+                    "price_cents",
+                    "setup_fee_cents",
+                    "trial_days"
+                ],
+                "description": "Eine Zelle der Preismatrix: ein Produkt × ein Zeitraum × eine Währung. Fehlt die Zelle, wird das Produkt so nicht angeboten."
+            },
+            "Product": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Produkts.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Kürzel des Produkts, wie es in der URL steht.",
+                        "example": "vps-m"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Anzeigename des Produkts.",
+                        "example": "VPS M"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "vps",
+                            "webhosting",
+                            "gameserver",
+                            "domain",
+                            "subscription",
+                            "other"
+                        ],
+                        "description": "Die Art des Produkts. `subscription` ist ein rein wiederkehrendes Produkt ohne Bereitstellung — Supportvertrag, Managed Service, Lizenz.",
+                        "example": "vps"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "active",
+                            "hidden",
+                            "retired"
+                        ],
+                        "description": "`draft` ist in Vorbereitung, `active` wird im Shop gelistet, `hidden` ist nur über den direkten Link bestellbar, `retired` wird nicht mehr verkauft.",
+                        "example": "active"
+                    },
+                    "tagline": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Eine Zeile unter dem Namen.",
+                        "example": "4 vCPU, 8 GB RAM, 160 GB NVMe"
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Ausführliche Beschreibung für die Produktseite.",
+                        "example": "KVM-Instanz auf eigener Hardware, mit eigenen IP-Adressen."
+                    },
+                    "module": {
+                        "type": "string",
+                        "description": "Das Bereitstellungsmodul, das bei einer Bestellung läuft. `none` heißt: es wird nur abgerechnet.",
+                        "example": "none"
+                    },
+                    "max_quantity": {
+                        "type": "integer",
+                        "description": "Wie viele davon eine einzelne Bestellung nehmen darf.",
+                        "example": 1
+                    },
+                    "group": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "Technische ID der Produktgruppe.",
+                                "example": "productgroup_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                            },
+                            "slug": {
+                                "type": "string",
+                                "description": "Kürzel der Gruppe, wie es in der URL steht.",
+                                "example": "vps"
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Anzeigename der Gruppe.",
+                                "example": "KVM-Instanzen"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "slug",
+                            "name"
+                        ],
+                        "description": "Die Gruppe, unter der das Produkt steht."
+                    },
+                    "pricing": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ProductPricing"
+                        },
+                        "description": "Die Preismatrix dieses Produkts."
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Anlagezeitpunkt in UTC.",
+                        "example": "2026-11-01T09:00:00.000Z"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Letzte Änderung in UTC.",
+                        "example": "2026-11-07T08:15:00.000Z"
+                    }
+                },
+                "required": [
+                    "id",
+                    "slug",
+                    "name",
+                    "type",
+                    "status",
+                    "tagline",
+                    "description",
+                    "module",
+                    "max_quantity",
+                    "group",
+                    "pricing",
+                    "created_at",
+                    "updated_at"
+                ]
+            },
+            "ProductPage": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Product"
+                        },
+                        "description": "Die Zeilen dieser Seite, in ID-Reihenfolge."
+                    },
+                    "next_cursor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "An die nächste Anfrage als `cursor` weitergeben; `null` auf der letzten Seite.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "has_more": {
+                        "type": "boolean",
+                        "description": "Ob nach dieser Seite noch Zeilen folgen.",
+                        "example": false
+                    }
+                },
+                "required": [
+                    "data",
+                    "next_cursor",
+                    "has_more"
+                ]
+            },
+            "ConfigOptionValue": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Wertes.",
+                        "example": "configoptionvalue_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Anzeigename des Wertes.",
+                        "example": "+8 GB"
+                    },
+                    "is_default": {
+                        "type": "boolean",
+                        "description": "Ob dieser Wert im Shop vorausgewählt ist.",
+                        "example": false
+                    },
+                    "pricing": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "cycle": {
+                                    "type": "string",
+                                    "enum": [
+                                        "monthly",
+                                        "quarterly",
+                                        "semiannual",
+                                        "annual",
+                                        "biennial",
+                                        "onetime"
+                                    ],
+                                    "description": "Der Abrechnungszeitraum. `onetime` ist ein einmaliger Verkauf ohne Verlängerung und ohne Testphase.",
+                                    "example": "monthly"
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "description": "Währung dieser Zelle nach ISO 4217.",
+                                    "example": "EUR"
+                                },
+                                "price_cents": {
+                                    "type": "integer",
+                                    "description": "Aufpreis je Einheit und Zeitraum, in ganzen Cent.",
+                                    "example": 500
+                                },
+                                "setup_fee_cents": {
+                                    "type": "integer",
+                                    "description": "Einmalige Einrichtungsgebühr je Einheit, in ganzen Cent.",
+                                    "example": 0
+                                }
+                            },
+                            "required": [
+                                "cycle",
+                                "currency",
+                                "price_cents",
+                                "setup_fee_cents"
+                            ]
+                        },
+                        "description": "Der Aufpreis je Zeitraum und Währung. Fehlt eine Zelle, ist der Wert in diesem Zeitraum kostenlos."
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "is_default",
+                    "pricing"
+                ],
+                "description": "Ein wählbarer Wert einer Option."
+            },
+            "ConfigOption": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Option.",
+                        "example": "configoption_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Anzeigename der Option.",
+                        "example": "Arbeitsspeicher"
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Erklärung unter der Option.",
+                        "example": "Zusätzlicher RAM, jederzeit änderbar."
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "select",
+                            "checkbox",
+                            "quantity"
+                        ],
+                        "description": "`select`: genau einer der Werte. `checkbox`: ein Wert, an oder aus. `quantity`: ein Wert, je Einheit berechnet.",
+                        "example": "select"
+                    },
+                    "required": {
+                        "type": "boolean",
+                        "description": "Ob die Option beantwortet werden muss.",
+                        "example": false
+                    },
+                    "min_quantity": {
+                        "type": "integer",
+                        "description": "Kleinste Stückzahl bei `quantity`; sonst ohne Bedeutung.",
+                        "example": 0
+                    },
+                    "max_quantity": {
+                        "type": "integer",
+                        "description": "Größte Stückzahl bei `quantity`; sonst ohne Bedeutung.",
+                        "example": 8
+                    },
+                    "values": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ConfigOptionValue"
+                        },
+                        "description": "Die wählbaren Werte, in Anzeigereihenfolge."
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "description",
+                    "type",
+                    "required",
+                    "min_quantity",
+                    "max_quantity",
+                    "values"
+                ],
+                "description": "Eine konfigurierbare Zusatzleistung des Produkts."
+            },
+            "ProductDetail": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Produkts.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Kürzel des Produkts, wie es in der URL steht.",
+                        "example": "vps-m"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Anzeigename des Produkts.",
+                        "example": "VPS M"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "vps",
+                            "webhosting",
+                            "gameserver",
+                            "domain",
+                            "subscription",
+                            "other"
+                        ],
+                        "description": "Die Art des Produkts. `subscription` ist ein rein wiederkehrendes Produkt ohne Bereitstellung — Supportvertrag, Managed Service, Lizenz.",
+                        "example": "vps"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "active",
+                            "hidden",
+                            "retired"
+                        ],
+                        "description": "`draft` ist in Vorbereitung, `active` wird im Shop gelistet, `hidden` ist nur über den direkten Link bestellbar, `retired` wird nicht mehr verkauft.",
+                        "example": "active"
+                    },
+                    "tagline": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Eine Zeile unter dem Namen.",
+                        "example": "4 vCPU, 8 GB RAM, 160 GB NVMe"
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Ausführliche Beschreibung für die Produktseite.",
+                        "example": "KVM-Instanz auf eigener Hardware, mit eigenen IP-Adressen."
+                    },
+                    "module": {
+                        "type": "string",
+                        "description": "Das Bereitstellungsmodul, das bei einer Bestellung läuft. `none` heißt: es wird nur abgerechnet.",
+                        "example": "none"
+                    },
+                    "max_quantity": {
+                        "type": "integer",
+                        "description": "Wie viele davon eine einzelne Bestellung nehmen darf.",
+                        "example": 1
+                    },
+                    "group": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "Technische ID der Produktgruppe.",
+                                "example": "productgroup_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                            },
+                            "slug": {
+                                "type": "string",
+                                "description": "Kürzel der Gruppe, wie es in der URL steht.",
+                                "example": "vps"
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Anzeigename der Gruppe.",
+                                "example": "KVM-Instanzen"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "slug",
+                            "name"
+                        ],
+                        "description": "Die Gruppe, unter der das Produkt steht."
+                    },
+                    "pricing": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ProductPricing"
+                        },
+                        "description": "Die Preismatrix dieses Produkts."
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Anlagezeitpunkt in UTC.",
+                        "example": "2026-11-01T09:00:00.000Z"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Letzte Änderung in UTC.",
+                        "example": "2026-11-07T08:15:00.000Z"
+                    },
+                    "config_options": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ConfigOption"
+                        },
+                        "description": "Die Zusatzleistungen, die dieses Produkt anbietet."
+                    }
+                },
+                "required": [
+                    "id",
+                    "slug",
+                    "name",
+                    "type",
+                    "status",
+                    "tagline",
+                    "description",
+                    "module",
+                    "max_quantity",
+                    "group",
+                    "pricing",
+                    "created_at",
+                    "updated_at",
+                    "config_options"
+                ],
+                "description": "Ein Produkt mit seiner Preismatrix und seinen Optionen."
+            },
+            "QuoteRequest": {
+                "type": "object",
+                "properties": {
+                    "cycle": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semiannual",
+                            "annual",
+                            "biennial",
+                            "onetime"
+                        ],
+                        "description": "Der Abrechnungszeitraum. `onetime` ist ein einmaliger Verkauf ohne Verlängerung und ohne Testphase.",
+                        "example": "monthly"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "default": "EUR",
+                        "description": "Währung nach ISO 4217.",
+                        "example": "EUR"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 999,
+                        "default": 1,
+                        "description": "Wie viele Einheiten des Produkts.",
+                        "example": 1
+                    },
+                    "options": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "option_id": {
+                                    "type": "string",
+                                    "description": "Welche Option gewählt wurde.",
+                                    "example": "configoption_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                },
+                                "value_id": {
+                                    "type": "string",
+                                    "description": "Welcher Wert dieser Option.",
+                                    "example": "configoptionvalue_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                },
+                                "quantity": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9999,
+                                    "default": 1,
+                                    "description": "Einheiten bei `quantity`-Optionen. Bei `select` immer 1, bei `checkbox` 0 oder 1.",
+                                    "example": 1
+                                }
+                            },
+                            "required": [
+                                "option_id",
+                                "value_id"
+                            ]
+                        },
+                        "default": [],
+                        "description": "Die gewählten Zusatzleistungen. Eine Option, die es nicht gibt, wird abgelehnt statt übergangen."
+                    },
+                    "coupon_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "default": null,
+                        "description": "Ein Gutscheincode. Groß- und Kleinschreibung spielt keine Rolle.",
+                        "example": "WILLKOMMEN"
+                    }
+                },
+                "required": [
+                    "cycle"
+                ],
+                "description": "Was angeboten werden soll: Produkt, Zeitraum, Menge, Optionen, Gutschein."
+            },
+            "QuoteLine": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "base",
+                            "option",
+                            "setup",
+                            "discount"
+                        ],
+                        "description": "`base` der Grundpreis, `option` eine Zusatzleistung, `setup` eine einmalige Einrichtung, `discount` ein Gutschein.",
+                        "example": "base"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Die Bezeichnung der Position.",
+                        "example": "VPS M"
+                    },
+                    "detail": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Kleingedrucktes unter der Position.",
+                        "example": "monatlich"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "description": "Die Stückzahl dieser Position.",
+                        "example": 1
+                    },
+                    "unit_amount_cents": {
+                        "type": "integer",
+                        "description": "Einzelpreis in ganzen Cent; bei einem Gutschein negativ.",
+                        "example": 1999
+                    },
+                    "amount_cents": {
+                        "type": "integer",
+                        "description": "Gesamtbetrag der Position in ganzen Cent.",
+                        "example": 1999
+                    },
+                    "recurring": {
+                        "type": "boolean",
+                        "description": "`true`: in jedem Zeitraum. `false`: einmalig zu Beginn.",
+                        "example": true
+                    },
+                    "option_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Option, aus der die Position stammt, falls es eine gibt.",
+                        "example": null
+                    },
+                    "value_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der gewählte Wert, falls die Position aus einer Option stammt.",
+                        "example": null
+                    }
+                },
+                "required": [
+                    "kind",
+                    "label",
+                    "detail",
+                    "quantity",
+                    "unit_amount_cents",
+                    "amount_cents",
+                    "recurring",
+                    "option_id",
+                    "value_id"
+                ],
+                "description": "Eine Position der Preisaufstellung."
+            },
+            "Quote": {
+                "type": "object",
+                "properties": {
+                    "product_id": {
+                        "type": "string",
+                        "description": "Das Produkt, für das gerechnet wurde.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "product_name": {
+                        "type": "string",
+                        "description": "Sein Name zum Zeitpunkt der Berechnung.",
+                        "example": "VPS M"
+                    },
+                    "lines": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/QuoteLine"
+                        },
+                        "description": "Die Aufstellung, Position für Position."
+                    },
+                    "totals": {
+                        "type": "object",
+                        "properties": {
+                            "currency": {
+                                "type": "string",
+                                "description": "Währung aller Beträge nach ISO 4217.",
+                                "example": "EUR"
+                            },
+                            "cycle": {
+                                "type": "string",
+                                "enum": [
+                                    "monthly",
+                                    "quarterly",
+                                    "semiannual",
+                                    "annual",
+                                    "biennial",
+                                    "onetime"
+                                ],
+                                "description": "Der Abrechnungszeitraum. `onetime` ist ein einmaliger Verkauf ohne Verlängerung und ohne Testphase.",
+                                "example": "monthly"
+                            },
+                            "recurring_gross_cents": {
+                                "type": "integer",
+                                "description": "Grundpreis und Optionen für einen Zeitraum, vor Gutschein.",
+                                "example": 2799
+                            },
+                            "recurring_discount_cents": {
+                                "type": "integer",
+                                "description": "Was der Gutschein von einem Zeitraum abzieht.",
+                                "example": 280
+                            },
+                            "first_period_cents": {
+                                "type": "integer",
+                                "description": "Was ein Zeitraum kostet, solange der Gutschein gilt.",
+                                "example": 2519
+                            },
+                            "renewal_cents": {
+                                "type": "integer",
+                                "description": "Was ein Zeitraum kostet, sobald er nicht mehr gilt. `0` bei einem einmaligen Verkauf.",
+                                "example": 2799
+                            },
+                            "setup_gross_cents": {
+                                "type": "integer",
+                                "description": "Einrichtungsgebühren vor Gutschein.",
+                                "example": 1400
+                            },
+                            "setup_discount_cents": {
+                                "type": "integer",
+                                "description": "Was der Gutschein von der Einrichtung abzieht — nur, wenn er das darf.",
+                                "example": 0
+                            },
+                            "setup_cents": {
+                                "type": "integer",
+                                "description": "Einrichtungsgebühren nach Gutschein.",
+                                "example": 1400
+                            },
+                            "due_today_cents": {
+                                "type": "integer",
+                                "description": "Was bei der Bestellung fällig wird. Eine Testphase verschiebt den Zeitraum, nicht die Einrichtung.",
+                                "example": 3919
+                            },
+                            "trial_days": {
+                                "type": "integer",
+                                "description": "Freie Tage vor der ersten laufenden Abrechnung.",
+                                "example": 0
+                            },
+                            "first_charge_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date-time",
+                                "description": "Wann die erste laufende Abrechnung fällig wird; `null` bei einem einmaligen Verkauf.",
+                                "example": "2026-11-07T10:00:00.000Z"
+                            },
+                            "discount_periods": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ],
+                                "description": "Für wie viele Zeiträume der Gutschein gilt. `null` heißt dauerhaft, `0` heißt: keiner angewandt.",
+                                "example": 1
+                            }
+                        },
+                        "required": [
+                            "currency",
+                            "cycle",
+                            "recurring_gross_cents",
+                            "recurring_discount_cents",
+                            "first_period_cents",
+                            "renewal_cents",
+                            "setup_gross_cents",
+                            "setup_discount_cents",
+                            "setup_cents",
+                            "due_today_cents",
+                            "trial_days",
+                            "first_charge_at",
+                            "discount_periods"
+                        ],
+                        "description": "Die Summen. Alle Beträge sind ganzzahlige Cent in `currency`."
+                    },
+                    "coupon": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "Technische ID des Gutscheins.",
+                                "example": "coupon_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                            },
+                            "code": {
+                                "type": "string",
+                                "description": "Der Code, wie er gespeichert ist.",
+                                "example": "WILLKOMMEN"
+                            },
+                            "label": {
+                                "type": "string",
+                                "description": "Was er wert ist, in Worten.",
+                                "example": "25 %"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "code",
+                            "label"
+                        ],
+                        "description": "Der angewandte Gutschein, sonst `null`."
+                    },
+                    "coupon_error": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Warum ein übergebener Code nicht angewandt wurde. Deutsch, zur Anzeige für den Kunden.",
+                        "example": "Dieser Gutscheincode ist abgelaufen."
+                    }
+                },
+                "required": [
+                    "product_id",
+                    "product_name",
+                    "lines",
+                    "totals",
+                    "coupon",
+                    "coupon_error"
+                ],
+                "description": "Ein Preisangebot. Dieselbe Funktion rechnet den Shop-Preis, die Kasse und diese Antwort — ein angezeigter Preis kann einem berechneten nicht widersprechen."
             }
         },
         "parameters": {}
@@ -983,6 +1791,338 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/Health"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/products": {
+            "get": {
+                "tags": [
+                    "Katalog"
+                ],
+                "summary": "Produkte auflisten",
+                "description": "Gibt die verkäuflichen Produkte seitenweise zurück, sortiert nach ID, jeweils mit ihrer Preismatrix. Entwürfe und eingestellte Produkte sind nicht dabei. Benötigt `catalog.read`; ein Kundenschlüssel darf das ebenfalls, denn der Katalog ist das, woraus bestellt wird.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                            "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": false,
+                        "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25,
+                            "description": "Zeilen pro Seite, höchstens 100.",
+                            "example": 25
+                        },
+                        "required": false,
+                        "description": "Zeilen pro Seite, höchstens 100.",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Suchbegriff über Name, Kürzel und Zeile.",
+                            "example": "vps"
+                        },
+                        "required": false,
+                        "description": "Suchbegriff über Name, Kürzel und Zeile.",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Auf eine Produktgruppe einschränken — ID oder Kürzel.",
+                            "example": "vps"
+                        },
+                        "required": false,
+                        "description": "Auf eine Produktgruppe einschränken — ID oder Kürzel.",
+                        "name": "group",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "vps",
+                                "webhosting",
+                                "gameserver",
+                                "domain",
+                                "subscription",
+                                "other"
+                            ],
+                            "description": "Auf eine Produktart einschränken.",
+                            "example": "vps"
+                        },
+                        "required": false,
+                        "description": "Auf eine Produktart einschränken.",
+                        "name": "type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Eine Seite Produkte.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProductPage"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/products/{id}": {
+            "get": {
+                "tags": [
+                    "Katalog"
+                ],
+                "summary": "Produkt ansehen",
+                "description": "Ein einzelnes Produkt mit seiner Preismatrix und allen Zusatzleistungen, die es anbietet — alles, was eine Bestellung braucht. Entwürfe und eingestellte Produkte werden mit 404 beantwortet. Benötigt `catalog.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Produkts. Das Kürzel (`slug`) wird ebenfalls angenommen.",
+                            "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Produkts. Das Kürzel (`slug`) wird ebenfalls angenommen.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Das Produkt mit Preisen und Optionen.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProductDetail"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/products/{id}/quote": {
+            "post": {
+                "tags": [
+                    "Katalog"
+                ],
+                "summary": "Preis berechnen",
+                "description": "Rechnet aus, was eine Bestellung kosten würde: Grundpreis, Zusatzleistungen, Einrichtung, Testphase und Gutschein, als Aufstellung und als Summen. Es ist dieselbe Funktion, die den Preis im Shop anzeigt und die Kasse abrechnet, deshalb kann die Antwort der späteren Rechnung nicht widersprechen. Nichts wird dabei gespeichert; ein Gutscheincode wird geprüft, aber nicht eingelöst. Benötigt `catalog.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Produkts. Das Kürzel (`slug`) wird ebenfalls angenommen.",
+                            "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Produkts. Das Kürzel (`slug`) wird ebenfalls angenommen.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/QuoteRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Die Preisaufstellung.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Quote"
                                 }
                             }
                         }

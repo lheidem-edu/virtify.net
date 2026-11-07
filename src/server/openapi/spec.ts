@@ -66,6 +66,12 @@ export function buildSpec() {
                 description: "Erreichbarkeit und Fassung der Schnittstelle.",
             },
             {
+                name: "Katalog",
+                description:
+                    "Produkte, Preise und Zusatzleistungen — und die Funktion, " +
+                    "die daraus einen Preis macht.",
+            },
+            {
                 name: "Kunden",
                 description:
                     "Kundenkonten: Stammdaten, Status und Kundennummer. " +

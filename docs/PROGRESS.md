@@ -162,17 +162,105 @@ Still open in this phase:
       determination needs ISO codes; new input is validated and upper-cased, the two rows on the
       dev database are not.
 
-## Phases 2–11
+## Phase 2 — Product catalog · done
+
+`npm run typecheck`, `npm run lint` and `npm run test` (178 tests) are green, the app builds,
+`public/openapi.json` is regenerated, and the storefront and admin area were clicked through
+against the dev database.
+
+**One price function, and only one.** `calculateQuote()` in `src/server/billing/pricing.ts` is
+pure — product, cycle, currency, chosen options, quantity, coupon in; a line breakdown and the
+totals out, every cent through `src/lib/money.ts`. `quoteProduct()` in
+`src/server/billing/quote.ts` is the database half: it loads the rows, refuses a cycle that is
+not offered, an option that is not this product's, a value that is not that option's and a
+quantity outside the bounds, then calls the pure function. The storefront's live price, the
+quote endpoint and Phase 4's checkout all come through that one pair; nothing recomputes a
+total in the browser.
+
+- [x] `src/db/schema/catalog.ts` — `product_group`, `product`, `product_pricing`,
+      `config_option`, `config_option_value`, `config_option_pricing`, `coupon`; migration
+      `0015`. Prices are a matrix of product × cycle × currency, and a missing cell is what
+      "not offered" means.
+- [x] `product.module` + `module_config` jsonb, validated against the zod schema the module
+      publishes. `src/server/provisioning` holds the registry and the one module there is,
+      `none`, whose schema is `strictObject({})` — so switching a product back to `none` cannot
+      leave another module's settings behind. The lifecycle methods (`create`, `suspend`, …)
+      are deliberately absent until Phase 8, which is the first phase with anything to run them
+      against.
+- [x] Product type `subscription`: a pure recurring product that never reaches a module —
+      support plans, managed services, licences.
+- [x] Admin under `/admin/catalog`: groups with up/down reordering, products with the pricing
+      matrix (cycles × currencies, setup fee, trial days), configuration options with their
+      values and per-cycle surcharges, and `/admin/catalog/coupons`. New permissions
+      `catalog.read` / `catalog.write`.
+- [x] Storefront: `/products` lists the groups and their products with the lowest price,
+      `/products/<slug>` is the product page with a cycle selector, the options and a coupon
+      field. Every total on it is fetched from the shared function through a server action.
+- [x] API: `GET /api/v1/products`, `GET /api/v1/products/{id}` (id or slug),
+      `POST /api/v1/products/{id}/quote`, registered under `src/server/openapi/paths/products.ts`
+      with the `Katalog` tag. Drafts and retired products are 404, not 403. `catalog.read` is in
+      `CUSTOMER_SCOPES` — the catalog is what a customer orders from.
+- [x] Every catalog write runs in a transaction and leaves an `audit()` row inside it.
+      Products are soft-deleted (`deleted_at` + status `retired`); a group can only be removed
+      while it is empty, and a coupon that has been redeemed can be switched off but not
+      deleted.
+
+**Tests (55 new).** `tests/unit/pricing.test.ts` states every number in cents: base price per
+cycle, options multiplied by their own quantity and the product's, the setup fee charged once
+and never again, trial days deferring the period but not the setup fee, and coupons as `once`,
+`repeating(n)` and `forever` — including the rounding table (15 % of 19,99 € → 3,00 €, 50 % →
+10,00 €, 33,33 % of 10,00 € → 3,33 €) and a fixed coupon worth more than the order, which
+discounts to zero rather than paying out. `tests/integration/catalog.test.ts` covers the unique
+indexes, the module-config refusal, the soft delete, the audit rows and the reordering;
+`tests/integration/products-api.test.ts` drives the three endpoints through the real handlers.
+
+Decided in this phase, open to being overruled:
+
+- **The setup fee is charged on day one, trial or not.** The work of setting a service up
+  happens whether or not the first month is free, and that is what WHMCS and Blesta do. A
+  coupon can still reduce it — see the next point.
+- **A coupon leaves the setup fee alone unless it says so.** `coupon.applies_to_setup_fee` is a
+  per-coupon switch, off by default: a discount on the Einrichtungsgebühr is a different
+  decision from one on the running price, and most codes mean the latter.
+- **A percentage coupon is stored as basis points** (`2500` = 25 %), so the rate itself is an
+  integer and cannot pick up a float's rounding error on the way to a price. The discount is
+  rounded half away from zero to whole cents by `money.percent`, which is the same rule the
+  invoice lines use.
+- **`renewal_cents` is the undiscounted period**, except for a `forever` coupon where it is the
+  discounted one. `discount_periods` says how long the first price holds: `1`, `n`, or `null`
+  for "every period". That is what the storefront needs to write "19,99 €/Monat, danach
+  24,99 €".
+- **The catalog offers one currency.** `CATALOG_CURRENCIES` is `["EUR"]` because
+  `src/lib/money.ts` knows the minor units of exactly one; the matrix is already keyed by
+  currency, so adding a second is teaching `money.ts` its exponent, not widening a list.
+- **A product group is hard-deleted, and only while it is empty.** Nothing but a product points
+  at one, so there is no document to orphan — unlike a product, which an invoice line will
+  reference for as long as the books are kept.
+- **Config options belong to one product.** WHMCS shares option groups across products; here an
+  option is the product's own. Sharing can be added when a second product wants the same
+  add-on, and guessing at it now would be a join table nothing uses.
+- **`module_config` is not on the wire.** It is the operator's configuration of a provisioning
+  module — template ids, node names — and says nothing a buyer needs to decide or to order.
+
+Still open in this phase:
+
+- [ ] Nothing can be ordered yet. The product page prices a configuration and says so; the cart
+      and the checkout are Phase 4.
+- [ ] `coupon.redemptions` is only ever read. Phase 4 counts it up when an order uses the code,
+      which is also where `max_redemptions` starts meaning something.
+- [ ] No demo catalog in `npm run seed`. The dev database was given one by hand while this
+      phase was being tested; a fresh installation starts with an empty catalog.
+
+## Phases 3–11
 
 | Phase | State | Notes |
 |---|---|---|
-| 2 Product catalog | not started | No `products`, pricing matrix, config options or coupons. The storefront sells nothing yet. |
 | 3 Tax + invoicing | existing, partial | Invoices draft → issued → paid → corrected, gapless numbering via `document_counter` with `FOR UPDATE`, DIN 5008 PDF, XRechnung CII, Rechnungskorrektur. Missing: `TaxStrategy` interface (§ 19 is hardcoded in `totals.ts`), `tax_mode_history`, per-line tax snapshots, the immutability trigger, the § 19 threshold monitor, PDF storage behind an interface, GiroCode. |
 | 4 Cart, checkout, orders | not started | `contract` and `offer` exist and are created by hand in the admin area; there is no cart, no self-service order. |
 | 5 Payments | existing, partial | Stripe + PayPal, stored payment methods, off-session collection, webhooks with dedupe, settlement in one transaction. Missing: the `PaymentGateway` interface the plan asks for, bank transfer as a gateway, partial payments, overpayment → credit ledger, refunds, disputes, gateway credentials in encrypted settings. |
 | 6 Subscriptions, dunning | not started | No pg-boss, no renewal run, no dunning, no proration. `contract` carries the term arithmetic (`src/lib/documents/contract-term.ts`) but nothing bills it automatically. |
 | 7 Ticketing (M365 Graph) | not started | Mail goes out over SMTP via nodemailer. |
-| 8 Provisioning (Proxmox) | not started | |
+| 8 Provisioning (Proxmox) | not started | Phase 2 put the registry interface and the `none` module in `src/server/provisioning`; the lifecycle methods and the Proxmox module are this phase's. |
 | 9 Client portal polish, i18n | not started | German only, no i18n layer, no `email_templates`. |
 | 10 Reports, webhooks, API | not started | |
 | 11 Hardening, deploy | not started | |

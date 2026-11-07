@@ -56,6 +56,9 @@ export const CUSTOMER_SCOPES = [
     "offers.read",
     "contracts.read",
     "payments.read",
+    // The catalog is what a customer orders from. Reading it is the first
+    // step of every order, and nothing in it is anyone's private data.
+    "catalog.read",
 ] as const satisfies readonly Permission[];
 
 export type CustomerScope = (typeof CUSTOMER_SCOPES)[number];

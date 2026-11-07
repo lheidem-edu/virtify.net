@@ -86,6 +86,13 @@ export const ID_PREFIX = {
     paymentMethod: "paymentmethod",
     legalDocument: "legaldocument",
     legalSection: "legalsection",
+    productGroup: "productgroup",
+    product: "product",
+    productPricing: "productpricing",
+    configOption: "configoption",
+    configOptionValue: "configoptionvalue",
+    configOptionPricing: "configoptionpricing",
+    coupon: "coupon",
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIX)[keyof typeof ID_PREFIX];
