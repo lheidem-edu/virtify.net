@@ -107,6 +107,12 @@ export const ID_PREFIX = {
     subscription: "subscription",
     subscriptionItem: "subscriptionitem",
     service: "service",
+    subscriptionInvoice: "subscriptioninvoice",
+    subscriptionEvent: "subscriptionevent",
+    subscriptionChange: "subscriptionchange",
+    billingRun: "billingrun",
+    invoiceCollection: "invoicecollection",
+    dunningAction: "dunningaction",
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIX)[keyof typeof ID_PREFIX];

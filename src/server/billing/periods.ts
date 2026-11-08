@@ -192,6 +192,80 @@ export function followingPeriod(
 }
 
 /**
+ * The period a subscription moves into next.
+ *
+ * One function, two callers, and that is the whole reason it exists: the
+ * renewal run has to *bill* exactly the period the run then *advances*
+ * into, and computing "the next period" in two places is how an invoice
+ * ends up covering sixteen days while the subscription moves on by thirty.
+ *
+ * Almost always a whole cycle from where the last one ended. The exception
+ * is the first paid period after a trial: the trial ended on whatever day it
+ * happened to end on, so with a billing anchor configured that period is cut
+ * short to reach it — exactly as the checkout cuts the first period of an
+ * Abo that was never on trial. `trial_ends_at` is what says which case this
+ * is, and it is still set at this point because only this step clears it.
+ */
+export function periodAfter(input: {
+    start: Date;
+    cycle: BillingCycle;
+    trialEndsAt: Date | null;
+    /** 1–28, or 0 to bill on the day the period starts. */
+    anchorDay: number;
+}): BillingPeriod {
+    const leavingTrial =
+        input.trialEndsAt !== null &&
+        input.trialEndsAt.getTime() === input.start.getTime();
+
+    return leavingTrial
+        ? firstPeriod({
+              start: input.start,
+              cycle: input.cycle,
+              anchorDay: input.anchorDay,
+          })
+        : followingPeriod(input.start, input.cycle);
+}
+
+/**
+ * The period *before* one that starts at `start` — `followingPeriod` read
+ * backwards.
+ *
+ * It exists for one reason: rolling a period back. A renewal invoice that is
+ * cancelled has to put the subscription where it was, and computing "one
+ * cycle earlier" a second way is how a rolled-back period ends up a day
+ * away from the one it rolled back from. `addBerlinMonths` is its own
+ * inverse on the Berlin calendar for every anchor day this panel allows
+ * (1–28, see MAX_ANCHOR_DAY), so the round trip is exact.
+ */
+export function precedingPeriod(
+    start: Date,
+    cycle: BillingCycle,
+): BillingPeriod {
+    const months = cycleMonths(cycle);
+
+    if (months === null) {
+        return {
+            start,
+            end: null,
+            usedDays: 0,
+            periodDays: 0,
+            prorated: false,
+        };
+    }
+
+    const began = addBerlinMonths(start, -months);
+    const days = berlinDaysBetween(began, start);
+
+    return {
+        start: began,
+        end: start,
+        usedDays: days,
+        periodDays: days,
+        prorated: false,
+    };
+}
+
+/**
  * What a recurring amount costs over a short period. Rounded once, half away
  * from zero, by `src/lib/money.ts` — never by a float left lying around.
  *
@@ -209,4 +283,23 @@ export function proratedUnitPrice(
     }
 
     return prorate(unitPriceCents, period.usedDays, period.periodDays);
+}
+
+/**
+ * How long a subscription stood still. Pause and resume are the same span
+ * read in two directions, so it is one function: the period end moves
+ * forward by exactly what the customer could not use, and never by a figure
+ * computed a second way.
+ *
+ * Negative spans are clamped to zero. A clock that went backwards — a resume
+ * stamped before its own pause, which only a repaired row can produce —
+ * must not shorten a period somebody has paid for.
+ */
+export function pauseSpanMs(pausedAt: Date, resumedAt: Date): number {
+    return Math.max(resumedAt.getTime() - pausedAt.getTime(), 0);
+}
+
+/** The same instant, moved by a span. Null stays null — a one-off has no end. */
+export function shiftInstant(at: Date | null, byMs: number): Date | null {
+    return at === null ? null : new Date(at.getTime() + byMs);
 }

@@ -80,3 +80,41 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # Exits non-zero if the migration fails, so the container is restarted rather
 # than left serving against a half-migrated database.
 CMD ["sh", "-c", "node scripts/migrate.mjs && node server.js"]
+
+# ---------------------------------------------------------------------------
+# Worker
+#
+# The background worker — pg-boss and the daily `billing:run` — is a second
+# container from the same image build, started with `--target worker`. It is
+# a process of its own rather than a timer inside the web server because the
+# web server is scaled by the platform and restarted on every deploy: a timer
+# inside it would run once per instance and be killed halfway through a
+# renewal pass by an ordinary redeploy.
+#
+# It is *not* built on the standalone output. `next build` traces only what a
+# route imports, and the worker's entry point is not a route. So it carries
+# the full install and runs the TypeScript directly through tsx, which is the
+# same thing `npm run worker` does locally — one way to start it, not two.
+#
+# Exactly one replica. Two would be harmless — every step of the run claims
+# its row before acting — but they would spend the night blocking on each
+# other's locks for no gain.
+# ---------------------------------------------------------------------------
+FROM node:24-alpine AS worker
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=deps --chown=node:node /app/node_modules ./node_modules
+COPY --chown=node:node package.json tsconfig.json ./
+COPY --chown=node:node src ./src
+COPY --chown=node:node scripts ./scripts
+
+USER node
+
+# No HEALTHCHECK: the worker serves nothing. Whether it is alive is visible
+# in the admin area under Aufträge, which reads pg-boss's own tables.
+CMD ["node", "--env-file-if-exists=.env.local", "--conditions=react-server", "--import", "tsx", "scripts/worker.mts"]

@@ -64,6 +64,12 @@ export type InvoiceItemInput = {
     unitPriceCents: number;
     servicePeriodStart?: Date | null;
     servicePeriodEnd?: Date | null;
+    /**
+     * The Abo position this line bills, where it bills one. A note about
+     * where the line came from, never a price — see the column's comment in
+     * `src/db/schema/invoices.ts`.
+     */
+    subscriptionItemId?: string | null;
 };
 
 export type InvoiceDraftInput = {
@@ -115,6 +121,7 @@ function itemRows(invoiceId: string, items: InvoiceItemInput[]) {
         unitPriceCents: item.unitPriceCents,
         servicePeriodStart: item.servicePeriodStart ?? null,
         servicePeriodEnd: item.servicePeriodEnd ?? null,
+        subscriptionItemId: item.subscriptionItemId ?? null,
     }));
 }
 
@@ -342,6 +349,14 @@ export type FinalizeOptions = {
     settings?: Settings;
     /** Days until the invoice falls due; the policy setting by default. */
     paymentTermDays?: number;
+    /**
+     * The due date outright, where the caller knows it better than a count
+     * of days does. A renewal invoice is raised a fortnight *ahead* of the
+     * period it bills and falls due on the day that period starts — term
+     * days from today would make it due before the service exists, and
+     * dunning is reckoned from this date.
+     */
+    dueAt?: Date;
 };
 
 /**
@@ -378,6 +393,8 @@ export type ResolvedFinalizeOptions = {
     at: Date;
     settings: Settings;
     termDays: number;
+    /** Wins over `termDays` where the caller named one. */
+    dueAt?: Date | null;
 };
 
 /**
@@ -394,6 +411,7 @@ export async function resolveFinalizeOptions(
         at: options.now ?? new Date(),
         settings,
         termDays: options.paymentTermDays ?? settings.policy.paymentTermDays,
+        dueAt: options.dueAt ?? null,
     };
 }
 
@@ -479,7 +497,15 @@ export async function finalizeInvoiceIn(
             .where(eq(schema.invoiceItem.id, item.id));
     }
 
-    const dueAt = new Date(at.getTime() + termDays * 86_400_000);
+    /**
+     * Never before the day it was issued. A renewal raised late — a worker
+     * that was down, a run that failed and was repeated — would otherwise
+     * arrive already overdue and be dunned the same afternoon.
+     */
+    const dueAt =
+        resolved.dueAt && resolved.dueAt.getTime() > at.getTime()
+            ? resolved.dueAt
+            : new Date(at.getTime() + termDays * 86_400_000);
     const number = await nextNumber(tx, "invoice", at);
 
     const [finalized] = await tx
@@ -559,7 +585,28 @@ export async function createCreditNote(
     const at = options.now ?? new Date();
     const settings = options.settings ?? (await loadSettings());
 
-    return db.transaction(async (tx) => {
+    return db.transaction(async (tx) =>
+        createCreditNoteIn(tx, input, actor, { at, settings }),
+    );
+}
+
+/**
+ * The same correction inside a transaction the caller already owns.
+ *
+ * Phase 6 needs it: withdrawing a Mahngebühr and rolling a renewal back are
+ * both "credit this document **and** put the subscription back", and the two
+ * halves have to commit together or the books and the Abo disagree. Same
+ * shape, and for the same reason, as `finalizeInvoiceIn`.
+ */
+export async function createCreditNoteIn(
+    tx: Tx,
+    input: CreditNoteInput,
+    actor: Actor,
+    context: { at: Date; settings: Settings },
+) {
+    const { at, settings } = context;
+
+    {
         const invoice = await lockInvoice(tx, input.invoiceId);
 
         if (!invoice.number || invoice.status === "draft") {
@@ -811,7 +858,7 @@ export async function createCreditNote(
         });
 
         return { id, number, totals, fullyCredited };
-    });
+    }
 }
 
 /**

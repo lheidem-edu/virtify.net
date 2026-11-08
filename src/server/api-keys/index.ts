@@ -65,6 +65,15 @@ export const CUSTOMER_SCOPES = [
     // request rather than something the key implies.
     "orders.read",
     "orders.write",
+    // The same argument, one step further on: an Abo is the customer's own
+    // contract, and cancelling it, pausing it or changing the tariff are
+    // things the client area already lets them do with a session. A key is
+    // never more than its owner — every one of those endpoints resolves the
+    // Abo through the key's own customer id and answers 404 for anybody
+    // else's — so a customer key may carry these for exactly the account it
+    // belongs to.
+    "subscriptions.read",
+    "subscriptions.write",
 ] as const satisfies readonly Permission[];
 
 export type CustomerScope = (typeof CUSTOMER_SCOPES)[number];

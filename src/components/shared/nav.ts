@@ -8,6 +8,7 @@
 export const ACCOUNT_NAV = [
     { href: "/client", label: "Übersicht", icon: "layout-dashboard" },
     { href: "/client/orders", label: "Bestellungen", icon: "shopping-cart" },
+    { href: "/client/subscriptions", label: "Abos", icon: "repeat" },
     { href: "/client/contracts", label: "Verträge", icon: "file-text" },
     { href: "/client/offers", label: "Angebote", icon: "file-signature" },
     { href: "/client/invoices", label: "Rechnungen", icon: "receipt" },
@@ -30,6 +31,7 @@ export const ADMIN_NAV = [
     { href: "/admin/customers", label: "Kunden", icon: "users" },
     { href: "/admin/catalog", label: "Katalog", icon: "package" },
     { href: "/admin/orders", label: "Bestellungen", icon: "shopping-cart" },
+    { href: "/admin/subscriptions", label: "Abos", icon: "repeat" },
     { href: "/admin/contracts", label: "Verträge", icon: "file-text" },
     { href: "/admin/offers", label: "Angebote", icon: "file-signature" },
     { href: "/admin/invoices", label: "Rechnungen", icon: "receipt" },
@@ -39,6 +41,7 @@ export const ADMIN_NAV = [
         icon: "receipt-text",
     },
     { href: "/admin/payments", label: "Zahlungen", icon: "credit-card" },
+    { href: "/admin/jobs", label: "Aufträge", icon: "timer" },
     { href: "/admin/legal", label: "Rechtstexte", icon: "scale" },
     { href: "/admin/api-keys", label: "API-Schlüssel", icon: "key" },
     { href: "/admin/settings", label: "Einstellungen", icon: "settings" },

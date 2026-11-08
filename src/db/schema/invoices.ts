@@ -216,6 +216,19 @@ export const invoiceItem = pgTable(
         taxRule: text("tax_rule"),
         /** quantity × unit price, rounded once, at finalization. */
         netCents: money("net_cents"),
+
+        /**
+         * The Abo position this line bills, where it bills one — what makes
+         * a renewal invoice explainable afterwards.
+         *
+         * Deliberately **not** a foreign key. A line of a finalized invoice
+         * may not be written to at all (rule 3, and the trigger in migration
+         * 0017 enforces it), so `on delete set null` would make removing a
+         * subscription item fail against a document from two years ago, and
+         * `cascade` would delete a line of it. The reference is a note about
+         * where the line came from; the document stands on its own.
+         */
+        subscriptionItemId: ulidFk("subscription_item_id"),
     },
     (table) => [
         index("invoice_item_invoice_id_idx").on(table.invoiceId),

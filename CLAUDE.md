@@ -23,6 +23,9 @@ The build is planned in phases: see `docs/BUILD_PLAN.md`, state in `docs/PROGRES
 - **OpenAPI 3.1** generated from zod (`@asteasolutions/zod-to-openapi`), rendered with **Scalar**
   at `/api/docs`
 - **IDs: ULID**, prefixed (`invoice_01K…`) — see hard rule 1
+- Jobs: **pg-boss** in `src/server/jobs`, run by a **separate worker process** (`npm run worker`,
+  or the Dockerfile's `worker` target). It is in the build plan for Phase 6; the alternative — a
+  timer inside the Next server — runs once per instance and is killed mid-pass by a redeploy
 - Payments: **Stripe** + **PayPal** + bank transfer, all behind one `PaymentGateway` interface
   in `src/server/payments/gateways`; credentials encrypted in `payment_gateway_setting`, with
   the environment as the fallback · PDF: `@react-pdf/renderer` · GiroCode: `qrcode-generator`
@@ -61,6 +64,7 @@ src/
   server/                # domain logic, NO React here
     customers/  auth/  api/  api-keys/  audit/  documents/  payments/
     catalog/  billing/  tax/  storage/  provisioning/  tickets/  jobs/  openapi/
+  subscriptions/       # the state machine, plan changes, the guards around both
     payments/gateways/   # stripe, paypal, banktransfer — one interface, three bodies
   cart/  orders/           # the cart, and the one transaction that makes it an order
   lib/                   # money, crypto, ulid, env, utils — framework-free
@@ -96,6 +100,38 @@ how a refunded top-up leaves the customer the cash *and* the credit. Each entry 
 row that caused it — the payment, or the refund — so the unique index on
 `credit_ledger (payment_id, kind)` makes a repeat a no-op rather than a doubled balance.
 
+One recurring run, one function: `runBilling()` in `src/server/billing/run.ts` is the daily
+pass — trials end, renewals are invoiced ahead, due invoices are collected, periods advance,
+dunning climbs, cancellations close. The cron fires it, the worker runs it and the operator's
+"jetzt abrechnen" calls the same function. **Nothing in it is safe because it runs once a day.**
+Every step claims a row under a unique index before it acts — `subscription_invoice
+(subscription_id, period_start, kind)`, `invoice_collection (invoice_id, offset_days)`,
+`dunning_action (invoice_id, level)` — inside a transaction that already holds the subscription
+or the invoice `FOR UPDATE`. `billing_run (run_day)` is the cheap layer on top: it keeps a second
+cron pass off the database and is the only one of the four a human may deliberately bypass.
+
+One status change, one function: `transitionSubscriptionIn()` in
+`src/server/subscriptions/service.ts`. The state machine is `src/server/subscriptions/state.ts`
+and is pure — `trialing → active → past_due → (active | paused | cancelled) → ended`, with an
+illegal move throwing rather than being written. The **services follow** there and nowhere
+else, which is why `past_due` deliberately leaves a service running: the grace between the due
+date and the suspension rung is what dunning *is*. `cancelled` means *will not renew*, so
+dunning never relabels a cancelled Abo `past_due` — it still chases, suspends and ends it.
+
+One plan change, one number: `previewChange()` in `src/server/subscriptions/changes.ts`.
+`GET /api/v1/subscriptions/{id}/preview-change` shows what it returns and
+`POST …/change` books what it returned; the split over the remaining days is
+`calculateProration()`, pure and tested in cents. `differenceCents` is positive when the
+customer owes and negative when we do — an upgrade invoices it, a downgrade credits the **same
+number** to the account. There is no second rule for the way back, and `reversals.ts` keeps the
+rest of them: a renewal taken back is a Rechnungskorrektur *plus* the coupon period given back
+*plus* the period rolled to where it was by `precedingPeriod`, the exact inverse of the
+`followingPeriod` that moved it forward.
+
+A renewal is priced by `calculateQuote()` like everything else, fed the subscription item's own
+**snapshot** — a running Abo is not repriced by a catalog that has moved on. A price reaches a
+customer by way of a plan change they agreed to, and by no other route.
+
 Rule: pages, server actions and API route handlers are thin. Business logic lives in
 `src/server/**` as plain, testable TypeScript that takes a `db`/transaction as a parameter.
 Server actions and `/api/v1` routes call the **same** service functions.
@@ -125,7 +161,11 @@ Server actions and `/api/v1` routes call the **same** service functions.
    naming it in a migration of its own, as `paid_cents` is.
    An invoice's status is `draft → unpaid → (partial) → paid`, plus `cancelled` when a
    correction takes all of it back. **`partial` is an open invoice**: every check that means
-   "this still wants money" asks `isOpenInvoice()` / `OPEN_INVOICE_STATUSES`, never a literal.
+   "this still wants money" asks `isOpenInvoice()` / `OPEN_INVOICE_STATUSES`, never a literal —
+   including "may this period roll over" and "is this Abo paid up".
+   A consequence worth stating: a **Mahngebühr cannot be a line on the invoice it belongs to**.
+   It is its own small invoice, and withdrawing it is a Rechnungskorrektur against *that*
+   document — the mirror of raising it, through the same machinery.
 4. **All multi-step writes run in a DB transaction.** Settling a payment is the shortest one
    worth reading: `applyPayment` takes the payment row `FOR UPDATE` on the provider's unique
    reference *first*, then the invoice, then sums the movements from the rows rather than
@@ -208,6 +248,7 @@ npm run dev                             # web app
 npm run db:up | db:generate | db:migrate | db:reset
 npm run test | test:watch               # Vitest
 npm run lint | format | typecheck
+npm run worker                          # pg-boss + the daily billing:run; its own process
 npm run openapi:generate                # writes public/openapi.json (also served live)
 npm run seed -- "Name" mail@example.net # Super Admin role + employee + 3 demo customers
 npm run staff:add -- "Name" mail@…      # the first employee, when there is none to invite from

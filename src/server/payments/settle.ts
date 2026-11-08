@@ -6,7 +6,6 @@ import type { PaymentProvider } from "@/db/schema";
 import { formatPrice } from "@/lib/format";
 import { createId } from "@/lib/ulid";
 import { notifyThresholds } from "@/server/billing/revenue-notify";
-import { sendPaymentReceivedMail } from "@/server/documents/send";
 import {
     createTransport,
     logMailError,
@@ -14,6 +13,7 @@ import {
     renderEmail,
 } from "@/server/mail";
 import { loadSettings } from "@/server/settings";
+import { reactivateAfterSettlement } from "@/server/subscriptions/service";
 import type { ApplyOutcome } from "./apply";
 
 /**
@@ -152,7 +152,47 @@ export async function emitInvoicePaid(
         await notifyThresholds(db);
     }
 
+    /**
+     * Phase 6's mirror of dunning. A customer who pays an overdue renewal at
+     * midnight has their server back at one minute past, rather than at
+     * three the next morning when the daily run would have noticed.
+     *
+     * It is here, in the seam every settled payment passes through, so there
+     * is one place that knows what "the money arrived" sets off. The run
+     * checks again for anything this missed — a process that died between
+     * the payment and the reactivation — and the two agree because both call
+     * the same function.
+     *
+     * It never throws: the payment is settled either way, and a webhook that
+     * answered 500 because a service could not be woken would be retried,
+     * which is the one thing that must not happen here.
+     */
+    if (outcome.invoiceId) {
+        try {
+            await reactivateAfterSettlement(db, outcome.invoiceId, at);
+        } catch (error) {
+            console.error(
+                "[payments] waking the subscription up failed:",
+                error,
+            );
+        }
+    }
+
     if (outcome.invoiceId && outcome.receiptTo) {
+        /**
+         * Imported at the point of use, and that is load-bearing rather than
+         * style: the receipt mail attaches the rendered invoice, so this
+         * module would otherwise drag `@react-pdf/renderer` into every
+         * process that can settle a payment — including the background
+         * worker, which is a plain Node process where that package's
+         * dependencies cannot be resolved at all (see
+         * `BillingRunContext.renderPdf`). The worker has to be able to
+         * *collect* money without being able to *draw* a document.
+         */
+        const { sendPaymentReceivedMail } = await import(
+            "@/server/documents/send"
+        );
+
         const receipt = sendPaymentReceivedMail({
             invoiceId: outcome.invoiceId,
             to: outcome.receiptTo,

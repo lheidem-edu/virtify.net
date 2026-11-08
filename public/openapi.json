@@ -2796,6 +2796,1008 @@
                 ],
                 "description": "Ein Preisangebot. Dieselbe Funktion rechnet den Shop-Preis, die Kasse und diese Antwort — ein angezeigter Preis kann einem berechneten nicht widersprechen."
             },
+            "SubscriptionService": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Leistung.",
+                        "example": "service_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "provisioning",
+                            "active",
+                            "suspended",
+                            "terminated"
+                        ],
+                        "description": "`pending` ist bestellt und noch nicht eingerichtet, `provisioning` wird gerade angelegt, `active` läuft, `suspended` ist wegen einer offenen Rechnung gesperrt, `terminated` ist abgebaut.",
+                        "example": "active"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Wie die Leistung dem Kunden angezeigt wird.",
+                        "example": "VPS M (1/2)"
+                    },
+                    "module": {
+                        "type": "string",
+                        "description": "Das Bereitstellungsmodul, das sie betreut. `none`, solange nichts automatisch eingerichtet wird.",
+                        "example": "none"
+                    },
+                    "activated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie in Betrieb genommen wurde, in UTC.",
+                        "example": "2026-11-01T09:00:00.000Z"
+                    },
+                    "suspended_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie gesperrt wurde, in UTC.",
+                        "example": null
+                    },
+                    "terminated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie abgebaut wurde, in UTC.",
+                        "example": null
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "label",
+                    "module",
+                    "activated_at",
+                    "suspended_at",
+                    "terminated_at"
+                ],
+                "description": "Eine bereitgestellte Sache — ein VPS, ein Webspace — die zu einer Position des Abos gehört. Eine je bestellter Einheit."
+            },
+            "SubscriptionInvoiceRef": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Rechnung.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die lückenlose Rechnungsnummer.",
+                        "example": "RE-2026-0042"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "`unpaid`, `partial`, `paid` oder `cancelled`. `partial` ist eine **offene** Rechnung.",
+                        "example": "paid"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "initial",
+                            "renewal",
+                            "change",
+                            "dunning_fee"
+                        ],
+                        "description": "Wofür sie ausgestellt wurde: `initial` ist die Rechnung aus der Bestellung, `renewal` eine Verlängerung, `change` die anteilige Differenz eines sofortigen Tarifwechsels, `dunning_fee` eine Mahngebühr.",
+                        "example": "renewal"
+                    },
+                    "gross_cents": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Der Gesamtbetrag in ganzen Cent.",
+                        "example": 1999
+                    },
+                    "paid_cents": {
+                        "type": "integer",
+                        "description": "Was darauf tatsächlich eingegangen ist.",
+                        "example": 1999
+                    },
+                    "due_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie fällig ist, in UTC. Von diesem Tag an werden Einzugsversuche und Mahnstufen gerechnet.",
+                        "example": "2026-12-01T00:00:00.000Z"
+                    },
+                    "issued_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Das Rechnungsdatum, in UTC.",
+                        "example": "2026-11-17T03:00:00.000Z"
+                    },
+                    "period_start": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Beginn des Zeitraums, den sie bezahlt, in UTC.",
+                        "example": "2026-12-01T00:00:00.000Z"
+                    },
+                    "period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende dieses Zeitraums, exklusiv — der Augenblick, in dem der nächste beginnt.",
+                        "example": "2027-01-01T00:00:00.000Z"
+                    }
+                },
+                "required": [
+                    "id",
+                    "number",
+                    "status",
+                    "kind",
+                    "gross_cents",
+                    "paid_cents",
+                    "due_at",
+                    "issued_at",
+                    "period_start",
+                    "period_end"
+                ],
+                "description": "Eine Rechnung, die gegen dieses Abo gestellt wurde, samt dem Zeitraum, den sie bezahlt."
+            },
+            "SubscriptionEvent": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Eintrags.",
+                        "example": "subscriptionevent_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "`status`, `period`, `change`, `dunning` oder `note`.",
+                        "example": "status"
+                    },
+                    "from_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Status davor, bei einem Statuswechsel.",
+                        "example": "past_due"
+                    },
+                    "to_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Status danach.",
+                        "example": "active"
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "Was passiert ist, in einem Satz. Deutsch.",
+                        "example": "Zahlung eingegangen — wieder aktiv."
+                    },
+                    "at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann es passiert ist, in UTC.",
+                        "example": "2026-12-02T08:00:00.000Z"
+                    }
+                },
+                "required": [
+                    "id",
+                    "kind",
+                    "from_status",
+                    "to_status",
+                    "summary",
+                    "at"
+                ],
+                "description": "Ein Eintrag in der Historie des Abos — dieselbe Zeitleiste, die der Kunde im Portal sieht."
+            },
+            "SubscriptionPendingChange": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des vorgemerkten Wechsels.",
+                        "example": "subscriptionchange_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "description": "`upgrade`, `downgrade`, `quantity` oder `none`.",
+                        "example": "upgrade"
+                    },
+                    "effective": {
+                        "type": "string",
+                        "enum": [
+                            "immediately",
+                            "period_end"
+                        ],
+                        "description": "Wann er greift.",
+                        "example": "period_end"
+                    },
+                    "product_id": {
+                        "type": "string",
+                        "description": "Das Produkt, auf das gewechselt wird.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Der Name dieses Produkts.",
+                        "example": "VPS L"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "description": "Die künftige Menge.",
+                        "example": 1
+                    },
+                    "recurring_gross_cents": {
+                        "type": "integer",
+                        "description": "Was ein voller Zeitraum danach kostet, vor Gutschein.",
+                        "example": 3999
+                    },
+                    "apply_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann er greift, in UTC — bei `period_end` der erste Augenblick des nächsten Zeitraums.",
+                        "example": "2027-01-01T00:00:00.000Z"
+                    }
+                },
+                "required": [
+                    "id",
+                    "direction",
+                    "effective",
+                    "product_id",
+                    "description",
+                    "quantity",
+                    "recurring_gross_cents",
+                    "apply_at"
+                ],
+                "description": "Ein Tarifwechsel, der vereinbart ist und zum Ende des Zeitraums greift. Bis dahin zahlt der Kunde, was er hat."
+            },
+            "SubscriptionListItem": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Abos.",
+                        "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "trialing",
+                            "active",
+                            "past_due",
+                            "paused",
+                            "cancelled",
+                            "ended"
+                        ],
+                        "description": "`trialing` ist in der kostenlosen Testphase, `active` läuft, `past_due` hat eine überfällige Rechnung (die Leistungen laufen zunächst weiter — gesperrt wird erst im Mahnlauf), `paused` ist angehalten und wird nicht berechnet, `cancelled` wird nicht mehr verlängert und läuft bis zum Ende des bezahlten Zeitraums, `ended` ist vorbei. Aus `ended` führt kein Weg zurück.",
+                        "example": "active"
+                    },
+                    "cycle": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semiannual",
+                            "annual",
+                            "biennial",
+                            "onetime"
+                        ],
+                        "description": "Der Abrechnungsrhythmus des Abos.",
+                        "example": "monthly"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "ISO 4217. Jeder Betrag am Abo ist darin.",
+                        "example": "EUR"
+                    },
+                    "current_period_start": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Beginn des laufenden Zeitraums, in UTC.",
+                        "example": "2026-11-01T08:00:00.000Z"
+                    },
+                    "current_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende des laufenden Zeitraums, exklusiv — der Augenblick, in dem der nächste beginnt. `null` bei einem einmaligen Verkauf.",
+                        "example": "2026-12-01T00:00:00.000Z"
+                    },
+                    "next_billing_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann die nächste Rechnung fällig wird. Die Rechnung selbst wird einige Tage vorher gestellt. `null`, solange pausiert oder beendet.",
+                        "example": "2026-12-01T00:00:00.000Z"
+                    },
+                    "trial_ends_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende der kostenlosen Testphase, in UTC.",
+                        "example": null
+                    },
+                    "cancel_at_period_end": {
+                        "type": "boolean",
+                        "description": "Ob das Abo zum Ende des bezahlten Zeitraums endet. Dann wird keine Verlängerung mehr gestellt.",
+                        "example": false
+                    },
+                    "auto_charge": {
+                        "type": "boolean",
+                        "description": "Ob wir die Verlängerung vom hinterlegten Zahlungsmittel einziehen. Ohne hinterlegtes Mittel passiert nichts.",
+                        "example": true
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Das Kundenkonto, dem das Abo gehört.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "period_gross_cents": {
+                        "type": "integer",
+                        "description": "Was ein voller Zeitraum aller Positionen kostet, vor einem Gutschein, in ganzen Cent.",
+                        "example": 1999
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Kurzbezeichnung für eine Liste — die erste Position, und wie viele weitere es gibt.",
+                        "example": "VPS M"
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "cycle",
+                    "currency",
+                    "current_period_start",
+                    "current_period_end",
+                    "next_billing_at",
+                    "trial_ends_at",
+                    "cancel_at_period_end",
+                    "auto_charge",
+                    "customer_id",
+                    "period_gross_cents",
+                    "label"
+                ],
+                "description": "Ein Abo, wie es in einer Liste erscheint."
+            },
+            "SubscriptionPage": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SubscriptionListItem"
+                        },
+                        "description": "Die Zeilen dieser Seite, in ID-Reihenfolge."
+                    },
+                    "next_cursor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "An die nächste Anfrage als `cursor` weitergeben; `null` auf der letzten Seite.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "has_more": {
+                        "type": "boolean",
+                        "description": "Ob nach dieser Seite noch Zeilen folgen.",
+                        "example": false
+                    }
+                },
+                "required": [
+                    "data",
+                    "next_cursor",
+                    "has_more"
+                ]
+            },
+            "SubscriptionCreate": {
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Für welches Kundenkonto. Pflicht für einen Mitarbeiterschlüssel; bei einem Kundenschlüssel wird das Feld ignoriert.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "product_id": {
+                                    "type": "string",
+                                    "description": "ID oder Slug des Produkts.",
+                                    "example": "vps-m"
+                                },
+                                "quantity": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 999,
+                                    "default": 1,
+                                    "description": "Wie viele Einheiten.",
+                                    "example": 1
+                                },
+                                "options": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "option_id": {
+                                                "type": "string",
+                                                "description": "ID der Zusatzoption.",
+                                                "example": "configoption_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                            },
+                                            "value_id": {
+                                                "type": "string",
+                                                "description": "ID des gewählten Werts.",
+                                                "example": "configoptionvalue_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                            },
+                                            "quantity": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9999,
+                                                "default": 1,
+                                                "description": "Einheiten dieses Werts.",
+                                                "example": 1
+                                            }
+                                        },
+                                        "required": [
+                                            "option_id",
+                                            "value_id"
+                                        ]
+                                    },
+                                    "default": [],
+                                    "description": "Die gewählten Zusatzoptionen."
+                                }
+                            },
+                            "required": [
+                                "product_id"
+                            ]
+                        },
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "description": "Die Positionen des Abos. Alle teilen sich den Rhythmus und die Währung unten."
+                    },
+                    "cycle": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semiannual",
+                            "annual",
+                            "biennial",
+                            "onetime"
+                        ],
+                        "description": "Der Abrechnungsrhythmus des Abos.",
+                        "example": "monthly"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "default": "EUR",
+                        "description": "ISO 4217.",
+                        "example": "EUR"
+                    },
+                    "coupon_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Ein Gutscheincode, der mitlaufen soll.",
+                        "example": "WILLKOMMEN"
+                    },
+                    "auto_charge": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Verlängerungen automatisch einziehen, sobald ein Zahlungsmittel hinterlegt ist.",
+                        "example": true
+                    },
+                    "accept_terms": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Bestätigung der AGB. Ohne sie wird nichts angelegt.",
+                        "example": true
+                    },
+                    "accept_withdrawal": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Kenntnisnahme der Widerrufsbelehrung. Nur für Verbraucher erforderlich.",
+                        "example": true
+                    },
+                    "request_immediate_start": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Ausdrückliches Verlangen nach sofortigem Beginn der Leistung, § 356 Abs. 4 BGB. Nur für Verbraucher.",
+                        "example": true
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Interne Notiz zur Bestellung.",
+                        "example": null
+                    }
+                },
+                "required": [
+                    "items",
+                    "cycle"
+                ],
+                "description": "Ein neues Abo. Es entsteht über denselben Bestellvorgang wie im Shop — eine Bestellung, eine Rechnung, die Leistungen — damit es genau einen Weg gibt, auf dem ein Abo zur Welt kommt."
+            },
+            "SubscriptionCancel": {
+                "type": "object",
+                "properties": {
+                    "when": {
+                        "type": "string",
+                        "enum": [
+                            "now",
+                            "period_end"
+                        ],
+                        "default": "period_end",
+                        "description": "`period_end` lässt den bezahlten Zeitraum auslaufen — die Leistungen laufen weiter und es wird keine Verlängerung mehr gestellt. `now` beendet sofort und baut die Leistungen ab.",
+                        "example": "period_end"
+                    },
+                    "reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Warum gekündigt wird. Wird am Abo vermerkt.",
+                        "example": "Projekt eingestellt"
+                    }
+                },
+                "description": "Eine Kündigung. Sie erstattet nichts — ob etwas zurückgezahlt wird, entscheidet der Betreiber (§ 8 AGB)."
+            },
+            "SubscriptionPause": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Warum pausiert wird.",
+                        "example": "Umzug des Projekts"
+                    }
+                },
+                "description": "Hält das Abo an: keine Rechnungen, Leistungen gesperrt."
+            },
+            "SubscriptionResume": {
+                "type": "object",
+                "properties": {
+                    "what": {
+                        "type": "string",
+                        "enum": [
+                            "auto",
+                            "paused",
+                            "cancellation"
+                        ],
+                        "default": "auto",
+                        "description": "`paused` nimmt ein pausiertes Abo wieder in Betrieb, `cancellation` nimmt eine Kündigung zum Ende des Zeitraums zurück. `auto` wählt das, was zutrifft — beides zugleich kann ein Abo nicht sein.",
+                        "example": "auto"
+                    }
+                },
+                "description": "Setzt ein Abo fort."
+            },
+            "SubscriptionChange": {
+                "type": "object",
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "description": "Welche Position gewechselt wird.",
+                        "example": "subscriptionitem_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "product_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Das neue Produkt. Fehlt es, bleibt das bisherige.",
+                        "example": "vps-l"
+                    },
+                    "quantity": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 999,
+                        "description": "Die neue Menge. Fehlt sie, bleibt die bisherige.",
+                        "example": 2
+                    },
+                    "options": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "option_id": {
+                                    "type": "string",
+                                    "description": "ID der Zusatzoption.",
+                                    "example": "configoption_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                },
+                                "value_id": {
+                                    "type": "string",
+                                    "description": "ID des gewählten Werts.",
+                                    "example": "configoptionvalue_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                },
+                                "quantity": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9999,
+                                    "default": 1,
+                                    "description": "Einheiten dieses Werts.",
+                                    "example": 2
+                                }
+                            },
+                            "required": [
+                                "option_id",
+                                "value_id"
+                            ]
+                        },
+                        "description": "Die neuen Zusatzoptionen. Fehlt das Feld, bleiben die bisherigen; eine leere Liste entfernt alle."
+                    },
+                    "effective": {
+                        "type": "string",
+                        "enum": [
+                            "immediately",
+                            "period_end"
+                        ],
+                        "default": "immediately",
+                        "description": "`immediately` wechselt sofort und rechnet die Differenz für die Resttage ab — bei einem Upgrade als Rechnung, bei einem Downgrade als Guthaben. `period_end` merkt den Wechsel vor; heute fließt nichts.",
+                        "example": "immediately"
+                    }
+                },
+                "required": [
+                    "item_id"
+                ],
+                "description": "Ein Tarifwechsel. Dieselben Felder wie bei der Vorschau, und dieselbe Rechnung dahinter."
+            },
+            "SubscriptionProration": {
+                "type": "object",
+                "properties": {
+                    "remaining_days": {
+                        "type": "integer",
+                        "description": "Tage des laufenden Zeitraums, die noch kommen — der heutige eingeschlossen.",
+                        "example": 15
+                    },
+                    "period_days": {
+                        "type": "integer",
+                        "description": "Tage, die ein voller Zeitraum umfasst.",
+                        "example": 30
+                    },
+                    "unused_credit_cents": {
+                        "type": "integer",
+                        "description": "Der nicht verbrauchte Teil dessen, was schon bezahlt ist, in ganzen Cent.",
+                        "example": 1000
+                    },
+                    "new_charge_cents": {
+                        "type": "integer",
+                        "description": "Dieselben Tage zum neuen Preis, in ganzen Cent.",
+                        "example": 2000
+                    },
+                    "difference_cents": {
+                        "type": "integer",
+                        "description": "Was den Besitzer wechselt. Positiv schuldet der Kunde und wird in Rechnung gestellt; negativ schulden wir und es wird dem Guthaben gutgeschrieben. Eine Richtung, eine Zahl.",
+                        "example": 1000
+                    }
+                },
+                "required": [
+                    "remaining_days",
+                    "period_days",
+                    "unused_credit_cents",
+                    "new_charge_cents",
+                    "difference_cents"
+                ],
+                "description": "Die anteilige Abrechnung für den Rest des laufenden Zeitraums: zurückgeben, was nicht verbraucht ist, und dieselben Tage zum neuen Preis berechnen."
+            },
+            "SubscriptionChangePreview": {
+                "type": "object",
+                "properties": {
+                    "subscription_id": {
+                        "type": "string",
+                        "description": "Das Abo.",
+                        "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "item_id": {
+                        "type": "string",
+                        "description": "Die Position, um die es geht.",
+                        "example": "subscriptionitem_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "ISO 4217.",
+                        "example": "EUR"
+                    },
+                    "cycle": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semiannual",
+                            "annual",
+                            "biennial",
+                            "onetime"
+                        ],
+                        "description": "Der Abrechnungsrhythmus des Abos.",
+                        "example": "monthly"
+                    },
+                    "effective": {
+                        "type": "string",
+                        "enum": [
+                            "immediately",
+                            "period_end"
+                        ],
+                        "description": "Wann der Wechsel greifen würde.",
+                        "example": "immediately"
+                    },
+                    "apply_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Der Augenblick, ab dem er gilt, in UTC.",
+                        "example": "2026-11-16T08:00:00.000Z"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "description": "`upgrade`, `downgrade` oder `none`.",
+                        "example": "upgrade"
+                    },
+                    "current": {
+                        "type": "object",
+                        "properties": {
+                            "product_id": {
+                                "type": "string",
+                                "description": "Das Produkt.",
+                                "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Sein Name.",
+                                "example": "VPS L"
+                            },
+                            "quantity": {
+                                "type": "integer",
+                                "description": "Die Menge.",
+                                "example": 1
+                            },
+                            "unit_price_cents": {
+                                "type": "integer",
+                                "description": "Grundpreis je Einheit und vollem Zeitraum.",
+                                "example": 3999
+                            },
+                            "recurring_gross_cents": {
+                                "type": "integer",
+                                "description": "Grundpreis plus Optionen für einen vollen Zeitraum.",
+                                "example": 3999
+                            }
+                        },
+                        "required": [
+                            "product_id",
+                            "description",
+                            "quantity",
+                            "unit_price_cents",
+                            "recurring_gross_cents"
+                        ],
+                        "description": "Was heute gilt."
+                    },
+                    "next": {
+                        "type": "object",
+                        "properties": {
+                            "product_id": {
+                                "type": "string",
+                                "description": "Das Produkt.",
+                                "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Sein Name.",
+                                "example": "VPS L"
+                            },
+                            "quantity": {
+                                "type": "integer",
+                                "description": "Die Menge.",
+                                "example": 1
+                            },
+                            "unit_price_cents": {
+                                "type": "integer",
+                                "description": "Grundpreis je Einheit und vollem Zeitraum.",
+                                "example": 3999
+                            },
+                            "recurring_gross_cents": {
+                                "type": "integer",
+                                "description": "Grundpreis plus Optionen für einen vollen Zeitraum.",
+                                "example": 3999
+                            }
+                        },
+                        "required": [
+                            "product_id",
+                            "description",
+                            "quantity",
+                            "unit_price_cents",
+                            "recurring_gross_cents"
+                        ],
+                        "description": "Was danach gilt."
+                    },
+                    "proration": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SubscriptionProration"
+                            },
+                            {
+                                "description": "Die anteilige Abrechnung für den Rest des laufenden Zeitraums."
+                            }
+                        ]
+                    },
+                    "invoice_today_cents": {
+                        "type": "integer",
+                        "description": "Was heute in Rechnung gestellt wird, in ganzen Cent. 0 bei einem Downgrade oder bei einem Wechsel zum Ende des Zeitraums.",
+                        "example": 1000
+                    },
+                    "credit_today_cents": {
+                        "type": "integer",
+                        "description": "Was heute dem Guthaben gutgeschrieben wird. Die Spiegelung von `invoice_today_cents`; eins von beiden ist immer 0.",
+                        "example": 0
+                    },
+                    "current_period_cents": {
+                        "type": "integer",
+                        "description": "Was ein voller Zeitraum des ganzen Abos heute kostet.",
+                        "example": 1999
+                    },
+                    "next_period_cents": {
+                        "type": "integer",
+                        "description": "Was er danach kostet.",
+                        "example": 3999
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Die Zeile, die auf der Rechnung stehen würde. Deutsch.",
+                        "example": "Tarifwechsel: VPS L — anteilig für 15 von 30 Tagen"
+                    }
+                },
+                "required": [
+                    "subscription_id",
+                    "item_id",
+                    "currency",
+                    "cycle",
+                    "effective",
+                    "apply_at",
+                    "direction",
+                    "current",
+                    "next",
+                    "proration",
+                    "invoice_today_cents",
+                    "credit_today_cents",
+                    "current_period_cents",
+                    "next_period_cents",
+                    "label"
+                ],
+                "description": "Was ein Tarifwechsel kosten würde, auf den Cent. Genau die Zahl, die `POST …/change` anschließend bucht — beide stammen aus derselben Funktion."
+            },
+            "SubscriptionChangeResult": {
+                "type": "object",
+                "properties": {
+                    "subscription": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Subscription"
+                            },
+                            {
+                                "description": "Das Abo, wie es nach dem Wechsel aussieht."
+                            }
+                        ]
+                    },
+                    "preview": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SubscriptionChangePreview"
+                            },
+                            {
+                                "description": "Die Abrechnung, die gebucht wurde — dieselbe, die `GET …/preview-change` vorher gezeigt hätte."
+                            }
+                        ]
+                    },
+                    "change_id": {
+                        "type": "string",
+                        "description": "Der festgehaltene Wechsel.",
+                        "example": "subscriptionchange_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "invoice_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Rechnung über die anteilige Differenz, falls eine gestellt wurde.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "invoice_number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Ihre Nummer.",
+                        "example": "RE-2026-0043"
+                    },
+                    "credited_cents": {
+                        "type": "integer",
+                        "description": "Was stattdessen dem Guthaben gutgeschrieben wurde.",
+                        "example": 0
+                    },
+                    "applied_now": {
+                        "type": "boolean",
+                        "description": "Ob der Wechsel sofort gilt oder erst zum Ende des Zeitraums.",
+                        "example": true
+                    }
+                },
+                "required": [
+                    "subscription",
+                    "preview",
+                    "change_id",
+                    "invoice_id",
+                    "invoice_number",
+                    "credited_cents",
+                    "applied_now"
+                ],
+                "description": "Das Ergebnis eines Tarifwechsels."
+            },
+            "SubscriptionChangePreviewResponse": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/SubscriptionChangePreview"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "summary": {
+                                "type": "string",
+                                "description": "Ein Satz, der die Zahlen zusammenfasst — fertig zum Anzeigen. Deutsch.",
+                                "example": "Heute 10,00 € anteilig, danach 39,99 € je Zeitraum."
+                            }
+                        },
+                        "required": [
+                            "summary"
+                        ]
+                    }
+                ],
+                "description": "Die Vorschau samt fertigem Satz dazu."
+            },
             "Transaction": {
                 "type": "object",
                 "properties": {
@@ -4743,6 +5745,949 @@
                     },
                     "404": {
                         "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/subscriptions": {
+            "get": {
+                "tags": [
+                    "Abos"
+                ],
+                "summary": "Abos auflisten",
+                "description": "Gibt die Abos seitenweise zurück, sortiert nach ID. Ein Kundenschlüssel bekommt ausschließlich die eigenen; `customer_id` wird für ihn überschrieben statt beachtet. Benötigt `subscriptions.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                            "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": false,
+                        "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25,
+                            "description": "Zeilen pro Seite, höchstens 100.",
+                            "example": 25
+                        },
+                        "required": false,
+                        "description": "Zeilen pro Seite, höchstens 100.",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "trialing",
+                                "active",
+                                "past_due",
+                                "paused",
+                                "cancelled",
+                                "ended"
+                            ],
+                            "description": "Auf einen Status einschränken.",
+                            "example": "active"
+                        },
+                        "required": false,
+                        "description": "Auf einen Status einschränken.",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Auf ein Kundenkonto einschränken. Nur für Mitarbeiterschlüssel wirksam.",
+                            "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": false,
+                        "description": "Auf ein Kundenkonto einschränken. Nur für Mitarbeiterschlüssel wirksam.",
+                        "name": "customer_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Eine Seite Abos.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SubscriptionPage"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Abos"
+                ],
+                "summary": "Abo anlegen",
+                "description": "Legt ein Abo an — über denselben Bestellvorgang wie der Shop, damit es genau einen Weg gibt, auf dem ein Abo zur Welt kommt: Bestellung, Positionen, Leistungen und die erste ausgestellte Rechnung in einer Transaktion. Zurückgegeben wird das entstandene Abo; wer die Bestellung selbst braucht, nimmt `POST /api/v1/orders`.\n\nDie Preise werden hier neu aus dem Katalog gerechnet. Nichts, was der Aufrufer sendet, ist ein Preis.\n\nBenötigt `subscriptions.write`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SubscriptionCreate"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Das Abo wurde angelegt.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/Subscription"
+                                        },
+                                        {
+                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe ist so nicht bestellbar — ein Produkt gibt es nicht, die AGB wurden nicht bestätigt, oder die Position begründet gar kein Abo.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/subscriptions/{id}": {
+            "get": {
+                "tags": [
+                    "Abos"
+                ],
+                "summary": "Abo ansehen",
+                "description": "Ein Abo mit seinen Positionen, den Leistungen darunter, jeder je dagegen gestellten Rechnung und seiner Historie. Ein Schlüssel, der die Zeile nicht sehen darf, bekommt 404 statt 403 — 403 würde bestätigen, dass die ID existiert. Benötigt `subscriptions.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Abos.",
+                            "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Abos.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Das Abo.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/Subscription"
+                                        },
+                                        {
+                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/subscriptions/{id}/cancel": {
+            "post": {
+                "tags": [
+                    "Abos"
+                ],
+                "summary": "Abo kündigen",
+                "description": "Kündigt zum Ende des bezahlten Zeitraums (Voreinstellung) oder sofort. Bei `period_end` laufen die Leistungen weiter, es wird keine Verlängerung mehr gestellt, und der tägliche Lauf beendet das Abo an dem Tag. Bei `now` endet es heute und die Leistungen werden abgebaut.\n\nEs wird nichts erstattet: ob Geld zurückgeht, entscheidet der Betreiber (§ 8 AGB). Benötigt `subscriptions.write`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Abos.",
+                            "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Abos.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SubscriptionCancel"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Das Abo nach der Kündigung.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/Subscription"
+                                        },
+                                        {
+                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Der Zustand des Abos lässt das nicht zu — ein beendetes Abo lässt sich nicht kündigen, ein laufendes nicht fortsetzen. Der Grund steht im `detail`.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/subscriptions/{id}/pause": {
+            "post": {
+                "tags": [
+                    "Abos"
+                ],
+                "summary": "Abo pausieren",
+                "description": "Hält das Abo an: es wird nichts mehr berechnet und die Leistungen werden gesperrt. Beim Fortsetzen wandert das Ende des Zeitraums um genau die Spanne nach hinten, die es stillstand — der Kunde verliert die Tage nicht, die er nicht nutzen konnte, und gewinnt auch keine. Benötigt `subscriptions.write`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Abos.",
+                            "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Abos.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SubscriptionPause"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Das pausierte Abo.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/Subscription"
+                                        },
+                                        {
+                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Der Zustand des Abos lässt das nicht zu — ein beendetes Abo lässt sich nicht kündigen, ein laufendes nicht fortsetzen. Der Grund steht im `detail`.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/subscriptions/{id}/resume": {
+            "post": {
+                "tags": [
+                    "Abos"
+                ],
+                "summary": "Abo fortsetzen",
+                "description": "Setzt ein pausiertes Abo fort oder nimmt eine Kündigung zum Ende des Zeitraums zurück. `what` sagt, welches von beidem; `auto` wählt das, was zutrifft. Benötigt `subscriptions.write`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Abos.",
+                            "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Abos.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SubscriptionResume"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Das fortgesetzte Abo.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/Subscription"
+                                        },
+                                        {
+                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Der Zustand des Abos lässt das nicht zu — ein beendetes Abo lässt sich nicht kündigen, ein laufendes nicht fortsetzen. Der Grund steht im `detail`.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/subscriptions/{id}/change": {
+            "post": {
+                "tags": [
+                    "Abos"
+                ],
+                "summary": "Tarif wechseln",
+                "description": "Wechselt eine Position auf ein anderes Produkt, eine andere Menge oder andere Optionen.\n\nBei `immediately` wird die Differenz für die Resttage des laufenden Zeitraums abgerechnet: ein Upgrade als Rechnung, ein Downgrade als Guthaben auf dem Konto — dieselbe Zahl, nur mit umgekehrtem Vorzeichen. Bei `period_end` fließt heute nichts und die nächste Verlängerung wird aus der neuen Konfiguration gebaut.\n\nDie Beträge stammen aus derselben Funktion wie `GET …/preview-change`; die Vorschau und die Buchung können nicht auseinanderlaufen. Benötigt `subscriptions.write`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Abos.",
+                            "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Abos.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SubscriptionChange"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Der Wechsel ist gebucht; das Abo und die Abrechnung dazu.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SubscriptionChangeResult"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Der Zustand des Abos lässt das nicht zu — ein beendetes Abo lässt sich nicht kündigen, ein laufendes nicht fortsetzen. Der Grund steht im `detail`.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/subscriptions/{id}/preview-change": {
+            "get": {
+                "tags": [
+                    "Abos"
+                ],
+                "summary": "Tarifwechsel vorab rechnen",
+                "description": "Was ein Tarifwechsel kosten würde, auf den Cent, ohne etwas zu ändern. Genau die Zahl, die `POST …/change` anschließend bucht.\n\nDie Felder entsprechen denen des Wechsels; Optionen werden als wiederholter Parameter `option=optionId:valueId:menge` übergeben, weil ein GET keinen Körper hat. Fehlt `option` ganz, bleiben die bisherigen Optionen stehen.\n\nBenötigt `subscriptions.read` — eine Vorschau ändert nichts.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Abos.",
+                            "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Abos.",
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Welche Position gewechselt würde.",
+                            "example": "subscriptionitem_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Welche Position gewechselt würde.",
+                        "name": "item_id",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Das neue Produkt. Fehlt es, bleibt das bisherige.",
+                            "example": "vps-l"
+                        },
+                        "required": false,
+                        "description": "Das neue Produkt. Fehlt es, bleibt das bisherige.",
+                        "name": "product_id",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "description": "Die neue Menge.",
+                            "example": 2
+                        },
+                        "required": false,
+                        "description": "Die neue Menge.",
+                        "name": "quantity",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Eine Zusatzoption als `optionId:valueId:menge`. Mehrfach angebbar.",
+                            "example": [
+                                "configoption_01ABC:configoptionvalue_01DEF:2"
+                            ]
+                        },
+                        "required": false,
+                        "description": "Eine Zusatzoption als `optionId:valueId:menge`. Mehrfach angebbar.",
+                        "name": "option",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "immediately",
+                                "period_end"
+                            ],
+                            "description": "Wann der Wechsel greifen würde.",
+                            "example": "immediately"
+                        },
+                        "required": false,
+                        "description": "Wann der Wechsel greifen würde.",
+                        "name": "effective",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Die Vorschau.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SubscriptionChangePreviewResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Der Zustand des Abos lässt das nicht zu — ein beendetes Abo lässt sich nicht kündigen, ein laufendes nicht fortsetzen. Der Grund steht im `detail`.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

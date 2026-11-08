@@ -2,7 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { cache } from "react";
 import { db, schema } from "@/db";
-import { bank, operator, policy, revenue, site } from "@/lib/site";
+import { bank, billing, operator, policy, revenue, site } from "@/lib/site";
 
 /**
  * The operator's details, from the database when they have been edited and
@@ -43,6 +43,19 @@ export type Settings = {
         kleinunternehmerCurrentLimitCents: number;
         basis: RevenueBasis;
     };
+    /** Phase 6: the recurring run, the retry ladder and dunning. */
+    billing: BillingPolicy;
+};
+
+export type BillingPolicy = {
+    renewalLeadDays: number;
+    /** Days after the due date an auto-charge is attempted on. */
+    collectionRetryDays: number[];
+    dunningReminderDays: number;
+    dunningMahnungDays: number;
+    dunningSuspendDays: number;
+    dunningTerminateDays: number;
+    dunningFeeCents: number;
 };
 
 /** Which date a paid invoice counts towards a calendar year. */
@@ -68,6 +81,10 @@ export const defaultSettings: Settings = {
     bank,
     policy,
     revenue: { ...revenue, basis: revenueBasis(revenue.basis) },
+    billing: {
+        ...billing,
+        collectionRetryDays: [...billing.collectionRetryDays],
+    },
 };
 
 export const loadSettings = cache(async (): Promise<Settings> => {
@@ -124,6 +141,24 @@ export const loadSettings = cache(async (): Promise<Settings> => {
             kleinunternehmerCurrentLimitCents:
                 row.kleinunternehmerCurrentLimitCents,
             basis: revenueBasis(row.revenueBasis),
+        },
+        billing: {
+            renewalLeadDays: row.renewalLeadDays,
+            /**
+             * An empty ladder would mean "never collect anything", which is
+             * never what an operator means by clearing a field — it is what
+             * a failed migration or a bad form looks like. The default is
+             * the safer reading.
+             */
+            collectionRetryDays:
+                row.collectionRetryDays.length > 0
+                    ? [...row.collectionRetryDays].sort((a, b) => a - b)
+                    : [...billing.collectionRetryDays],
+            dunningReminderDays: row.dunningReminderDays,
+            dunningMahnungDays: row.dunningMahnungDays,
+            dunningSuspendDays: row.dunningSuspendDays,
+            dunningTerminateDays: row.dunningTerminateDays,
+            dunningFeeCents: row.dunningFeeCents,
         },
     };
 });

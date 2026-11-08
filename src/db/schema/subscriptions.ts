@@ -102,6 +102,14 @@ export const subscription = pgTable(
         discountPeriodsRemaining: integer("discount_periods_remaining"),
 
         startedAt: timestamp("started_at").notNull().defaultNow(),
+        /**
+         * When it was paused. Resuming shifts the period end forward by
+         * exactly this span — the same arithmetic in both directions, so a
+         * customer neither loses the days they could not use nor gains any.
+         */
+        pausedAt: timestamp("paused_at"),
+        /** When an overdue invoice first put it into `past_due`. */
+        pastDueAt: timestamp("past_due_at"),
         cancelledAt: timestamp("cancelled_at"),
         endedAt: timestamp("ended_at"),
 
@@ -240,6 +248,8 @@ export const service = pgTable(
     ],
 );
 
+export type SubscriptionStatus = (typeof subscriptionStatus.enumValues)[number];
+export type ServiceStatus = (typeof serviceStatus.enumValues)[number];
 export type Subscription = typeof subscription.$inferSelect;
 export type SubscriptionItem = typeof subscriptionItem.$inferSelect;
 export type Service = typeof service.$inferSelect;

@@ -10,11 +10,13 @@ import {
     Package,
     Receipt,
     ReceiptText,
+    Repeat,
     Scale,
     Settings,
     Shield,
     ShieldCheck,
     ShoppingCart,
+    Timer,
     User,
     UserCog,
     Users,
@@ -58,6 +60,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     key: KeyRound,
     "shield-check": ShieldCheck,
     "shopping-cart": ShoppingCart,
+    repeat: Repeat,
+    timer: Timer,
     "credit-card": CreditCard,
 };
 

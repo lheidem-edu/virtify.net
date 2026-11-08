@@ -9,7 +9,11 @@ import {
     followingPeriod,
     isAnchorDay,
     nextAnchor,
+    pauseSpanMs,
+    periodAfter,
+    precedingPeriod,
     proratedUnitPrice,
+    shiftInstant,
 } from "@/server/billing/periods";
 
 /**
@@ -228,5 +232,137 @@ describe("every period after the first", () => {
         expect(berlinDay(second.end as Date)).toBe("2027-03-01");
         expect(second.prorated).toBe(false);
         expect(proratedUnitPrice(5699, second)).toBe(5699);
+    });
+});
+
+describe("the period before one — rolling a renewal back", () => {
+    it("is the exact inverse of going forward", () => {
+        // The round trip has to be exact, or a cancelled renewal leaves the
+        // subscription a day away from where it started.
+        for (const cycle of [
+            "monthly",
+            "quarterly",
+            "semiannual",
+            "annual",
+            "biennial",
+        ] as const) {
+            const start = new Date("2026-02-01T00:00:00.000+01:00");
+            const forward = followingPeriod(start, cycle);
+            const back = precedingPeriod(forward.end as Date, cycle);
+
+            expect(back.start.getTime(), cycle).toBe(start.getTime());
+            expect((back.end as Date).getTime(), cycle).toBe(
+                (forward.end as Date).getTime(),
+            );
+            expect(back.periodDays, cycle).toBe(forward.periodDays);
+        }
+    });
+
+    it("names the days it covers, in Berlin", () => {
+        const back = precedingPeriod(
+            new Date("2026-03-01T00:00:00.000+01:00"),
+            "monthly",
+        );
+
+        expect(berlinDay(back.start)).toBe("2026-02-01");
+        expect(berlinDay(back.end as Date)).toBe("2026-03-01");
+        expect(back.periodDays).toBe(28);
+        expect(back.prorated).toBe(false);
+    });
+
+    it("has nothing to roll back for a one-off sale", () => {
+        const back = precedingPeriod(new Date("2026-03-01"), "onetime");
+
+        expect(back.end).toBeNull();
+        expect(back.periodDays).toBe(0);
+    });
+});
+
+describe("pausing and resuming", () => {
+    it("gives back exactly the span that stood still", () => {
+        const paused = new Date("2026-11-10T12:00:00.000Z");
+        const resumed = new Date("2026-11-20T12:00:00.000Z");
+        const span = pauseSpanMs(paused, resumed);
+
+        expect(span).toBe(10 * 86_400_000);
+
+        const end = new Date("2026-12-01T00:00:00.000Z");
+
+        expect(shiftInstant(end, span)?.toISOString()).toBe(
+            "2026-12-11T00:00:00.000Z",
+        );
+    });
+
+    it("never shortens a period somebody has paid for", () => {
+        // A resume stamped before its own pause — only a repaired row can
+        // produce it, and it must not take days away.
+        expect(
+            pauseSpanMs(
+                new Date("2026-11-20T00:00:00.000Z"),
+                new Date("2026-11-10T00:00:00.000Z"),
+            ),
+        ).toBe(0);
+    });
+
+    it("leaves a one-off's absent end absent", () => {
+        expect(shiftInstant(null, 86_400_000)).toBeNull();
+    });
+});
+
+describe("the period a subscription moves into next", () => {
+    it("is a whole cycle from where the last one ended", () => {
+        const next = periodAfter({
+            start: new Date("2026-12-01T00:00:00.000+01:00"),
+            cycle: "monthly",
+            trialEndsAt: null,
+            anchorDay: 1,
+        });
+
+        expect(berlinDay(next.end as Date)).toBe("2027-01-01");
+        expect(next.prorated).toBe(false);
+    });
+
+    it("cuts the first paid period back to the anchor when a trial just ended", () => {
+        // The trial ended on the 15th; with the anchor on the 1st the first
+        // paid period runs 15.11. – 1.12. and is charged for those 16 days.
+        const trialEnd = new Date("2026-11-15T09:00:00.000+01:00");
+        const next = periodAfter({
+            start: trialEnd,
+            cycle: "monthly",
+            trialEndsAt: trialEnd,
+            anchorDay: 1,
+        });
+
+        expect(berlinDay(next.end as Date)).toBe("2026-12-01");
+        expect(next.prorated).toBe(true);
+        expect(next.usedDays).toBe(16);
+        expect(next.periodDays).toBe(30);
+    });
+
+    it("gives a whole period after a trial when no anchor is configured", () => {
+        const trialEnd = new Date("2026-11-15T09:00:00.000+01:00");
+        const next = periodAfter({
+            start: trialEnd,
+            cycle: "monthly",
+            trialEndsAt: trialEnd,
+            anchorDay: 0,
+        });
+
+        expect(berlinDay(next.end as Date)).toBe("2026-12-15");
+        expect(next.prorated).toBe(false);
+    });
+
+    it("stops cutting once the trial is behind it", () => {
+        // `trial_ends_at` is still on the row but no longer the period that
+        // is starting: every period from here is a whole one.
+        const next = periodAfter({
+            start: new Date("2026-12-01T00:00:00.000+01:00"),
+            cycle: "monthly",
+            trialEndsAt: new Date("2026-11-15T09:00:00.000+01:00"),
+            anchorDay: 1,
+        });
+
+        expect(berlinDay(next.end as Date)).toBe("2027-01-01");
+        expect(next.prorated).toBe(false);
     });
 });

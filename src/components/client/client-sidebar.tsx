@@ -8,6 +8,7 @@ import {
     LayoutDashboard,
     LogOut,
     Receipt,
+    Repeat,
     Scale,
     Settings,
     Shield,
@@ -55,6 +56,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     users: Users,
     key: KeyRound,
     "shopping-cart": ShoppingCart,
+    repeat: Repeat,
     wallet: Wallet,
 };
 

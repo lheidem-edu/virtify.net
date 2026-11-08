@@ -56,6 +56,30 @@ export const policy = {
 } as const;
 
 /**
+ * The recurring billing run: when a renewal is invoiced, when it is
+ * collected, and what happens when it is not paid. All of them are settings
+ * in the database — these are only what a fresh installation starts with.
+ *
+ * Every figure is days after the relevant date, and every one of them is a
+ * rung that is climbed at most once per invoice: the unique indexes on
+ * `invoice_collection` and `dunning_action` are what make that true, not the
+ * fact that the run reads these numbers.
+ */
+export const billing = {
+    /** Days before a period starts that its invoice is raised. */
+    renewalLeadDays: 14,
+    /** Days after the due date an auto-charge is attempted on. */
+    collectionRetryDays: [0, 3, 7],
+    /** Days after the due date each dunning rung falls on. */
+    dunningReminderDays: 3,
+    dunningMahnungDays: 10,
+    dunningSuspendDays: 14,
+    dunningTerminateDays: 30,
+    /** Mahngebühr in cents; 0 raises none. */
+    dunningFeeCents: 0,
+} as const;
+
+/**
  * § 19 UStG. The scheme applies while the previous calendar year stayed under
  * the first figure and the current year stays under the second; exceeding the
  * current-year limit ends it from that transaction on. Both are settings in

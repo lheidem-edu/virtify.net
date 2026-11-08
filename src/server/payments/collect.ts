@@ -5,6 +5,7 @@ import { isOpenInvoice } from "@/db/schema";
 import { subtract } from "@/lib/money";
 import type { Actor } from "@/server/audit";
 import { loadInvoice } from "@/server/billing/invoices/repository";
+import { methodForInvoice } from "@/server/subscriptions/service";
 import { applyPayment } from "./apply";
 import { type GatewayId, gateway } from "./gateways";
 import { captureApprovedOrder } from "./gateways/paypal";
@@ -508,6 +509,18 @@ export async function collectIssuedInvoice(
  * default. A method the customer has withdrawn is never used.
  */
 async function methodFor(invoiceId: string, customerId: string) {
+    /**
+     * Phase 6's renewal invoices come from no order, so the join through
+     * `order` below cannot find them. `subscription_invoice` is the link
+     * that always exists — it is what makes "which Abo is this invoice for"
+     * one lookup — and it is asked first.
+     */
+    const byRenewal = await methodForInvoice(db, invoiceId);
+
+    if (byRenewal) {
+        return byRenewal;
+    }
+
     const [bySubscription] = await db
         .select({
             id: schema.paymentMethod.id,

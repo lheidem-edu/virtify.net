@@ -110,19 +110,41 @@ describe("every endpoint is documented", () => {
     it("gives every field of every schema a description", async () => {
         const schemas = (await spec()).components?.schemas ?? {};
 
+        /**
+         * A field whose type is another registered schema comes out as
+         * `allOf: [{ $ref }, { description }]` — OpenAPI's way of saying
+         * "that shape, described here", because a bare `$ref` may carry no
+         * siblings. That counts as described; a bare `$ref` with nothing
+         * beside it does not, which is the case this check is for.
+         */
+        const described = (value: {
+            description?: string;
+            allOf?: { description?: string }[];
+        }) =>
+            Boolean(
+                value.description ||
+                    value.allOf?.some((entry) => entry?.description),
+            );
+
         for (const [name, schema] of Object.entries(schemas)) {
             const properties =
                 (
                     schema as {
-                        properties?: Record<string, { description?: string }>;
+                        properties?: Record<
+                            string,
+                            {
+                                description?: string;
+                                allOf?: { description?: string }[];
+                            }
+                        >;
                     }
                 ).properties ?? {};
 
             for (const [field, value] of Object.entries(properties)) {
                 expect(
-                    value.description,
+                    described(value),
                     `${name}.${field} has no description`,
-                ).toBeTruthy();
+                ).toBe(true);
             }
         }
     });

@@ -81,5 +81,49 @@ export const siteSetting = pgTable("site_setting", {
      */
     billingAnchorDay: integer("billing_anchor_day").notNull().default(0),
 
+    /**
+     * How many days before a period starts its renewal invoice is raised.
+     * A product may ask for more (`product.renewal_lead_days`); it may not
+     * ask for less, because the longest lead in a subscription wins.
+     */
+    renewalLeadDays: integer("renewal_lead_days").notNull().default(14),
+
+    /**
+     * The retry ladder for collecting an issued invoice off a stored
+     * payment method, in days after the due date. `{0,3,7}` is the plan's
+     * d+0 / d+3 / d+7.
+     *
+     * An array rather than three columns because the ladder is one decision
+     * with one shape, and a fourth rung should not be a migration. Each rung
+     * is attempted at most once — `invoice_collection` has a unique index on
+     * `(invoice_id, offset_days)`.
+     */
+    collectionRetryDays: integer("collection_retry_days")
+        .array()
+        .notNull()
+        .default([0, 3, 7]),
+
+    /**
+     * Dunning, in days after the due date. A reminder, then a Mahnung,
+     * then the services stop, then the Abo ends. Each rung is reached once
+     * per invoice — `dunning_action` has a unique index on
+     * `(invoice_id, level)`.
+     */
+    dunningReminderDays: integer("dunning_reminder_days").notNull().default(3),
+    dunningMahnungDays: integer("dunning_mahnung_days").notNull().default(10),
+    dunningSuspendDays: integer("dunning_suspend_days").notNull().default(14),
+    dunningTerminateDays: integer("dunning_terminate_days")
+        .notNull()
+        .default(30),
+    /**
+     * Mahngebühr, in cents. `0` — the default — raises none.
+     *
+     * It cannot be a line on the invoice it belongs to: a finalized invoice
+     * never grows one (rule 3). So a fee is its own small invoice, and
+     * withdrawing it is a Rechnungskorrektur against that invoice — the
+     * mirror of raising it, through the same documents as everything else.
+     */
+    dunningFeeCents: integer("dunning_fee_cents").notNull().default(0),
+
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

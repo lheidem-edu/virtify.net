@@ -9,4 +9,5 @@ import "./health";
 import "./invoices";
 import "./orders";
 import "./products";
+import "./subscriptions";
 import "./transactions";

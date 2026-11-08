@@ -428,6 +428,20 @@ async function placeOrderIn(
     }
 
     const subscriptionIds: string[] = [];
+    /**
+     * Which period each subscription's first invoice pays for. Phase 6 needs
+     * the link: `subscription_invoice` is what turns "this invoice" into
+     * "these Abos" in one lookup, and dunning, the retry ladder and the
+     * reactivation after a payment all ask that question. Without a row here
+     * the very first invoice a customer ever gets would be the one the
+     * recurring machinery could not see.
+     */
+    const firstPeriods: {
+        subscriptionId: string;
+        periodStart: Date;
+        periodEnd: Date | null;
+        netCents: number;
+    }[] = [];
     const serviceIds: string[] = [];
     const invoiceLines: InvoiceItemInput[] = [];
     const dueByItem = new Map<number, number>();
@@ -457,6 +471,15 @@ async function placeOrderIn(
         const subscriptionId = createId("subscription");
 
         subscriptionIds.push(subscriptionId);
+
+        const billedPeriod = {
+            subscriptionId,
+            periodStart: at,
+            periodEnd: trialing ? billingStart : period.end,
+            netCents: 0,
+        };
+
+        firstPeriods.push(billedPeriod);
 
         await tx.insert(schema.subscription).values({
             id: subscriptionId,
@@ -537,7 +560,10 @@ async function placeOrderIn(
 
             const built = buildInvoiceLines(entry.quote, period, { trialing });
 
-            dueByItem.set(index, add(...built.map((line) => line.netCents)));
+            const itemNet = add(...built.map((line) => line.netCents));
+
+            dueByItem.set(index, itemNet);
+            billedPeriod.netCents = add(billedPeriod.netCents, itemNet);
 
             for (const line of built) {
                 invoiceLines.push({
@@ -605,6 +631,18 @@ async function placeOrderIn(
         netCents = finalized.totals.netCents;
         taxCents = finalized.totals.taxCents;
         grossCents = finalized.totals.grossCents;
+
+        for (const entry of firstPeriods) {
+            await tx.insert(schema.subscriptionInvoice).values({
+                id: createId("subscriptioninvoice"),
+                subscriptionId: entry.subscriptionId,
+                invoiceId: draft.id,
+                kind: "initial",
+                periodStart: entry.periodStart,
+                periodEnd: entry.periodEnd,
+                netCents: entry.netCents,
+            });
+        }
     }
 
     await tx

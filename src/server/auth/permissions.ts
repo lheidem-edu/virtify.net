@@ -21,6 +21,11 @@ export const PERMISSIONS = {
     "orders.read": "Bestellungen ansehen",
     "orders.write":
         "Bestellungen aufgeben, annehmen, stornieren und als Betrug markieren",
+    "subscriptions.read": "Abos und Leistungen ansehen",
+    "subscriptions.write":
+        "Abos kündigen, pausieren, fortsetzen und Tarife wechseln",
+    "jobs.read": "Hintergrundaufträge und Abrechnungsläufe ansehen",
+    "jobs.manage": "Abrechnungsläufe auslösen und Aufträge wiederholen",
     "catalog.read": "Produkte, Optionen und Gutscheine ansehen",
     "catalog.write":
         "Produkte, Preise, Optionen und Gutscheine anlegen und ändern",

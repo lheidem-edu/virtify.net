@@ -755,7 +755,30 @@ export async function adjustCredit(
         actor: Actor;
     },
 ): Promise<{ ok: boolean; balanceCents: number }> {
-    return db.transaction(async (tx) => {
+    return db.transaction(async (tx) => adjustCreditIn(tx, input));
+}
+
+/**
+ * The same booking inside a transaction the caller already owns.
+ *
+ * Phase 6 needs it for the downgrade half of a plan change: the credit and
+ * the rewritten subscription item have to commit together, or a customer
+ * ends up on the cheaper plan without the money back — or with the money and
+ * still on the old one. It is the *mirror* of the upgrade's invoice, and the
+ * difference it books is the same `differenceCents` with its sign read the
+ * other way; see `src/server/billing/proration.ts`.
+ */
+export async function adjustCreditIn(
+    tx: Tx,
+    input: {
+        customerId: string;
+        amountCents: number;
+        reason: string;
+        actor: Actor;
+        invoiceId?: string | null;
+    },
+): Promise<{ ok: boolean; balanceCents: number }> {
+    {
         await tx
             .select({ id: schema.customer.id })
             .from(schema.customer)
@@ -773,6 +796,7 @@ export async function adjustCredit(
             customerId: input.customerId,
             kind: "adjustment",
             amountCents: input.amountCents,
+            invoiceId: input.invoiceId ?? null,
             reason: input.reason,
         });
 
@@ -790,7 +814,7 @@ export async function adjustCredit(
         });
 
         return { ok: true, balanceCents: balance + input.amountCents };
-    });
+    }
 }
 
 /** The entries behind a balance, newest first. */

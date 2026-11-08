@@ -146,6 +146,18 @@ export const product = pgTable(
         maxQuantity: integer("max_quantity").notNull().default(1),
 
         /**
+         * How many days before a period starts its renewal invoice is
+         * raised. Null takes the portal's setting (14 days by default).
+         *
+         * Per product because the notice a customer needs is a property of
+         * what they bought: an annual plan at 400 € wants more warning than
+         * a 5 € add-on. Where a subscription holds several products, the
+         * longest of them wins — the earlier invoice is the one that gives
+         * everybody enough time.
+         */
+        renewalLeadDays: integer("renewal_lead_days"),
+
+        /**
          * Auto-provision on payment, or wait for a person. Snapshotted onto
          * every service at checkout, so changing it never reaches an order
          * that has already been placed.

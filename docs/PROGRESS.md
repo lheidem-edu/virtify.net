@@ -1066,14 +1066,299 @@ negative "Offen" came only from `paid_cents`, which the re-settle above fixes at
 - [ ] **A credit top-up produces no document.** Money arrives, a ledger entry is written and the
       invoice it later pays is the document. A Steuerberater should look at that before go-live.
 
+## Phase 6 — Subscriptions, recurring billing, dunning · done
+
+`npm run typecheck`, `npm run lint` and `npm run test` (662 tests) are green, the app builds,
+`public/openapi.json` is regenerated, and the proofs run against the real Postgres `npm run
+db:up` starts.
+
+**This is the first thing in the project that takes money with nobody watching.** A bug here
+does not show up as a wrong page; it shows up as a customer charged twice, or a server
+suspended for an invoice that was paid. Everything below follows from that.
+
+### The question every table in migration `0021` answers
+
+*A cron fires at three in the morning, a worker is scaled to two replicas, a job times out and
+is retried, and an operator presses "jetzt abrechnen" — what makes the customer be invoiced
+once, charged once and dunned once?*
+
+Not the caller. Four unique indexes:
+
+| | guarantees |
+|---|---|
+| `subscription_invoice (subscription_id, period_start, kind)` | one invoice per subscription per period |
+| `invoice_collection (invoice_id, offset_days)` | one auto-charge per rung of the retry ladder |
+| `dunning_action (invoice_id, level)` | one reminder, one Mahnung, one suspension, one termination |
+| `billing_run (run_day)` | one *cron pass* per day — the cheap layer, and the only one of the four a human may deliberately bypass |
+
+Each claim is an `on conflict do nothing` insert taken **inside** a transaction that already
+holds the subscription or the invoice row `FOR UPDATE`, and **before** the gateway is called —
+a worker that dies between the charge and the bookkeeping must not leave an unclaimed rung
+behind for the next pass to charge again.
+
+`subscription_invoice` does a second job: it is what turns "this invoice" into "these Abos" in
+one lookup. Dunning needs it to suspend the right service, an off-session collection needs it
+to find the right stored card, and the reactivation after a payment needs it to know what to
+wake. The checkout writes one too (`kind = 'initial'`), so the very first invoice a customer
+ever gets is visible to the recurring machinery.
+
+No column was added to `invoice`. A column added there is immutable by default (migration
+`0017`), and nothing in this phase needs to write to a finalized document — which is also why
+a **Mahngebühr is its own invoice** rather than a line on the one it belongs to.
+
+### `runBilling()` — the daily pass
+
+`src/server/billing/run.ts`, eight steps in this order and for this reason:
+
+1. **trials end** — a trial that is over is an Abo that bills;
+2. **renewals are invoiced**, N days ahead (14 by default, `product.renewal_lead_days` may ask
+   for more and the longest in a subscription wins), grouped per customer + currency + billing
+   day, credit applied, finalized;
+3. **due invoices are collected** off the stored card, d+0 / d+3 / d+7;
+4. **periods advance — only where the renewal is no longer open**;
+5. **dunning** — reminder at +3, Mahnung at +10, services stop at +14, the Abo ends at +30;
+6. **cancellations close** — `cancel_at_period_end`, honoured on the day;
+7. **spent coupons are cleared** off the Abo, so the page stops promising a discount that no
+   longer applies;
+8. **everything that owes nothing comes back** — the mirror of (5).
+
+Each step walks its own list and opens one transaction per customer or per invoice, so one
+customer whose card provider is down does not roll back everybody else's renewal. What failed
+is counted in `billing_run.report.failures` and shown on the Jobs page; the pass finishes.
+
+The due date of a renewal is the **day the period starts**, not fourteen days after it was
+raised — `finalizeInvoiceIn` gained an explicit `dueAt` for it, floored at the issue date so a
+pass that runs late cannot produce an invoice that is already overdue. Both ladders are reckoned
+from that date.
+
+### What the state machine refuses
+
+`src/server/subscriptions/state.ts` is pure: a pair of statuses in, a verdict out.
+`trialing → active → past_due → (active | paused | cancelled) → ended`, and an illegal move
+**throws** rather than being written. `transitionSubscriptionIn()` is the only door, so the
+services follow in one place and the timeline the customer reads is written in the same
+transaction as the change.
+
+Three decisions worth arguing with:
+
+- **`past_due` deliberately leaves a service running.** The grace between the due date and the
+  suspension rung is what dunning *is*; suspending on the status would take a server away the
+  morning after the due date.
+- **`cancelled` means *will not renew*, not *over*.** So it may go back to `active` — that is
+  the undo people actually use — and dunning never relabels a cancelled Abo `past_due`. It
+  still chases it, still suspends it at +14 and still ends it at +30.
+- **Resuming a pause gives back exactly the span that stood still.** `pauseSpanMs` computes it
+  once and `shiftInstant` applies it; there is no second arithmetic for the way back.
+
+### One plan change, one number
+
+`previewChange()` computes everything and `applyChange()` books what it returned.
+`GET …/preview-change` and `POST …/change` call the same function, which is the point: Phase 4
+shipped a checkout that showed 29,99 € and charged 25,99 € because two pieces of code did the
+same arithmetic, and here that would be the same defect with the customer's agreement attached
+to it.
+
+The split over the remaining days is `calculateProration()` — pure, both sides prorated by one
+call over the same days so two roundings cannot drift apart. `differenceCents` is positive when
+the customer owes and negative when we do, and `owedByCustomerCents` / `owedToCustomerCents` are
+derived from it in one expression: an upgrade invoices the figure, a downgrade credits the
+**same figure** to the account. Verified live on this machine — 19,99 € × 1 → × 3 on the 8th of
+a 24-day period previewed "Heute 38,31 € anteilig" and produced `RE-2026-0014` over exactly
+38,31 €.
+
+A downgrade books **credit, not a Rechnungskorrektur**, and that is deliberate: a correction
+credits *positions* of a document (EN 16931, § 14 Abs. 4), and the unused days of a plan are not
+a position of the invoice that sold it. Money the customer is owed with no document to hang it
+on is exactly what the balance is for, and the next renewal spends it automatically.
+
+### Every rule written in both directions
+
+Phase 5 shipped a refund path that credited the balance on the way in and never debited it on
+the way out. `src/server/billing/reversals.ts` is where that lesson is kept:
+
+- a renewal taken back is a Rechnungskorrektur over the whole of it, **plus** the coupon period
+  given back, **plus** the billing period rolled to where it was by `precedingPeriod` — which is
+  `followingPeriod` read backwards, so the round trip is exact for every cycle;
+- a Mahngebühr withdrawn is a Rechnungskorrektur over the fee invoice, and the rung stays
+  claimed: the Mahnung *was* sent, and pretending otherwise would let the run send it again.
+
+### pg-boss, and why the worker is its own process
+
+`src/server/jobs`: the queue, the schedule (`billing/run` at 03:00 Europe/Berlin, `missed:
+"once"`) and `scripts/worker.mts`. A Next server is scaled by the platform and restarted on
+every deploy; a timer inside it would run once per instance and be killed halfway through a
+renewal pass by an ordinary redeploy.
+
+The web process holds **no** pg-boss instance at all. "Jetzt abrechnen" calls `runBilling()`
+directly in the request so the operator sees what happened, and the Jobs page reads pg-boss's
+own tables read-only — which keeps a background library's lifecycle out of a request-scoped
+server. Proven end to end on this machine: a job sent to `billing/run` was picked up by the
+worker, ran and completed.
+
+Two deliberate concessions to the platform, both load-bearing and both commented where they
+bite:
+
+- **the worker does not render PDFs.** `@react-pdf/renderer` reaches a dependency whose subpaths
+  publish only an `import` condition, so requiring it from a plain Node process fails outright —
+  and forcing the `import` condition globally is what breaks node-postgres (the note in
+  `vitest.config.mts` says so). Nothing is lost: `invoicePdf()` renders and stores the document
+  on first access, write-once, and the renewal notice links to the invoice rather than attaching
+  it. `emitInvoicePaid` imports the receipt mail at the point of use for the same reason — the
+  worker has to be able to *collect* money without being able to *draw* a document.
+- **the queue is `billing/run`, not `billing:run`.** pg-boss refuses a colon in a queue name.
+  The run still signs its audit entries `billing:run`, which is the name a person reading the
+  log looks for.
+
+### The API
+
+Eight endpoints, every one in the OpenAPI registry with per-field descriptions, examples and
+error shapes (rule 11):
+
+```
+GET  /api/v1/subscriptions                      POST /api/v1/subscriptions
+GET  /api/v1/subscriptions/{id}
+POST /api/v1/subscriptions/{id}/cancel          POST …/pause
+POST /api/v1/subscriptions/{id}/resume          POST …/change
+GET  /api/v1/subscriptions/{id}/preview-change
+```
+
+`POST /api/v1/subscriptions` creates the Abo through `placeOrderFromItems` — the very same
+transaction the storefront's checkout runs — rather than writing subscription rows of its own.
+An Abo comes into being in exactly one place, with one set of rules about what it costs.
+
+Every action resolves the Abo through the key's own customer id first, so a customer key that
+names somebody else's subscription gets **404 on the actions too**, not only on the reads. That
+is the half that is easy to forget, and the test enumerates all four.
+
+`subscriptions.read` and `subscriptions.write` were added to `CUSTOMER_SCOPES`: an Abo is the
+customer's own contract, and cancelling it or changing the tariff are things the client area
+already lets them do with a session. `jobs.read` / `jobs.manage` are staff-only.
+
+### What the operator and the customer get
+
+- Admin: `/admin/subscriptions` with the lifecycle buttons, the Tarifwechsel with its Vorschau,
+  the per-position price and billing-date form, every invoice ever raised against the Abo with
+  "Verlängerung zurücknehmen", and the timeline.
+- Admin: `/admin/jobs` — the billing runs with what each one did, the pg-boss queues, the failed
+  jobs, and "der Worker läuft nicht" when no worker has ever started, which is the single most
+  useful thing that page can say.
+- Client: `/client/subscriptions`, the detail page with the services and their status, the
+  Tarifwechsel with "Preis anzeigen" first, and Kündigen / Kündigung zurücknehmen.
+
+### Found by writing the tests, and by driving the real page
+
+Four defects that the writing itself turned up, each now fixed and pinned:
+
+- **A renewal re-charged every add-on's setup fee, every period, for ever.** `calculateQuote`
+  takes a setup fee from the product *and* one per chosen add-on; the renewal silenced only the
+  first. A VPS with two extra IPv4 at 5,00 € Einrichtung would have carried 10,00 € a month
+  under a line reading "Einrichtung" on a recurring invoice. Caught by the second assertion of a
+  unit test, not by review.
+- **Dunning died silently on every cancelled Abo.** `cancelled → past_due` is not a legal move,
+  and dunning attempted it anyway — which threw inside the rung's transaction, so the
+  `dunning_action` row was rolled back with it. The customer was never chased for their last
+  invoice, the services were never suspended, and the run reported the same failure every night
+  for ever. Found by making *every* pass in the test file assert `report.failures` is empty.
+- **The first paid period after a trial lost the billing anchor, and a short renewal was not
+  prorated.** The checkout anchors the first period; the renewal used a whole cycle from the
+  trial's end, so the invoice billed sixteen days while the subscription moved on by thirty, and
+  the line said "anteilig" at the full price. `periodAfter()` is now the one function both the
+  invoicing and the advance use, and the period goes into `calculateQuote` so the amount and the
+  wording come from one place.
+- **"Vorschau" wiped the form, and "Wechseln" then booked the old configuration.** React resets
+  an uncontrolled form once a `useActionState` action settles, and the Tarifwechsel form is
+  submitted twice. With several positions it would have booked the *wrong line*. Found by
+  driving the real page against the real database — it passes every test either way. Both change
+  forms are controlled now, with the reason written above them.
+
+### The mutation pass
+
+Every claim worth making was broken in the source to check the test fails. Three survived the
+first round and were repaired:
+
+- removing the `FOR UPDATE`, the renewal-link check or the collection claim left the test green,
+  because the **unique index** caught each one and the transaction simply rolled back — one
+  invoice either way. Counting invoices cannot tell "skipped" from "crashed", so `run()` in the
+  proof now asserts the pass reported **no failed step**; all three mutations fail now.
+- `OPEN_INVOICE_STATUSES` → `"unpaid"` in `advancePeriods` and in `hasOpenInvoice` survived
+  until two cases were added: a half-paid renewal must not buy another month, and must not wake
+  a suspended server.
+
+Also proven to fail under mutation: the state table (`cancelled → past_due`), the dunning
+ladder's monotonic clamp, the coupon's spent and expired checks, the proration's both-sides
+subtraction and its credit half, the coupon period being consumed and given back, the renewal's
+due date, and the OpenAPI field-description check (a bare `$ref` with nothing beside it still
+fails it).
+
+### The ninety days
+
+`tests/integration/billing-run.test.ts` walks a fake clock from 1 November to 20 December, most
+days **twice** and often a third time forced: trial → renewal raised a fortnight ahead at
+10,66 € for 16 of 30 days → trial ends → period does not advance → three collection rungs and no
+more → reminder at +3, Mahnung at +10, services suspended at +14 → payment → reactivation at the
+instant the money lands → period advances → full 19,99 € from the second renewal on → never
+terminated, because the +30 rung found nothing open. Two passes race each other on a warmed pool
+and produce one invoice between them, with neither reporting a failure.
+
+### Decisions taken here, open to being overruled
+
+- **A downgrade taken immediately books credit rather than a correction.** See above. The
+  alternative is a Rechnungskorrektur that credits positions it cannot honestly name.
+- **A change that changes nothing is refused.** With `period_end` it would occupy the item's one
+  pending slot, and on the customer's timeline it reads "Tarifwechsel auf VPS M" while nothing
+  happened. The *price* is part of the comparison, so re-confirming an unchanged configuration
+  at a new catalog price is still a change.
+- **A renewal that comes to 0,00 € issues no document.** The period still advances — step 4 asks
+  whether an invoice is *open*, not whether one exists — and a 0,00 € invoice would burn a
+  gapless number on a demand for nothing.
+- **Credit is spent through `payFromCredit`, not as an invoice line.** Same path as the
+  customer's own button, so an invoice cannot be settled by two mechanisms that do not know
+  about each other. It is capped at what is owed; spending the whole balance would hand the
+  overshoot straight back as credit, which is a loop rather than a payment.
+- **A customer cancels only to the end of the period they have paid for.** Ending today would
+  forfeit days they already bought and nothing here refunds them. The operator can still end one
+  immediately.
+- **A grouped renewal invoice is per customer + currency + billing *day*.** The plan asks for
+  customer and currency; an invoice has one due date, and bundling two subscriptions that fall
+  due a fortnight apart would make one of the two figures wrong.
+- **`transitionSubscriptionIn` no longer clears `cancel_at_period_end`.** Becoming active again
+  happens for several reasons and only one of them means "the cancellation is off"; that one is
+  `resumeCancellation`, which clears it itself. It previously let resuming a *paused* Abo
+  silently un-cancel it.
+- **`tsx` is now an explicit devDependency.** It was already installed as drizzle-kit's
+  transitive dependency and four npm scripts relied on that; the worker makes it a *production*
+  entry point, which is a different thing to rest on a transitive dep for.
+
+### Still open in this phase
+
+- [ ] **Nothing collects for the dunning fee itself.** The fee invoice is raised, numbered and
+      linked, and it is dunned like any other invoice — but it is not added to the retry ladder
+      of the invoice that caused it, so a customer with auto-charge pays the renewal
+      automatically and the 5,00 € fee by hand. The default is 0,00 €, so nobody is affected
+      yet.
+- [ ] **A failed job is not retried from the Jobs page.** pg-boss's own `retry()` would do it,
+      but it needs a pg-boss instance in the web process, and the whole point of the split is
+      that there is not one. "Jetzt abrechnen" is the retry and it is gefahrlos; the page says
+      so. If a proper redrive is wanted, the honest shape is a second queue the worker listens
+      on, not a boss instance in a request.
+- [ ] **SCA on a renewal reaches nobody.** `collectIssuedInvoice` already mails an
+      authentication link on `requires_action`, and there is still no SMTP relay — so an
+      off-session renewal that needs SCA fails silently into the log. Phase 7 brings Graph.
+- [ ] **Services do not actually stop.** Suspension writes `service.status = 'suspended'` and a
+      timestamp; no module acts on it until Phase 8. The billing record is right and the machine
+      keeps running.
+- [ ] **A pending plan change is not shown on the renewal invoice's preview.** The renewal
+      applies it correctly when it builds the lines, but nothing tells the customer in advance
+      what the next invoice will say.
+
 ## Phases 5–11
 
 | Phase | State | Notes |
 |---|---|---|
 | 5 Payments | done | See above. |
-| 6 Subscriptions, dunning | not started | No pg-boss, no renewal run, no dunning. Phase 4 wrote the `subscription` table, the period arithmetic (`src/server/billing/periods.ts`, with proration) and the price snapshots a renewal needs; nothing advances them. Phase 5 added `collectIssuedInvoice()`, which is what a renewal calls once it has raised the invoice. The older `contract` table still exists beside it and is created by hand. |
+| 6 Subscriptions, dunning | done | See above. The older `contract` table still exists beside `subscription` and is created by hand; nothing in the recurring run touches it. |
 | 7 Ticketing (M365 Graph) | not started | Mail goes out over SMTP via nodemailer. |
-| 8 Provisioning (Proxmox) | not started | Phase 2 put the registry interface and the `none` module in `src/server/provisioning`; Phase 4 added the `service` table, which fills with `pending` rows and never empties. The lifecycle methods and the Proxmox module are this phase's. |
+| 8 Provisioning (Proxmox) | not started | Phase 2 put the registry interface and the `none` module in `src/server/provisioning`; Phase 4 added the `service` table and Phase 6 now moves its `status` — suspended at the dunning rung, terminated when an Abo ends, created and retired by a quantity change — but no module acts on any of it. The lifecycle methods and the Proxmox module are this phase's, and the hooks they attach to already exist. |
 | 9 Client portal polish, i18n | not started | German only, no i18n layer, no `email_templates`. |
 | 10 Reports, webhooks, API | not started | |
 | 11 Hardening, deploy | not started | |
