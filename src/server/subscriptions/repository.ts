@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gt, ilike, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, lt } from "drizzle-orm";
 import { db, type db as defaultDb, schema } from "@/db";
 import type {
     Service,
@@ -31,6 +31,7 @@ export const DEFAULT_PAGE_SIZE = 25;
 export type SubscriptionListFilter = {
     status?: SubscriptionStatus;
     customerId?: string;
+    /** The last id of the previous page; the rows below it follow. */
     cursor?: string;
     limit?: number;
     /** Customer name, or the description of one of its positions. */
@@ -76,7 +77,7 @@ export async function listSubscriptions(
         filter.status
             ? eq(schema.subscription.status, filter.status)
             : undefined,
-        filter.cursor ? gt(schema.subscription.id, filter.cursor) : undefined,
+        filter.cursor ? lt(schema.subscription.id, filter.cursor) : undefined,
         filter.q ? ilike(schema.customer.name, `%${filter.q}%`) : undefined,
     ].filter((entry) => entry !== undefined);
 
@@ -102,12 +103,12 @@ export async function listSubscriptions(
             eq(schema.customer.id, schema.subscription.customerId),
         )
         .where(conditions.length > 0 ? and(...conditions) : undefined)
-        // ULIDs sort by creation, so the id is the cursor (rule 1).
-        .orderBy(
-            filter.cursor
-                ? asc(schema.subscription.id)
-                : desc(schema.subscription.id),
-        )
+        // ULIDs sort by creation, so the id is the cursor (rule 1) — and the
+        // list reads newest first, so the walk runs `WHERE id < $cursor ORDER
+        // BY id DESC` all the way down. Both halves have to point the same
+        // way: ordering descending and then comparing `id > $cursor` hands
+        // page two the rows of page one and never reaches the oldest Abo.
+        .orderBy(desc(schema.subscription.id))
         .limit(limit + 1);
 
     const page = rows.slice(0, limit);

@@ -66,6 +66,7 @@ describe.skipIf(!available)("subscriptions", () => {
     let groupId: string;
     let vpsM: string;
     let vpsL: string;
+    let vpsTrial: string;
     let support: string;
     let seq = 20_000;
 
@@ -97,6 +98,17 @@ describe.skipIf(!available)("subscriptions", () => {
             name: "VPS L",
             cycle: "monthly",
             priceCents: 3999,
+        });
+
+        // 39,99 €/Monat mit 14 Testtagen — der Zeitraum, für den niemand
+        // zahlt.
+        vpsTrial = await makeProduct(db, {
+            groupId,
+            slug: "vps-l-test",
+            name: "VPS L mit Testphase",
+            cycle: "monthly",
+            priceCents: 3999,
+            trialDays: 14,
         });
 
         // A pure subscription product: nothing is provisioned for it.
@@ -525,6 +537,141 @@ describe.skipIf(!available)("subscriptions", () => {
             expect(result.creditedCents).toBe(1000);
             expect(result.preview.proration.differenceCents).toBe(-1000);
             expect(await creditBalanceCents(db, customerId)).toBe(1000);
+        });
+
+        /**
+         * Proration shares out what the customer **paid** for the period
+         * they are in. Two spans are not whole paid periods, and both of
+         * them used to be divided as if they were: the free days of a
+         * trial, and a first period cut short to reach the billing anchor.
+         */
+        describe("over a period nobody paid a whole price for", () => {
+            /** 14 Testtage ab dem 1.11.; am 8.11. sind 7 davon übrig. */
+            const IN_TRIAL = new Date("2026-11-08T09:00:00.000+01:00");
+
+            async function onTrial() {
+                const customerId = await nextCustomer();
+                const placed = await order(db, {
+                    customerId,
+                    items: [{ productId: vpsTrial, cycle: "monthly" }],
+                    now: START,
+                    settings: SETTINGS,
+                });
+
+                const subscriptionId = placed.subscriptionIds[0];
+                const subscription = await subscriptionOf(db, subscriptionId);
+                const [item] = await itemsOf(db, subscriptionId);
+
+                // The checkout drops every recurring line while trialing:
+                // for these 14 days nothing has been invoiced at all.
+                expect(subscription.status).toBe("trialing");
+                expect(subscription.trialEndsAt).not.toBeNull();
+
+                return { customerId, subscriptionId, item };
+            }
+
+            it("credits nothing on a downgrade im Testzeitraum", async () => {
+                // Über die Testtage gerechnet wären es 3999 × 7/14 = 2000
+                // zurück und 1999 × 7/14 = 1000 vor — 10,00 € Guthaben für
+                // einen Zeitraum, für den der Kunde nie etwas gezahlt hat.
+                const { customerId, subscriptionId, item } = await onTrial();
+
+                const result = await applyChange(
+                    db,
+                    {
+                        subscriptionId,
+                        itemId: item.id,
+                        productId: vpsM,
+                        effective: "immediately",
+                    },
+                    ACTOR,
+                    { now: IN_TRIAL, settings: SETTINGS },
+                );
+
+                expect(result.creditedCents).toBe(0);
+                expect(await creditBalanceCents(db, customerId)).toBe(0);
+                expect(result.invoiceId).toBeNull();
+                expect(result.preview.proration.unusedCreditCents).toBe(0);
+                expect(result.preview.proration.differenceCents).toBe(0);
+                expect(result.preview.proration.periodDays).toBe(0);
+                expect(result.preview.proration.remainingDays).toBe(0);
+
+                // The change itself still happens — only the money does not.
+                const [after] = await itemsOf(db, subscriptionId);
+
+                expect(after.productId).toBe(vpsM);
+            });
+
+            it("charges nothing on an upgrade im Testzeitraum either", async () => {
+                // Die Gegenrichtung: zwei statt einer Instanz wäre
+                // 7998 × 7/14 − 3999 × 7/14 = 2000 für Tage, die gratis
+                // sind.
+                const { customerId, subscriptionId, item } = await onTrial();
+
+                const result = await applyChange(
+                    db,
+                    {
+                        subscriptionId,
+                        itemId: item.id,
+                        quantity: 2,
+                        effective: "immediately",
+                    },
+                    ACTOR,
+                    { now: IN_TRIAL, settings: SETTINGS },
+                );
+
+                expect(result.preview.invoiceTodayCents).toBe(0);
+                expect(result.invoiceId).toBeNull();
+                expect(result.creditedCents).toBe(0);
+                expect(await creditBalanceCents(db, customerId)).toBe(0);
+
+                // Der Tarif wechselt trotzdem, und ab dem ersten bezahlten
+                // Zeitraum kostet er 79,98 €.
+                const [after] = await itemsOf(db, subscriptionId);
+
+                expect(after.quantity).toBe(2);
+                expect(result.preview.nextPeriodCents).toBe(7998);
+            });
+
+            it("divides a short first period by a whole period's days", async () => {
+                // Bestellt am 11.11. bei Abrechnungstag 1: der erste
+                // Zeitraum läuft 20 von 30 Tagen und wurde mit
+                // 1999 × 20/30 = 1333 berechnet. Am 21.11. sind 10 Tage
+                // offen — wert sind sie 10/30 des Monatspreises (666) und
+                // nicht 10/20 davon (1000), was mehr wäre, als für diese
+                // zehn Tage je bezahlt wurde.
+                const customerId = await nextCustomer();
+                const placed = await order(db, {
+                    customerId,
+                    items: [{ productId: vpsM, cycle: "monthly" }],
+                    now: new Date("2026-11-11T09:00:00.000+01:00"),
+                    settings: SETTINGS,
+                });
+
+                const paid = await invoiceOf(db, placed.invoiceId as string);
+
+                expect(paid.grossCents).toBe(1333);
+
+                const subscriptionId = placed.subscriptionIds[0];
+                const [item] = await itemsOf(db, subscriptionId);
+
+                const preview = await previewChange(
+                    db,
+                    {
+                        subscriptionId,
+                        itemId: item.id,
+                        productId: vpsL,
+                        effective: "immediately",
+                    },
+                    { now: new Date("2026-11-21T09:00:00.000+01:00") },
+                );
+
+                expect(preview.proration.periodDays).toBe(30);
+                expect(preview.proration.remainingDays).toBe(10);
+                expect(preview.proration.unusedCreditCents).toBe(666);
+                expect(preview.proration.newChargeCents).toBe(1333);
+                expect(preview.invoiceTodayCents).toBe(667);
+            });
         });
 
         it("moves no money for a change at the end of the period", async () => {

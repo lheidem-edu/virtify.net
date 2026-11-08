@@ -1,5 +1,7 @@
+import type { BillingCycle } from "@/db/schema/catalog";
 import { berlinDaysBetween } from "@/lib/berlin-date";
 import { prorate, subtract } from "@/lib/money";
+import { followingPeriod } from "./periods";
 
 /**
  * What a plan change costs for the rest of the period it happens in.
@@ -90,6 +92,58 @@ export function remainingDaysOf(input: {
             Math.max(remaining, 0),
             Math.max(periodDays, 0),
         ),
+    };
+}
+
+/**
+ * The span a plan change may prorate over: the days still ahead, over the
+ * days a whole period's price actually buys.
+ *
+ * Proration shares out **what the customer paid for this period**, and the
+ * price it is handed is the price of a whole period — so the denominator has
+ * to be a whole period's days, whatever span the subscription row happens to
+ * be sitting in. Two spans are not whole periods and both used to be divided
+ * as if they were:
+ *
+ * - **The free days of a trial.** Nothing is invoiced for them (the checkout
+ *   drops every recurring line while trialing), so there is nothing to share
+ *   out: a downgrade on day 7 of 14 credited 7/14 of a monthly price as real
+ *   money the customer had never paid, and an upgrade charged them 7/14 of a
+ *   period they were being given. A period nobody paid for prorates nothing,
+ *   which `calculateProration` already answers for `periodDays <= 0`.
+ * - **A first period cut short to reach the billing anchor.** It was charged
+ *   at `usedDays / periodDays` of the whole-period price (see
+ *   `proratedUnitPrice`), so the ten days left of a twenty-day stub are worth
+ *   10/30 of a month and not 10/20 of one.
+ *
+ * An ordinary whole period is the case where the two denominators coincide,
+ * which is why the defect could sit here unnoticed: `followingPeriod` counts
+ * exactly the days `firstPeriod` divided by.
+ */
+export function prorationSpan(input: {
+    at: Date;
+    periodStart: Date;
+    periodEnd: Date | null;
+    /** Set while the free days are still running; cleared when they end. */
+    trialEndsAt: Date | null;
+    cycle: BillingCycle;
+}): { remainingDays: number; periodDays: number } {
+    if (input.trialEndsAt && input.at.getTime() < input.trialEndsAt.getTime()) {
+        return { remainingDays: 0, periodDays: 0 };
+    }
+
+    const span = remainingDaysOf(input);
+
+    if (span.periodDays <= 0) {
+        // No period at all — a one-off sale, or a row with no end.
+        return span;
+    }
+
+    const whole = followingPeriod(input.periodStart, input.cycle).periodDays;
+
+    return {
+        remainingDays: span.remainingDays,
+        periodDays: whole > 0 ? whole : span.periodDays,
     };
 }
 

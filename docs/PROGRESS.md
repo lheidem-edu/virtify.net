@@ -1032,7 +1032,106 @@ One thing I reported early was **wrong and is corrected here**: I said the clien
 had lost the `Math.max(…, 0)` floor on what is owed. It has not — the floor is there, and the
 negative "Offen" came only from `paid_cents`, which the re-settle above fixes at the source.
 
+### Reviewed after the fact, and fixed
+
+Eight readers over the phase, three skeptics each, then one isolated worktree per confirmed
+defect: a regression test written and watched to fail first, then the fix, then the test broken
+again to prove it was not vacuous. Twelve defects, 618 → 660 tests. Every one of them is money
+moving while nobody is present, which is what this phase is.
+
+- **A Mahngebühr was itself dunned, so each unpaid fee raised another, for ever.** `runDunning`
+  asked for "every open invoice whose `due_at` has passed", and `finalizeInvoiceIn` gives the fee
+  invoice a due date a fortnight out — so it matched its own input. Reminder at +3, Mahnung at
+  +10, which raised the next fee. The `dunning_action (invoice_id, level)` index cannot stop it:
+  every generation is a new invoice id and so a fresh key space. Driven for thirteen months at
+  5,00 € a rung against a live database, three reviewers independently produced 27, 29 and 31
+  gapless-numbered invoices nobody authorised, and the chains outlived the Abo. Fee invoices are
+  now excluded from the ladder by `dunning_action.fee_invoice_id`. A stock install was safe only
+  because `dunningFeeCents` defaults to 0.
+- **A run that threw blocked that day for ever.** `claimDay` took a day over only when the row
+  said `running`, but `runBilling`'s own catch writes `failed` before rethrowing — so all three
+  pg-boss retries found the day claimed and did nothing. A process that was *killed* recovered
+  after an hour; one that honestly recorded why it died never did. A pass that threw is now
+  distinguished from one that finished with per-step failures, and only the first is retried.
+- **A pass narrowed to one customer claimed the whole day.** `billing_run (run_day)` speaks for
+  the whole night, and only an unscoped pass does. An operator pressing "jetzt abrechnen" for one
+  account at 02:00 handed the 03:00 cron a finished row, and every other customer's renewals,
+  collections and Mahnstufen were skipped until the next night. A scoped pass now claims
+  `day#customer`. **Not found by the review** — it surfaced when two agents' tests, written
+  independently, collided on a calendar day.
+- **Cancelling to the end of the period left the renewal invoice standing.** The renewal is
+  raised a fortnight ahead, and that invoice is precisely what reminds people to cancel. Cancel in
+  that window and the Abo ended, the services terminated, and 19,99 € was still collected off the
+  card, then reminded, gemahnt and terminated — for a month in which nothing ran.
+  `cancelSubscription()` now routes through `cancelRenewalInvoiceIn`, in its own transaction, and
+  only for periods that have not begun; on a grouped renewal only the cancelled Abo's positions
+  are corrected.
+- **A customer could lift their own dunning suspension.** `servicesFollow("active")` woke every
+  suspended service unconditionally. `reactivateAfterSettlement` guarded that behind
+  `hasOpenInvoice()`; `resumeCancellation` and `resumeSubscription` did not. Press "Kündigen",
+  press "Kündigung zurücknehmen", and the server came back with 39,98 € outstanding — and the
+  `dunning_action (invoice_id, 'suspend')` row was already claimed, so that rung never fired
+  again.
+- **And its mirror: a cancelled Abo that paid in full was never woken.** Both reactivation paths
+  asked `status === 'past_due'` rather than what is owed, while dunning deliberately leaves a
+  cancelled Abo's label alone. The suspension mail promises "Sobald die Zahlung eingegangen ist,
+  werden sie automatisch wieder freigeschaltet." For a cancelled Abo that was never true. One
+  `wakeSettledIn()` now answers both, on `hasOpenInvoice()`.
+- **Pause and resume inside the lead window invoiced the month twice.** Resuming shifts
+  `current_period_end`, and a period that has moved is one the renewal run no longer recognises
+  as invoiced — the unique index never sees it. Pausing is now refused while a Verlängerung
+  stands for the coming period, and says so: take the renewal back, or pause once the new period
+  has begun.
+- **A period rolled over for free when the renewal step had failed.** `advancePeriods` asked only
+  whether an *open* invoice existed, which cannot tell "paid" from "legitimately nothing to pay"
+  from "never raised, because step 2 threw". `next_billing_at` then moved past the skipped month
+  and it was never billed again. It now needs a positive record that the period was dealt with.
+- **Credit spent on a renewal was not returned when the renewal was taken back**, so the next
+  pass spent it again and the customer paid one period twice out of their own balance. It goes
+  back through `recordRefundIn` — keyed on the charge it undoes, so a repeat is a no-op.
+- **The coupon period was given back even when none had been taken.** `consumeDiscountPeriod`
+  floors at zero, so a spent coupon consumes nothing and the renewal is at full price; the
+  reversal added one back regardless. Taking that renewal back handed the customer a discount
+  period they were never promised, permanently. The give-back now asks whether that renewal
+  actually consumed one.
+- **A plan change agreed for the end of the period was executed when the invoice was raised**,
+  terminating a paid, provisioned machine up to `renewalLeadDays` early — and `cancelRenewalInvoice`
+  had no inverse for it. The renewal *lines* still carry the new configuration; the item rewrite
+  and the service follow wait for `apply_at`.
+- **A change during a trial prorated the trial.** A downgrade credited the customer real money
+  they had never paid; an upgrade charged them for a period they were being given. Proration now
+  divides by the period the whole-period price actually buys, not by the row's own period — which
+  also fixes a short first period cut to reach the billing anchor.
+- **List paging ran backwards.** `ORDER BY id DESC` with `WHERE id > $cursor`: with five Abos the
+  second page repeated the first and the three oldest were unreachable at any page size. Both
+  halves now run descending. *Deviation from hard rule 1*, which spells the walk ascending:
+  `listSubscriptions` also feeds the admin and client lists, which read newest-first, and what the
+  rule is actually about is that the ordering and the cursor comparison point the same way.
+
+Seven tests passed without testing anything and were repaired alongside the defect they sit next
+to — among them the cursor test that never followed its cursor, and the +30 terminate rung whose
+whole body could be replaced with `continue`. Two more problems were found in the test file
+itself: `openInvoicesOf()` returned *every* invoice of a customer, so an assertion that one was
+still open held while a cancelled one stood in for it (it is now split into `invoicesOf` and a
+truthful `openInvoicesOf`), and a pass skipped because another test had claimed that calendar day
+asserted against a world that never moved — `run()` now fails loudly on a skipped pass unless the
+case is studying the day marker itself. That guard immediately exposed four more tests running on
+passes that had done nothing.
+
+Adjudicated rather than merged: two agents independently gave the cancellation path a way to
+return money, with different machinery. What the *balance* paid goes back automatically, keyed on
+the charge. What a card or a transfer paid stays as an overpayment on the corrected document and
+does **not** become account credit — that is Phase 5's stance (`createCreditNoteIn` resettles
+without `causedBy` because no payment row moved), and for somebody who is leaving, a voucher with
+the provider they just left is not payment. Which way it goes back is the operator's call, through
+`recordRefund`. Taking both would have credited the customer twice.
+
 ### Still open in this phase
+
+- [ ] **A cancelled renewal that was already paid leaves an overpayment nobody is told about.**
+      The money is on the corrected document and traceable, but attributing it properly still
+      wants a `credit_note_id` on `credit_ledger` — the same migration the Phase 5 open item
+      asks for.
 
 - [ ] **The overshoot a partial correction creates is not attributed automatically.** After
       `createCreditNote` re-settles, an invoice that was overpaid relative to the corrected

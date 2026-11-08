@@ -20,9 +20,9 @@ export const dynamic = "force-dynamic";
 /**
  * Kündigt ein Abo — zum Ende des Zeitraums (die Voreinstellung) oder sofort.
  *
- * Neither refunds anything. § 8 of the terms leaves that to the operator,
- * and a cancellation that quietly issued a Rechnungskorrektur would be the
- * panel deciding something nobody asked it to.
+ * Neither refunds a period that was delivered: § 8 of the terms leaves that
+ * to the operator. A renewal already invoiced for a period that will now not
+ * be delivered is taken back by `cancelSubscription` itself — see there.
  */
 export async function POST(
     request: Request,

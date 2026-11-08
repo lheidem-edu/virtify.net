@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     calculateProration,
+    prorationSpan,
     remainingDaysOf,
 } from "@/server/billing/proration";
 
@@ -217,5 +218,135 @@ describe("how much of a period is left", () => {
                 periodEnd: null,
             }),
         ).toEqual({ periodDays: 0, remainingDays: 0 });
+    });
+});
+
+describe("what a plan change is allowed to prorate over", () => {
+    /**
+     * Proration shares out what the customer **paid** for this period. The
+     * denominator is therefore the days a whole period's price buys, and the
+     * numerator the days still ahead — not whatever span the subscription
+     * row happens to be sitting in.
+     *
+     * Two spans are not whole periods: the free days of a trial, which
+     * nobody paid for at all, and a short first period, which was charged at
+     * `usedDays / periodDays` of the whole-period price.
+     */
+
+    /** The 1.11. to the 1.12.: a whole, ordinary, paid month. */
+    const start = new Date("2026-11-01T00:00:00.000+01:00");
+    const end = new Date("2026-12-01T00:00:00.000+01:00");
+
+    it("prorates nothing while the free days run — ein Testzeitraum ist nicht bezahlt", () => {
+        // 14 Testtage ab dem 1.11., am 8.11. sind 7 übrig. Rechnet man die
+        // über 7/14 eines ganzen Monatspreises ab, bekommt ein Downgrade im
+        // Testzeitraum 39,99 € × 7/14 = 20,00 € zurück und zahlt 19,99 €
+        // × 7/14 = 10,00 € — macht 10,00 € Guthaben für einen Zeitraum, für
+        // den der Kunde nie etwas bezahlt hat.
+        const span = prorationSpan({
+            at: new Date("2026-11-08T09:00:00.000+01:00"),
+            periodStart: new Date("2026-11-01T09:00:00.000+01:00"),
+            periodEnd: new Date("2026-11-15T09:00:00.000+01:00"),
+            trialEndsAt: new Date("2026-11-15T09:00:00.000+01:00"),
+            cycle: "monthly",
+        });
+
+        expect(span).toEqual({ remainingDays: 0, periodDays: 0 });
+
+        const down = calculateProration({
+            currentPeriodGrossCents: 3999,
+            nextPeriodGrossCents: 1999,
+            ...span,
+        });
+
+        expect(down.differenceCents).toBe(0);
+        expect(down.owedToCustomerCents).toBe(0);
+    });
+
+    it("counts a short first period against a whole period's days", () => {
+        // Bestellt am 11.11., Abrechnungstag der 1.: der erste Zeitraum
+        // läuft 20 Tage und wurde mit 1999 × 20/30 = 1333 berechnet. Am
+        // 21.11. sind 10 Tage offen — das sind 10/30 des Monatspreises
+        // (666) und nicht 10/20 davon (1000, also mehr, als für diese Tage
+        // je bezahlt wurde).
+        const span = prorationSpan({
+            at: new Date("2026-11-21T09:00:00.000+01:00"),
+            periodStart: new Date("2026-11-11T09:00:00.000+01:00"),
+            periodEnd: new Date("2026-12-01T00:00:00.000+01:00"),
+            trialEndsAt: null,
+            cycle: "monthly",
+        });
+
+        expect(span).toEqual({ remainingDays: 10, periodDays: 30 });
+        expect(
+            calculateProration({
+                currentPeriodGrossCents: 1999,
+                nextPeriodGrossCents: 3999,
+                ...span,
+            }).unusedCreditCents,
+        ).toBe(666);
+    });
+
+    it("leaves an ordinary whole period exactly where it was", () => {
+        // The case every figure in this file is pinned to: a 30-day month
+        // with 15 days left. Nothing above may move it by a cent.
+        const span = prorationSpan({
+            at: new Date("2026-11-16T09:00:00.000+01:00"),
+            periodStart: start,
+            periodEnd: end,
+            trialEndsAt: null,
+            cycle: "monthly",
+        });
+
+        expect(span).toEqual({ remainingDays: 15, periodDays: 30 });
+
+        const up = calculateProration({
+            currentPeriodGrossCents: 1999,
+            nextPeriodGrossCents: 3999,
+            ...span,
+        });
+
+        expect(up.unusedCreditCents).toBe(1000);
+        expect(up.newChargeCents).toBe(2000);
+        expect(up.differenceCents).toBe(1000);
+    });
+
+    it("prorates an annual Abo over its own year", () => {
+        expect(
+            prorationSpan({
+                at: new Date("2026-11-16T09:00:00.000+01:00"),
+                periodStart: start,
+                periodEnd: new Date("2027-11-01T00:00:00.000+01:00"),
+                trialEndsAt: null,
+                cycle: "annual",
+            }),
+        ).toEqual({ remainingDays: 350, periodDays: 365 });
+    });
+
+    it("prorates nothing for a cycle with no period — a one-off sale", () => {
+        expect(
+            prorationSpan({
+                at: new Date("2026-11-16T09:00:00.000+01:00"),
+                periodStart: start,
+                periodEnd: null,
+                trialEndsAt: null,
+                cycle: "onetime",
+            }),
+        ).toEqual({ remainingDays: 0, periodDays: 0 });
+    });
+
+    it("prorates again as soon as the free days are behind us", () => {
+        // The run has not cleared `trial_ends_at` yet, but the trial window
+        // is over and the period that runs now is one the customer pays
+        // for: 15.11. bis 15.12., am 20.11. sind 25 von 30 Tagen offen.
+        expect(
+            prorationSpan({
+                at: new Date("2026-11-20T09:00:00.000+01:00"),
+                periodStart: new Date("2026-11-15T00:00:00.000+01:00"),
+                periodEnd: new Date("2026-12-15T00:00:00.000+01:00"),
+                trialEndsAt: new Date("2026-11-15T00:00:00.000+01:00"),
+                cycle: "monthly",
+            }),
+        ).toEqual({ remainingDays: 25, periodDays: 30 });
     });
 });

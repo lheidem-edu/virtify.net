@@ -5,7 +5,12 @@ import {
     currentStaffCan,
     requirePermission,
 } from "@/server/auth/staff-session";
-import { jobsOverview, recentBillingRuns } from "@/server/jobs/status";
+import { billingRunThrew } from "@/server/billing/run";
+import {
+    type BillingRunRow,
+    jobsOverview,
+    recentBillingRuns,
+} from "@/server/jobs/status";
 import RunBillingButton from "../subscriptions/run-billing-button";
 
 /**
@@ -33,6 +38,24 @@ const RUN_STATUS_TONE = {
     finished: "positive",
     failed: "warning",
 } as const;
+
+/**
+ * `failed` is two different nights, and only `error` tells them apart: a
+ * pass that walked every step and could not bill somebody ("mit Fehlern"),
+ * and a pass that threw and did none of the day's work ("abgebrochen"). The
+ * second one is retried by the worker; the first one stays done.
+ */
+function runBadge(run: BillingRunRow): {
+    label: string;
+    tone: (typeof RUN_STATUS_TONE)[keyof typeof RUN_STATUS_TONE];
+} {
+    return billingRunThrew(run)
+        ? { label: "abgebrochen", tone: "warning" }
+        : {
+              label: RUN_STATUS_LABEL[run.status],
+              tone: RUN_STATUS_TONE[run.status],
+          };
+}
 
 const STEP_LABEL: Record<string, string> = {
     trialsEnded: "Testphasen beendet",
@@ -179,6 +202,7 @@ export default async function Page() {
                         <ul className="space-y-3">
                             {runs.map((run) => {
                                 const report = run.report ?? {};
+                                const badge = runBadge(run);
                                 const numbers = Object.entries(report).filter(
                                     ([key, value]) =>
                                         typeof value === "number" &&
@@ -214,12 +238,8 @@ export default async function Page() {
                                                 </span>
                                             </span>
                                             <StatusBadge
-                                                label={
-                                                    RUN_STATUS_LABEL[run.status]
-                                                }
-                                                tone={
-                                                    RUN_STATUS_TONE[run.status]
-                                                }
+                                                label={badge.label}
+                                                tone={badge.tone}
                                             />
                                         </div>
 

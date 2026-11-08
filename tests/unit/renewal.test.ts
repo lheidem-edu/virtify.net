@@ -180,13 +180,29 @@ describe("the coupon a renewal is allowed to use", () => {
     it("keeps discounting after the code has been retired", () => {
         // Retiring a code stops it being handed out; it does not retract an
         // agreement already made.
-        expect(
-            renewalCoupon({
-                coupon: coupon({ active: false }),
-                periodsRemaining: 1,
-                now: NOW,
-            }),
-        ).not.toBeNull();
+        const mapped = renewalCoupon({
+            coupon: coupon({ active: false }),
+            periodsRemaining: 1,
+            now: NOW,
+        });
+
+        expect(mapped).not.toBeNull();
+        // `calculateQuote` refuses an inactive coupon outright, so the
+        // override is the whole of the promise being kept — and a test that
+        // only asked for "not null" would not notice it going away. The
+        // 25 % has to reach the quote: 19,99 € less 5,00 € is 14,99 €.
+        expect(mapped?.active).toBe(true);
+
+        const quote = renewalQuote({
+            item: ITEM,
+            cycle: "monthly",
+            currency: "EUR",
+            coupon: mapped,
+            now: NOW,
+        });
+
+        expect(quote.totals.recurringDiscountCents).toBe(500);
+        expect(quote.totals.firstPeriodCents).toBe(1499);
     });
 
     it("stops when the agreed periods are spent", () => {

@@ -3,10 +3,12 @@ import {
     and,
     asc,
     eq,
+    exists,
     inArray,
     isNotNull,
     isNull,
     lte,
+    notExists,
     or,
     sql,
 } from "drizzle-orm";
@@ -38,13 +40,16 @@ import { creditBalanceCents, payFromCredit } from "@/server/payments/apply";
 import { collectIssuedInvoice } from "@/server/payments/collect";
 import { emitInvoicePaid } from "@/server/payments/settle";
 import { loadSettings, type Settings } from "@/server/settings";
-import { writeItemFromChange } from "@/server/subscriptions/changes";
+import {
+    applyDueChangesIn,
+    type ChangeTarget,
+} from "@/server/subscriptions/changes";
 import {
     applyServiceFollow,
-    hasOpenInvoice,
     lockSubscription,
     recordEvent,
     transitionSubscriptionIn,
+    wakeSettledIn,
 } from "@/server/subscriptions/service";
 import { BILLABLE_STATUSES, canTransition } from "@/server/subscriptions/state";
 import { collectionDue, DUNNING_LABEL, dunningDue } from "./dunning";
@@ -63,7 +68,7 @@ import {
  *   1. trials end            — a trial that is over is an Abo that bills
  *   2. renewals are invoiced — N days ahead, grouped per customer, credit applied
  *   3. due invoices are collected — the retry ladder, d+0 / d+3 / d+7
- *   4. periods advance       — **only** where the renewal is no longer open
+ *   4. periods advance       — **only** where the renewal was dealt with
  *   5. dunning               — reminder, Mahnung, suspension, termination
  *   6. cancellations close   — cancel_at_period_end, and spent coupons
  *   7. settled Abos wake up  — the mirror of (5), for anything the payment
@@ -201,12 +206,44 @@ export type BillingRunResult = {
 };
 
 /**
+ * Did this row come from a pass that *threw*?
+ *
+ * `status` cannot say on its own: `failed` is written both by a pass that
+ * walked all seven steps and could not bill somebody — that pass **finished**
+ * — and by `runBilling`'s catch for a pass that died. `error` is the
+ * discriminator, because only the catch writes one: a run that finishes puts
+ * what it could not do in `report.failures` and leaves `error` empty.
+ *
+ * The difference is the one that decides whether the day may be done again.
+ */
+export function billingRunThrew(row: {
+    status: "running" | "finished" | "failed";
+    error: string | null;
+}): boolean {
+    return row.status === "failed" && row.error !== null;
+}
+
+/**
  * Claims the day, or reports that somebody else has it.
  *
- * `on conflict do nothing` is the claim. A run that crashed leaves its row
- * `running` for ever, which would block the day — so a `running` row older
- * than an hour is taken over rather than respected. An hour is far longer
- * than a pass takes and far shorter than a day.
+ * `on conflict do nothing` is the claim. Two rows are no claim worth
+ * respecting, and for the same reason — the day was never done:
+ *
+ *   - a pass that was **killed** leaves its row `running` for ever, so a
+ *     `running` row older than an hour is taken over. An hour is far longer
+ *     than a pass takes and far shorter than a day.
+ *   - a pass that **threw** recorded the exception and rethrew without
+ *     invoicing a renewal, claiming a collection rung or climbing a dunning
+ *     level. pg-boss retries it three times, half an hour apart
+ *     (`src/server/jobs/queues.ts`); those retries are the only mechanism
+ *     that can still repair the day, and they have to get past here. A
+ *     process that honestly wrote down why it died must not be *less*
+ *     recoverable than one that was killed mid-write.
+ *
+ * A pass that finished with failures in its report is neither: it did the
+ * day, some of it badly, and redoing it wholesale would send every notice it
+ * did manage a second time. Its entities are retried by the next day's pass,
+ * which finds their claims unmade.
  */
 async function claimDay(
     db: Db,
@@ -244,11 +281,11 @@ async function claimDay(
         return null;
     }
 
-    const stale =
+    const abandoned =
         existing.status === "running" &&
         now.getTime() - existing.startedAt.getTime() > 3_600_000;
 
-    if (!force && !stale) {
+    if (!force && !abandoned && !billingRunThrew(existing)) {
         return null;
     }
 
@@ -284,9 +321,29 @@ export async function runBilling(
     const day = berlinDay(now);
     const report = emptyReport(day);
 
+    /**
+     * A pass narrowed to one account does not take the day.
+     *
+     * `billing_run (run_day)` is the cheap layer that keeps a second cron
+     * pass off the database — it speaks for *the whole night*, and only an
+     * unscoped pass does that. Keyed on the bare day, an operator pressing
+     * "jetzt abrechnen" for one customer at 02:00 would hand back a
+     * finished row that the 03:00 cron then respects, and every other
+     * customer's renewals, collections and Mahnstufen would be skipped
+     * until the following night — one account billed, the rest silently
+     * passed over.
+     *
+     * So a scoped pass claims a key of its own, `day#customer`. It is still
+     * recorded, still visible under Aufträge and still idempotent for that
+     * customer on that day; it simply makes no claim about anybody else.
+     * What stops the customer being invoiced twice was never this row
+     * anyway — it is the unique indexes underneath.
+     */
+    const claimKey = options.customerId ? `${day}#${options.customerId}` : day;
+
     const runId = await claimDay(
         db,
-        day,
+        claimKey,
         now,
         options.force ?? false,
         options.forcedBy ?? null,
@@ -320,6 +377,13 @@ export async function runBilling(
                 status: report.failures.length > 0 ? "failed" : "finished",
                 finishedAt: new Date(),
                 report,
+                /**
+                 * Explicitly: this pass finished. Whatever it could not bill
+                 * is in `report.failures`, and `error` has to stay empty,
+                 * because an empty `error` is what tells the next claimant
+                 * that the day was done — see `billingRunThrew`.
+                 */
+                error: null,
                 updatedAt: new Date(),
             })
             .where(eq(schema.billingRun.id, runId));
@@ -773,15 +837,23 @@ async function issueRenewalGroup(
                  * Nothing to charge — everything on this Abo is discounted
                  * to zero for this period. No document is issued, because a
                  * 0,00 € invoice burns a gapless number on a demand for
-                 * nothing; the period still advances in step 4, which asks
-                 * whether an invoice is *open*, not whether one exists.
+                 * nothing.
+                 *
+                 * This event is therefore the only record that the period
+                 * was dealt with at all, and `invoiced: false` is what makes
+                 * it one: step 4 reads it as the positive statement "nothing
+                 * was owed here", which is what tells this case apart from a
+                 * renewal that was never raised because this step threw.
                  */
                 await recordEvent(tx, {
                     subscriptionId: row.id,
                     kind: "period",
                     summary:
                         "Verlängerung ohne Rechnung: für diesen Zeitraum ist nichts zu zahlen.",
-                    data: { periodStart: periodStart.toISOString() },
+                    data: {
+                        periodStart: periodStart.toISOString(),
+                        invoiced: false,
+                    },
                     actor: context.actor,
                     at: now,
                 });
@@ -907,8 +979,17 @@ async function consumeDiscountPeriod(tx: Tx, row: Subscription, at: Date) {
 }
 
 /**
- * The lines one subscription contributes to a renewal invoice, with any
- * change agreed for this period applied to the item first.
+ * The lines one subscription contributes to a renewal invoice, priced at
+ * the configuration the period being billed will actually run on.
+ *
+ * It **reads** the changes agreed for that period and writes none of them.
+ * This runs `renewalLeadDays` before the period starts, and the item is the
+ * running one: rewriting it here would move the services a fortnight early
+ * and terminate a machine the customer has paid for to the last day of the
+ * period — which "a terminated service stays terminated" makes permanent,
+ * and which no reversal can undo. The lines are the next period's, so they
+ * take the new configuration; the item and its services follow at
+ * `apply_at`, in `advancePeriods()`.
  */
 async function buildRenewalLines(
     tx: Tx,
@@ -928,34 +1009,21 @@ async function buildRenewalLines(
         )
         .orderBy(asc(schema.subscriptionChange.id));
 
+    /**
+     * What each position will look like once the period has begun. In id
+     * order, so the last change agreed on a position is the one billed —
+     * the same order `applyDueChangesIn()` writes them in.
+     */
+    const agreed = new Map<string, ChangeTarget>();
+
     for (const change of pending) {
-        await writeItemFromChange(tx, {
-            itemId: change.subscriptionItemId,
-            subscriptionId: row.id,
-            customerId: row.customerId,
-            target: {
-                productId: change.productId,
-                description: change.description,
-                quantity: change.quantity,
-                unitPriceCents: change.unitPriceCents,
-                recurringGrossCents: change.recurringGrossCents,
-                selections: change.selections as QuoteSelection[],
-            },
-            at: now,
-        });
-
-        await tx
-            .update(schema.subscriptionChange)
-            .set({ status: "applied", appliedAt: now, updatedAt: now })
-            .where(eq(schema.subscriptionChange.id, change.id));
-
-        await recordEvent(tx, {
-            subscriptionId: row.id,
-            kind: "change",
-            summary: `Vorgemerkter Tarifwechsel auf „${change.description}“ ist in Kraft.`,
-            data: { changeId: change.id },
-            actor: { type: "system", label: "billing:run" },
-            at: now,
+        agreed.set(change.subscriptionItemId, {
+            productId: change.productId,
+            description: change.description,
+            quantity: change.quantity,
+            unitPriceCents: change.unitPriceCents,
+            recurringGrossCents: change.recurringGrossCents,
+            selections: change.selections as QuoteSelection[],
         });
     }
 
@@ -986,14 +1054,17 @@ async function buildRenewalLines(
     let netCents = 0;
 
     for (const item of items) {
+        const target = agreed.get(item.id);
+
         const built = renewalLines({
             item: {
                 id: item.id,
-                productId: item.productId,
-                description: item.description,
-                quantity: item.quantity,
-                unitPriceCents: item.unitPriceCents,
-                selections: item.selections as QuoteSelection[],
+                productId: target?.productId ?? item.productId,
+                description: target?.description ?? item.description,
+                quantity: target?.quantity ?? item.quantity,
+                unitPriceCents: target?.unitPriceCents ?? item.unitPriceCents,
+                selections: (target?.selections ??
+                    item.selections) as QuoteSelection[],
             },
             cycle: row.cycle as BillingCycle,
             currency: row.currency,
@@ -1214,12 +1285,25 @@ async function claimCollection(
 /**
  * A period that has run out either rolls over or does not.
  *
- * **Only when it is paid.** The test is whether an *open* invoice exists for
- * the period that is about to start — `OPEN_INVOICE_STATUSES`, so a
- * half-paid renewal counts as unpaid and does not buy another month. An Abo
- * that owes nothing (a renewal discounted to zero, or one that was credited
- * away) has no open invoice and rolls over, which is the right answer for
- * both.
+ * **Only when it was dealt with**, which is two questions rather than one:
+ *
+ *  1. is an invoice for the period that is about to start still *open*?
+ *     `OPEN_INVOICE_STATUSES`, so a half-paid renewal counts as unpaid and
+ *     buys no month — that Abo goes `past_due` and dunning takes it from
+ *     there;
+ *  2. and failing that, does anything say the period was dealt with at all
+ *     — a `subscription_invoice` link for it, or the event the zero case
+ *     records when there was nothing to charge?
+ *
+ * The second question is the one that cannot be left out. `issueRenewals`
+ * reports a customer whose group threw and lets the run go on (`note(…,
+ * "renewal", …)`), so "no open invoice" also describes a period that was
+ * **never invoiced at all** — and rolling that one over moves
+ * `next_billing_at` past it for good. The following night bills the period
+ * after it, the skipped month is never asked for and nothing misses it: one
+ * line in one night's report is the only trace. So a period nothing
+ * accounts for stands still and is reported, which leaves `next_billing_at`
+ * where the next pass will raise the renewal that was owed.
  */
 export async function advancePeriods(
     db: Db,
@@ -1306,6 +1390,28 @@ export async function advancePeriods(
                     return;
                 }
 
+                if (!(await periodWasDealtWith(tx, row.id, periodStart))) {
+                    /**
+                     * Nothing open, and nothing that says why. Standing
+                     * still is the safe answer: `next_billing_at` goes on
+                     * pointing at this period, so the next pass raises the
+                     * renewal that was missed and the month is billed a day
+                     * late rather than not at all.
+                     *
+                     * Reported, because the alternative is an Abo that is
+                     * retried in silence for ever. The run's report is where
+                     * the Jobs page looks.
+                     */
+                    note(
+                        report,
+                        "period",
+                        row.id,
+                        `Für den Zeitraum ab ${berlinDay(periodStart)} wurde nichts berechnet — er läuft erst weiter, wenn die Verlängerung erhoben ist.`,
+                    );
+
+                    return;
+                }
+
                 const period = periodAfter({
                     start: periodStart,
                     cycle: row.cycle,
@@ -1336,6 +1442,20 @@ export async function advancePeriods(
                     at: now,
                 });
 
+                /**
+                 * And only now does a change agreed for the end of the last
+                 * period take effect. The renewal invoice already billed
+                 * it, a fortnight ago; the item and its services waited for
+                 * the day the customer stopped paying for the old one.
+                 */
+                await applyDueChangesIn(tx, {
+                    subscriptionId: row.id,
+                    customerId: row.customerId,
+                    periodStart,
+                    at: now,
+                    actor: context.actor,
+                });
+
                 if (row.status !== "active") {
                     await transitionSubscriptionIn(tx, {
                         subscriptionId: row.id,
@@ -1354,9 +1474,84 @@ export async function advancePeriods(
     }
 }
 
+/**
+ * Whether anything positively says this period has been dealt with.
+ *
+ * Two records can say it, and they are the only two ways a period gets past
+ * step 2 legitimately:
+ *
+ *  - a `subscription_invoice` row for it — the claim `issueRenewals` takes
+ *    *before* it bills, so the row is there whether that invoice has since
+ *    been paid, credited away or cancelled;
+ *  - the `invoiced: false` event the zero case writes when the renewal came
+ *    to 0,00 € and no document was issued on purpose.
+ *
+ * Neither of them present means no pass ever got as far as billing this
+ * period — which is a different thing from owing nothing for it, and the
+ * difference is one month's revenue.
+ */
+async function periodWasDealtWith(
+    tx: Tx,
+    subscriptionId: string,
+    periodStart: Date,
+): Promise<boolean> {
+    const [billed] = await tx
+        .select({ id: schema.subscriptionInvoice.id })
+        .from(schema.subscriptionInvoice)
+        .where(
+            and(
+                eq(schema.subscriptionInvoice.subscriptionId, subscriptionId),
+                eq(schema.subscriptionInvoice.periodStart, periodStart),
+            ),
+        )
+        .limit(1);
+
+    if (billed) {
+        return true;
+    }
+
+    const [free] = await tx
+        .select({ id: schema.subscriptionEvent.id })
+        .from(schema.subscriptionEvent)
+        .where(
+            and(
+                eq(schema.subscriptionEvent.subscriptionId, subscriptionId),
+                eq(schema.subscriptionEvent.kind, "period"),
+                /**
+                 * Compared as the strings they were written as. Both sides
+                 * are the same instant: the event was written from
+                 * `next_billing_at` and this is `current_period_end`, which
+                 * the run keeps equal to it — so no timezone arithmetic
+                 * stands between the two.
+                 */
+                sql`${schema.subscriptionEvent.data} ->> 'periodStart' = ${periodStart.toISOString()}`,
+                sql`${schema.subscriptionEvent.data} ->> 'invoiced' = 'false'`,
+            ),
+        )
+        .limit(1);
+
+    return Boolean(free);
+}
+
 // ---------------------------------------------------------------------------
 // 5 — dunning
 // ---------------------------------------------------------------------------
+
+/**
+ * Every invoice that *is* a Mahngebühr.
+ *
+ * `dunning_action.fee_invoice_id` is written by the same transaction that
+ * raises the fee, so an invoice is marked as one from the instant it exists
+ * — there is no window in which the next pass could mistake it for an
+ * ordinary document. It stays marked for ever: waiving the fee writes
+ * `fee_waived_at` and leaves the reference alone.
+ */
+function isDunningFee(db: Db) {
+    return db
+        .select({ one: sql`1` })
+        .from(schema.dunningAction)
+        .where(eq(schema.dunningAction.feeInvoiceId, schema.invoice.id));
+}
 
 export async function runDunning(
     db: Db,
@@ -1365,6 +1560,29 @@ export async function runDunning(
 ) {
     const { now, settings } = context;
 
+    /**
+     * The open, overdue invoices — **except the Mahngebühren themselves**.
+     *
+     * A fee invoice is an ordinary finalized invoice of the same customer,
+     * due a fortnight after it was raised, so it matches this predicate
+     * exactly like the invoice it belongs to. Left in, the run chases it: a
+     * reminder at +3, a Mahnung at +10, and that Mahnung raises *another*
+     * Mahngebühr, whose Mahnung raises a third. The unique index on
+     * `dunning_action (invoice_id, level)` cannot stop it, because every
+     * generation is a new invoice id and so a fresh key space — a year of
+     * nightly runs at 5,00 € a rung is around 150,00 € of gapless-numbered
+     * invoices nobody authorised, and the chains outlive the Abo they came
+     * from.
+     *
+     * The fee stays a document of its own (rule 3: the invoice it belongs
+     * to cannot grow a line). It is still owed, still collected, still
+     * settled and still withdrawn by a Rechnungskorrektur. It is only never
+     * itself the *subject* of a ladder: the invoice it belongs to already
+     * carries one, and that ladder ends in a suspension and a termination.
+     * A fee invoice is linked to no subscription anyway, so its own rungs
+     * could suspend and terminate nothing — they would only tell the
+     * customer that services were cut over a Mahngebühr that cancels none.
+     */
     const overdue = await db
         .select({
             id: schema.invoice.id,
@@ -1382,6 +1600,7 @@ export async function runDunning(
                 inArray(schema.invoice.status, [...OPEN_INVOICE_STATUSES]),
                 isNotNull(schema.invoice.dueAt),
                 lte(schema.invoice.dueAt, now),
+                notExists(isDunningFee(db)),
                 scopedTo(context, schema.invoice.customerId),
             ),
         )
@@ -1928,6 +2147,15 @@ export async function expireCoupons(
  * a customer who pays at midnight notices. This is the catch-up for the
  * cases that seam cannot cover: a mail that threw, a process that died
  * between the payment and the reactivation, an invoice credited away by hand.
+ *
+ * Two kinds of candidate, because dunning leaves two kinds of mark. A
+ * `past_due` label is the obvious one. The other is a **suspended service
+ * under an Abo that is not `past_due` at all**: the +14 rung stops the
+ * services itself and leaves the label alone wherever `past_due` would be a
+ * lie, so a gekündigtes Abo is suspended while it still says `cancelled`.
+ * Looking only at the label here left exactly those servers switched off for
+ * the rest of a period the customer had just paid for. `wakeSettledIn` then
+ * asks what is owed rather than what the row is called.
  */
 export async function reactivateSettled(
     db: Db,
@@ -1936,12 +2164,41 @@ export async function reactivateSettled(
 ) {
     const { now } = context;
 
+    const suspendedService = db
+        .select({ one: sql`1` })
+        .from(schema.service)
+        .innerJoin(
+            schema.subscriptionItem,
+            eq(schema.service.subscriptionItemId, schema.subscriptionItem.id),
+        )
+        .where(
+            and(
+                eq(
+                    schema.subscriptionItem.subscriptionId,
+                    schema.subscription.id,
+                ),
+                eq(schema.service.status, "suspended"),
+            ),
+        );
+
     const stuck = await db
-        .select()
+        .select({ id: schema.subscription.id })
         .from(schema.subscription)
         .where(
             and(
-                eq(schema.subscription.status, "past_due"),
+                // `paused` and `ended` are left out on purpose: their
+                // services are down because the status says so, not because
+                // dunning said so, and no payment lifts that.
+                inArray(schema.subscription.status, [
+                    "trialing",
+                    "active",
+                    "past_due",
+                    "cancelled",
+                ]),
+                or(
+                    eq(schema.subscription.status, "past_due"),
+                    exists(suspendedService),
+                ),
                 scopedTo(context, schema.subscription.customerId),
             ),
         )
@@ -1949,29 +2206,15 @@ export async function reactivateSettled(
 
     for (const candidate of stuck) {
         try {
-            const woken = await db.transaction(async (tx) => {
-                const row = await lockSubscription(tx, candidate.id);
-
-                if (row.status !== "past_due") {
-                    return false;
-                }
-
-                if (await hasOpenInvoice(tx, row.id)) {
-                    return false;
-                }
-
-                const back = await transitionSubscriptionIn(tx, {
-                    subscriptionId: row.id,
-                    to: "active",
-                    summary: "Nichts mehr offen — wieder aktiv.",
+            const back = await db.transaction(async (tx) =>
+                wakeSettledIn(tx, candidate.id, {
+                    reason: "Nichts mehr offen",
                     actor: context.actor,
                     at: now,
-                });
+                }),
+            );
 
-                return back.changed;
-            });
-
-            if (woken) {
+            if (back.woken) {
                 report.reactivated += 1;
             }
         } catch (error) {

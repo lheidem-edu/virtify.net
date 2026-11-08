@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, lte } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
 import type {
     BillingCycle,
@@ -19,7 +19,7 @@ import type { QuoteSelection } from "@/server/billing/pricing";
 import {
     calculateProration,
     type Proration,
-    remainingDaysOf,
+    prorationSpan,
 } from "@/server/billing/proration";
 import { quoteProductDetail } from "@/server/billing/quote";
 import { renewalCoupon, renewalQuote } from "@/server/billing/renewal";
@@ -111,6 +111,12 @@ function prorationLabel(input: {
     remainingDays: number;
     periodDays: number;
 }): string {
+    // No period to divide — the free days of a trial, or a one-off sale.
+    // "anteilig für 0 von 0 Tagen" is not a sentence anybody can act on.
+    if (input.periodDays <= 0) {
+        return `Tarifwechsel: ${input.description} — ohne anteilige Abrechnung`;
+    }
+
     return (
         `Tarifwechsel: ${input.description} — anteilig für ` +
         `${input.remainingDays} von ${input.periodDays} Tagen`
@@ -301,10 +307,19 @@ export async function previewChange(
         now,
     });
 
-    const span = remainingDaysOf({
+    /**
+     * The days still ahead, over the days the whole-period prices above
+     * actually buy — `prorationSpan`, not the raw length of the row's own
+     * period. A trial is free and a short first period was charged at a
+     * fraction of a month, and dividing a whole month's price by either of
+     * them hands out money nobody paid.
+     */
+    const span = prorationSpan({
         at: now,
         periodStart: subscription.currentPeriodStart,
         periodEnd: subscription.currentPeriodEnd,
+        trialEndsAt: subscription.trialEndsAt,
+        cycle: subscription.cycle,
     });
 
     const proration =
@@ -741,6 +756,90 @@ export async function writeItemFromChange(
                 .where(eq(schema.service.id, row.id));
         }
     }
+}
+
+/**
+ * Puts into force every change that was agreed for a period, at the moment
+ * that period actually begins.
+ *
+ * Deliberately **not** where the renewal invoice is raised. That happens
+ * `renewalLeadDays` earlier, and the invoice may honestly bill the new
+ * configuration — it bills the period the change belongs to. The item and
+ * the services may not move with it: the customer has paid for what they
+ * have until the last instant of the running period, and terminating a
+ * machine early is the one thing in this file that cannot be taken back.
+ *
+ * So the renewal reads the promise and `advancePeriods()` keeps it. A
+ * renewal that is taken back in between leaves the change `pending`, which
+ * is what it still is, and the fresh invoice bills it again.
+ *
+ * The caller holds the subscription `FOR UPDATE` and only a row that is
+ * still `pending` is claimed, so a second pass over the same day finds
+ * nothing left to do.
+ */
+export async function applyDueChangesIn(
+    tx: Tx,
+    input: {
+        subscriptionId: string;
+        customerId: string;
+        /** The first instant of the period that has just begun. */
+        periodStart: Date;
+        at: Date;
+        actor: Actor;
+    },
+): Promise<number> {
+    const due = await tx
+        .select()
+        .from(schema.subscriptionChange)
+        .where(
+            and(
+                eq(
+                    schema.subscriptionChange.subscriptionId,
+                    input.subscriptionId,
+                ),
+                eq(schema.subscriptionChange.status, "pending"),
+                lte(schema.subscriptionChange.applyAt, input.periodStart),
+            ),
+        )
+        .orderBy(asc(schema.subscriptionChange.id))
+        .for("update");
+
+    for (const change of due) {
+        await writeItemFromChange(tx, {
+            itemId: change.subscriptionItemId,
+            subscriptionId: input.subscriptionId,
+            customerId: input.customerId,
+            target: {
+                productId: change.productId,
+                description: change.description,
+                quantity: change.quantity,
+                unitPriceCents: change.unitPriceCents,
+                recurringGrossCents: change.recurringGrossCents,
+                selections: change.selections as QuoteSelection[],
+            },
+            at: input.at,
+        });
+
+        await tx
+            .update(schema.subscriptionChange)
+            .set({
+                status: "applied",
+                appliedAt: input.at,
+                updatedAt: input.at,
+            })
+            .where(eq(schema.subscriptionChange.id, change.id));
+
+        await recordEvent(tx, {
+            subscriptionId: input.subscriptionId,
+            kind: "change",
+            summary: `Vorgemerkter Tarifwechsel auf „${change.description}“ ist in Kraft.`,
+            data: { changeId: change.id },
+            actor: input.actor,
+            at: input.at,
+        });
+    }
+
+    return due.length;
 }
 
 /** Withdraws a change that was agreed for the end of the period. */

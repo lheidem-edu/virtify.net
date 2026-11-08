@@ -33,10 +33,24 @@ import { gatewayFor } from "./gateways";
  */
 
 type Db = typeof defaultDb;
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export type RefundResult =
     | { ok: true; changed: boolean; refundPaymentId: string | null }
     | { ok: false; reason: string };
+
+export type RecordRefundInput = {
+    /** The charge being reversed; one of these two finds it. */
+    chargePaymentId?: string | null;
+    provider: PaymentProvider;
+    captureRef?: string | null;
+    /** The provider's refund id. The idempotency key. */
+    refundRef: string;
+    amountCents: number;
+    reason: string;
+    actor: Actor;
+    at?: Date;
+};
 
 /**
  * Writes a refund that has already happened at the provider. The webhook path
@@ -44,22 +58,27 @@ export type RefundResult =
  */
 export async function recordRefund(
     db: Db,
-    input: {
-        /** The charge being reversed; one of these two finds it. */
-        chargePaymentId?: string | null;
-        provider: PaymentProvider;
-        captureRef?: string | null;
-        /** The provider's refund id. The idempotency key. */
-        refundRef: string;
-        amountCents: number;
-        reason: string;
-        actor: Actor;
-        at?: Date;
-    },
+    input: RecordRefundInput,
+): Promise<RefundResult> {
+    return db.transaction(async (tx) => recordRefundIn(tx, input));
+}
+
+/**
+ * The same refund inside a transaction the caller already owns.
+ *
+ * Phase 6 needs it: taking a renewal back has to give the balance it was
+ * paid from back, and that give-back may not commit without the
+ * Rechnungskorrektur that justifies it — nor the correction without it.
+ * Same shape, and for the same reason, as `createCreditNoteIn` and
+ * `adjustCreditIn`.
+ */
+export async function recordRefundIn(
+    tx: Tx,
+    input: RecordRefundInput,
 ): Promise<RefundResult> {
     const at = input.at ?? new Date();
 
-    return db.transaction(async (tx) => {
+    {
         const find = input.chargePaymentId
             ? eq(schema.payment.id, input.chargePaymentId)
             : and(
@@ -188,7 +207,7 @@ export async function recordRefund(
         });
 
         return { ok: true as const, changed: true, refundPaymentId };
-    });
+    }
 }
 
 /**

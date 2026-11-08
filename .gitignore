@@ -6,3 +6,6 @@
 
 # Rendered invoice and credit note PDFs (DOCUMENT_STORAGE_PATH).
 /.data
+
+# Agent worktrees — scratch space, never part of the repository.
+.claude/worktrees/

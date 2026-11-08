@@ -152,10 +152,12 @@ export const subscriptionChangeEffective = pgEnum(
  * add-ons. Stored even when it is applied at once, because what was agreed
  * and what it cost is the evidence behind a prorated line on an invoice.
  *
- * A change taken at the end of the period is a *promise*, and the renewal
- * run keeps it: the invoice for the next period is built from the new
- * configuration, and the item is rewritten at the same moment. Until then
- * the customer keeps paying for what they have.
+ * A change taken at the end of the period is a *promise*, and the run keeps
+ * it in two steps, because the renewal invoice is raised days before the
+ * period it bills: that invoice is built from the new configuration, and
+ * the item and its services are rewritten when the period actually begins.
+ * Until that instant the customer has paid for what they have, and a
+ * machine taken away early cannot be given back.
  */
 export const subscriptionChange = pgTable(
     "subscription_change",

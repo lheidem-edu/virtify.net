@@ -1,10 +1,20 @@
 import "server-only";
-import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
 import type { ServiceStatus, SubscriptionStatus } from "@/db/schema";
+import { formatDate } from "@/lib/format";
 import { createId } from "@/lib/ulid";
 import { type Actor, audit } from "@/server/audit";
 import { pauseSpanMs, shiftInstant } from "@/server/billing/periods";
+/**
+ * The way back, imported from where it is kept. `reversals.ts` imports this
+ * file in turn — a cancellation is a status change and a correction at once,
+ * and neither module may own both — which is a cycle only on paper: each
+ * side reaches for the other inside a function body, never while the module
+ * is being evaluated.
+ */
+import { cancelUndeliveredRenewalsIn } from "@/server/billing/reversals";
+import { loadSettings, type Settings } from "@/server/settings";
 import { assertTransition, type ServiceFollow, servicesFollow } from "./state";
 
 /**
@@ -39,6 +49,7 @@ export class SubscriptionError extends Error {
             | "not-live"
             | "not-paused"
             | "not-cancellable"
+            | "renewal-invoiced"
             | "item",
         message: string,
     ) {
@@ -149,6 +160,64 @@ export async function applyServiceFollow(
     return updated.length;
 }
 
+/**
+ * A renewal that is already on a document for a period the Abo has not
+ * reached yet — the one thing that makes its period unmovable.
+ *
+ * `subscription_invoice (subscription_id, period_start, kind)` is what makes
+ * a period be invoiced exactly once, and it is keyed on the **day** the
+ * period starts. Anything that moves that day while an invoice stands for
+ * the old one takes the Abo out from under its own unique index: the next
+ * renewal pass asks about a day nobody has invoiced, finds nothing, and
+ * raises a second document over a month that is already billed.
+ *
+ * A fully credited invoice is not one of those. `cancelRenewalInvoice`
+ * deletes the link outright, so it is gone from here anyway; an ordinary
+ * Rechnungskorrektur over the whole renewal leaves the link but takes the
+ * document back to `cancelled`, and a document that no longer stands cannot
+ * be billed twice.
+ */
+export async function invoicedRenewalAhead(
+    tx: Tx,
+    row: { id: string; currentPeriodEnd: Date | null },
+) {
+    if (!row.currentPeriodEnd) {
+        // A one-off has no period to move, and no renewal to collide with.
+        return null;
+    }
+
+    const [ahead] = await tx
+        .select({
+            invoiceId: schema.invoice.id,
+            number: schema.invoice.number,
+            status: schema.invoice.status,
+            periodStart: schema.subscriptionInvoice.periodStart,
+        })
+        .from(schema.subscriptionInvoice)
+        .innerJoin(
+            schema.invoice,
+            eq(schema.subscriptionInvoice.invoiceId, schema.invoice.id),
+        )
+        .where(
+            and(
+                eq(schema.subscriptionInvoice.subscriptionId, row.id),
+                eq(schema.subscriptionInvoice.kind, "renewal"),
+                // At or after the end of the period being run: the one the
+                // Abo is about to enter, and anything beyond it. The period
+                // it is *in* was invoiced long ago and does not move.
+                gte(
+                    schema.subscriptionInvoice.periodStart,
+                    row.currentPeriodEnd,
+                ),
+                ne(schema.invoice.status, "cancelled"),
+            ),
+        )
+        .orderBy(asc(schema.subscriptionInvoice.periodStart))
+        .limit(1);
+
+    return ahead ?? null;
+}
+
 export type TransitionInput = {
     subscriptionId: string;
     to: SubscriptionStatus;
@@ -202,7 +271,41 @@ export async function transitionSubscriptionIn(
     };
 
     switch (input.to) {
-        case "paused":
+        case "paused": {
+            /**
+             * Not while the coming period is already on a finalized
+             * document.
+             *
+             * Resuming moves the period end forward by the span the Abo
+             * stood still, and a period that has moved is a period the
+             * renewal run no longer recognises as invoiced: it would raise a
+             * second Verlängerung over a month the customer has already been
+             * billed — and, with auto-charge, already paid.
+             *
+             * Neither of the two ways out may be taken here. Leaving the
+             * period where the invoice says it is would bill the customer
+             * for days their services were suspended; crediting the invoice
+             * would be the panel issuing a Rechnungskorrektur — a legal
+             * document out of the gapless range — because somebody pressed
+             * "pausieren", which is exactly what `cancelSubscription`
+             * refuses to do for the same reason. So the Abo says no, and
+             * says what to do instead: take the Verlängerung back
+             * (`cancelRenewalInvoice`, the one way this project undoes one),
+             * or pause once the new period has begun.
+             */
+            const ahead = await invoicedRenewalAhead(tx, row);
+
+            if (ahead) {
+                throw new SubscriptionError(
+                    "renewal-invoiced",
+                    `Die Verlängerung für den Zeitraum ab ${formatDate(
+                        ahead.periodStart,
+                    )} ist bereits berechnet${
+                        ahead.number ? ` (Rechnung ${ahead.number})` : ""
+                    }. Nehmen Sie die Verlängerung zurück oder pausieren Sie, sobald der neue Zeitraum begonnen hat.`,
+                );
+            }
+
             patch.pausedAt = at;
             /**
              * A paused Abo raises no invoice. Clearing the date is what
@@ -211,6 +314,7 @@ export async function transitionSubscriptionIn(
              */
             patch.nextBillingAt = null;
             break;
+        }
         case "active": {
             if (from === "paused" && row.pausedAt) {
                 /**
@@ -218,6 +322,11 @@ export async function transitionSubscriptionIn(
                  * move forward by the span the Abo stood still, computed
                  * once by `pauseSpanMs`. The customer neither loses the days
                  * they could not use nor gains any.
+                 *
+                 * It may move freely because the pause above refused to
+                 * start while a Verlängerung stood for the coming period,
+                 * and a paused Abo cannot acquire one: it has no
+                 * `next_billing_at` and its status is not billable.
                  */
                 const span = pauseSpanMs(row.pausedAt, at);
 
@@ -262,15 +371,45 @@ export async function transitionSubscriptionIn(
         .set(patch)
         .where(eq(schema.subscription.id, input.subscriptionId));
 
-    const servicesMoved =
-        input.moveServices === false
-            ? 0
-            : await applyServiceFollow(
-                  tx,
-                  input.subscriptionId,
-                  servicesFollow(input.to),
-                  at,
-              );
+    /**
+     * The services follow — unless dunning is holding them.
+     *
+     * `suspended` is one service status for two different things: a pause
+     * the customer asked for, and the rung that pulled the plug on an unpaid
+     * invoice. Only the first is theirs to lift. Without this question
+     * „Kündigen“ followed by „Kündigung zurücknehmen“ — two buttons the
+     * client portal already offers — walked a suspended server back to
+     * `active` with the invoice still open, and the rung that stopped it
+     * never fires again, because `dunning_action (invoice_id, 'suspend')` is
+     * claimed for ever.
+     *
+     * The hold asks `isOpenInvoice()` and no status literal (rule 3), so the
+     * grace between the due date and the suspension rung is untouched:
+     * nothing has been suspended there yet, and a pause the customer lifts
+     * still wakes their services. What takes the hold off is the money
+     * arriving — `reactivateAfterSettlement` below.
+     */
+    let follow: ServiceFollow = null;
+    let heldByDunning = false;
+
+    if (input.moveServices !== false) {
+        follow = servicesFollow(input.to);
+
+        if (
+            follow === "active" &&
+            (await hasDunningSuspension(tx, input.subscriptionId))
+        ) {
+            follow = null;
+            heldByDunning = true;
+        }
+    }
+
+    const servicesMoved = await applyServiceFollow(
+        tx,
+        input.subscriptionId,
+        follow,
+        at,
+    );
 
     await recordEvent(tx, {
         subscriptionId: input.subscriptionId,
@@ -278,7 +417,11 @@ export async function transitionSubscriptionIn(
         summary: input.summary,
         fromStatus: from,
         toStatus: input.to,
-        data: { ...input.data, servicesMoved },
+        data: {
+            ...input.data,
+            servicesMoved,
+            ...(heldByDunning ? { servicesHeld: "dunning" } : {}),
+        },
         actor: input.actor,
         at,
     });
@@ -310,22 +453,34 @@ export type CancelInput = {
     reason?: string | null;
     actor: Actor;
     at?: Date;
+    settings?: Settings;
 };
 
 /**
  * Cancels an Abo, in the two ways a customer means it.
  *
- * `period_end` is the ordinary one and moves no money: the Abo stops
- * renewing, the services keep running to the end of the period that has
- * been paid for, and the run ends it on the day. `now` ends it today and
- * terminates the services.
+ * `period_end` is the ordinary one: the Abo stops renewing, the services
+ * keep running to the end of the period that has been paid for, and the run
+ * ends it on the day. `now` ends it today and terminates the services.
  *
- * Neither refunds anything. § 8 of the terms leaves that to the operator,
- * and a cancellation that quietly issued a Rechnungskorrektur would be the
- * panel deciding something nobody asked it to.
+ * Neither refunds a period that was delivered. § 8 of the terms leaves that
+ * to the operator, and a cancellation that quietly credited days the
+ * customer had used would be the panel deciding something nobody asked it
+ * to.
+ *
+ * What it does take back is a period that will **not** be delivered. A
+ * renewal is invoiced ahead of its period — which is exactly the window
+ * people cancel in, because that invoice is what reminds them — and an
+ * invoice for a month in which nothing runs is not a decision, it is an
+ * error: the card is debited on the due date, and after it come a
+ * Zahlungserinnerung, a Mahnung with its own Gebührenrechnung and a
+ * Kündigungsandrohung. `cancelUndeliveredRenewalsIn` takes it back the one
+ * way the project has, in this transaction, so the Abo's new status and the
+ * Rechnungskorrektur commit together.
  */
 export async function cancelSubscription(db: Db, input: CancelInput) {
     const at = input.at ?? new Date();
+    const settings = input.settings ?? (await loadSettings());
 
     return db.transaction(async (tx) => {
         const row = await lockSubscription(tx, input.subscriptionId);
@@ -336,6 +491,19 @@ export async function cancelSubscription(db: Db, input: CancelInput) {
                 "Dieses Abo ist bereits beendet.",
             );
         }
+
+        /**
+         * Before the status moves, deliberately: the reversal reads the Abo
+         * as it still is, and the billing date it leaves standing is what
+         * lets `resumeCancellation` have the period invoiced again.
+         */
+        const reversed = await cancelUndeliveredRenewalsIn(tx, {
+            subscriptionId: row.id,
+            endsAt: input.when === "now" ? at : row.currentPeriodEnd,
+            actor: input.actor,
+            at,
+            settings,
+        });
 
         if (input.when === "now") {
             await transitionSubscriptionIn(tx, {
@@ -348,7 +516,7 @@ export async function cancelSubscription(db: Db, input: CancelInput) {
                 at,
             });
 
-            return { status: "ended" as const, endsAt: at };
+            return { status: "ended" as const, endsAt: at, reversed };
         }
 
         await tx
@@ -389,6 +557,8 @@ export async function cancelSubscription(db: Db, input: CancelInput) {
         return {
             status: "cancelled" as const,
             endsAt: row.currentPeriodEnd,
+            /** The renewals this cancellation took back off the books. */
+            reversed,
         };
     });
 }
@@ -448,7 +618,12 @@ export async function resumeCancellation(
     });
 }
 
-/** Stops the clock: no invoices, services suspended. */
+/**
+ * Stops the clock: no invoices, services suspended.
+ *
+ * Refused while the coming period is already on a standing Verlängerung —
+ * see the `paused` case of `transitionSubscriptionIn`.
+ */
 export async function pauseSubscription(
     db: Db,
     input: {
@@ -635,6 +810,103 @@ export async function adjustSubscription(
     });
 }
 
+export type WakeResult = {
+    /** Whether anything moved — the status, the services, or both. */
+    woken: boolean;
+    servicesWoken: number;
+};
+
+/**
+ * One subscription that owes nothing any more, brought back. The single
+ * answer to "has this one paid up?", for both halves of the mirror.
+ *
+ * The question it asks is deliberately **not** "is the label `past_due`".
+ * Dunning suspends the services at +14 with `applyServiceFollow` and leaves
+ * the label alone wherever `past_due` would be a lie — a gekündigtes Abo
+ * stays `cancelled` while it is being chased, because `cancelled` says
+ * something truer. Asking for the label on the way back therefore left
+ * exactly those customers switched off: they paid the last invoice of a
+ * period they had already paid for, the Sperrung mail promised them the
+ * server back, and nothing woke it until the cancellation closed the Abo.
+ *
+ * What is owed is `hasOpenInvoice()` — `OPEN_INVOICE_STATUSES`, so a
+ * half-paid renewal is still open — and it is asked *first*, under the
+ * subscription's own row lock. This must never become a second route by
+ * which somebody who still owes money gets their service back.
+ */
+export async function wakeSettledIn(
+    tx: Tx,
+    subscriptionId: string,
+    input: { reason: string; actor: Actor; at: Date },
+): Promise<WakeResult> {
+    const row = await lockSubscription(tx, subscriptionId);
+
+    if (await hasOpenInvoice(tx, row.id)) {
+        return { woken: false, servicesWoken: 0 };
+    }
+
+    if (row.status === "past_due") {
+        // The label was true and is not any more; the services follow it.
+        const back = await transitionSubscriptionIn(tx, {
+            subscriptionId: row.id,
+            to: "active",
+            summary: `${input.reason} — wieder aktiv.`,
+            actor: input.actor,
+            at: input.at,
+        });
+
+        return { woken: back.changed, servicesWoken: back.servicesMoved };
+    }
+
+    /**
+     * `paused` and `ended` hold their services down themselves — the pause
+     * because the customer asked for it, the end because the Abo is over —
+     * and money arriving undoes neither. A pause comes back through
+     * `resumeSubscription`, which is the only thing that may lift it.
+     *
+     * Everything that is left (`cancelled`, `trialing`, `active`) leaves the
+     * services alone by design (`servicesFollow`), and `applyServiceFollow`
+     * is the only writer that ever sets a service `suspended` — so a
+     * suspended service under one of those can only be dunning's +14 rung,
+     * and its reason is gone. A hand-made Sperre, if one is ever added, will
+     * need a mark of its own here.
+     */
+    if (row.status === "paused" || row.status === "ended") {
+        return { woken: false, servicesWoken: 0 };
+    }
+
+    const servicesWoken = await applyServiceFollow(
+        tx,
+        row.id,
+        "active",
+        input.at,
+    );
+
+    if (servicesWoken === 0) {
+        return { woken: false, servicesWoken: 0 };
+    }
+
+    await recordEvent(tx, {
+        subscriptionId: row.id,
+        kind: "dunning",
+        summary: `${input.reason} — Leistungen wieder freigeschaltet.`,
+        data: { servicesWoken, status: row.status },
+        actor: input.actor,
+        at: input.at,
+    });
+
+    await audit(tx, {
+        actor: input.actor,
+        action: "subscription.reactivate",
+        entityType: "subscription",
+        entityId: row.id,
+        before: { status: row.status, services: "suspended" },
+        after: { status: row.status, services: "active", servicesWoken },
+    });
+
+    return { woken: true, servicesWoken };
+}
+
 /**
  * Brings a subscription back once everything it owes has been settled —
  * the mirror of dunning, and the reason a customer who pays at midnight has
@@ -643,7 +915,7 @@ export async function adjustSubscription(
  * It is called from two places and both are deliberate: `emitInvoicePaid`,
  * which is the seam every settled payment passes through, and the daily run,
  * which catches anything a failed mail or a crashed process dropped. Both end
- * here, so there is one rule about what "paid up" means.
+ * in `wakeSettledIn`, so there is one rule about what "paid up" means.
  */
 export async function reactivateAfterSettlement(
     db: Db,
@@ -659,29 +931,15 @@ export async function reactivateAfterSettlement(
     const woken: string[] = [];
 
     for (const link of links) {
-        const back = await db.transaction(async (tx) => {
-            const row = await lockSubscription(tx, link.subscriptionId);
-
-            if (row.status !== "past_due") {
-                return false;
-            }
-
-            if (await hasOpenInvoice(tx, row.id)) {
-                return false;
-            }
-
-            await transitionSubscriptionIn(tx, {
-                subscriptionId: row.id,
-                to: "active",
-                summary: "Zahlung eingegangen — wieder aktiv.",
+        const back = await db.transaction(async (tx) =>
+            wakeSettledIn(tx, link.subscriptionId, {
+                reason: "Zahlung eingegangen",
                 actor,
                 at,
-            });
+            }),
+        );
 
-            return true;
-        });
-
-        if (back) {
+        if (back.woken) {
             woken.push(link.subscriptionId);
         }
     }
@@ -718,6 +976,52 @@ export async function hasOpenInvoice(
         .limit(1);
 
     return Boolean(open);
+}
+
+/**
+ * Whether dunning is holding this subscription's services down.
+ *
+ * The one thing that tells a Sperre wegen Zahlungsverzugs apart from a pause
+ * the customer asked for, which are the same `suspended` service status: the
+ * `dunning_action` row the suspension rung claimed, against an invoice that
+ * **still wants money**. `OPEN_INVOICE_STATUSES` again rather than a literal
+ * (rule 3) — a renewal half paid is not paid, and the rung's row stays
+ * claimed for ever, so the invoice is what says whether the hold is still
+ * warranted.
+ *
+ * It is deliberately *not* "is anything open": an invoice inside its grace,
+ * before the rung, has suspended nothing, and leaving a service down for it
+ * would take away exactly the days dunning is supposed to give.
+ */
+export async function hasDunningSuspension(
+    tx: Tx,
+    subscriptionId: string,
+): Promise<boolean> {
+    const [held] = await tx
+        .select({ id: schema.dunningAction.id })
+        .from(schema.subscriptionInvoice)
+        .innerJoin(
+            schema.invoice,
+            eq(schema.subscriptionInvoice.invoiceId, schema.invoice.id),
+        )
+        .innerJoin(
+            schema.dunningAction,
+            and(
+                eq(schema.dunningAction.invoiceId, schema.invoice.id),
+                eq(schema.dunningAction.level, "suspend"),
+            ),
+        )
+        .where(
+            and(
+                eq(schema.subscriptionInvoice.subscriptionId, subscriptionId),
+                inArray(schema.invoice.status, [
+                    ...schema.OPEN_INVOICE_STATUSES,
+                ]),
+            ),
+        )
+        .limit(1);
+
+    return Boolean(held);
 }
 
 /** Every subscription an invoice is raised against. */

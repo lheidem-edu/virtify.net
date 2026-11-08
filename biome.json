@@ -4,6 +4,7 @@
         "includes": [
             "**",
             "!.next",
+            "!.claude",
             "!node_modules",
             "!tsconfig.tsbuildinfo",
             "!next-env.d.ts",

@@ -380,19 +380,64 @@ describe.skipIf(!available)("/api/v1/subscriptions", () => {
             }
         });
 
-        it("pages by ULID cursor", async () => {
-            const first = await (
-                await list(
+        it("walks every Abo exactly once when the cursor is followed to the end", async () => {
+            // Five of its own, so the walk spans at least three pages of two
+            // whatever the tests above happen to have left behind.
+            for (let index = 0; index < 5; index += 1) {
+                await makeSubscription();
+            }
+
+            const all = await db
+                .select({ id: schema.subscription.id })
+                .from(schema.subscription);
+            const expected = all.map((row) => row.id).sort();
+
+            expect(expected.length).toBeGreaterThanOrEqual(5);
+
+            const seen: string[] = [];
+            let cursor: string | null = null;
+            let pages = 0;
+
+            // The cursor is followed, not merely looked at: with ORDER BY and
+            // the cursor comparison pointing in opposite directions, page two
+            // hands back the rows of page one — the walk never terminates and
+            // the oldest Abos are never reached at all.
+            while (pages < 50) {
+                const response = await list(
                     bearer(
                         staffToken,
-                        "https://virtify.test/api/v1/subscriptions?limit=1",
+                        `https://virtify.test/api/v1/subscriptions?limit=2${
+                            cursor === null
+                                ? ""
+                                : `&cursor=${encodeURIComponent(cursor)}`
+                        }`,
                     ),
-                )
-            ).json();
+                );
 
-            expect(first.data).toHaveLength(1);
-            expect(first.has_more).toBe(true);
-            expect(first.next_cursor).toBeTruthy();
+                expect(response.status).toBe(200);
+
+                const body = await response.json();
+
+                pages += 1;
+                seen.push(...body.data.map((row: { id: string }) => row.id));
+
+                if (!body.has_more) {
+                    expect(body.next_cursor).toBeNull();
+                    break;
+                }
+
+                expect(body.next_cursor).toBe(body.data.at(-1).id);
+                cursor = body.next_cursor;
+            }
+
+            // No row twice, no row missing: the union of the pages is the list.
+            expect(new Set(seen).size).toBe(seen.length);
+            expect([...seen].sort()).toEqual(expected);
+
+            // And it really took the long way round, rather than fitting into
+            // one page or giving up after two.
+            expect(pages).toBeGreaterThanOrEqual(3);
+            expect(pages).toBeLessThan(50);
         });
     });
 

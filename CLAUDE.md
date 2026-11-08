@@ -108,7 +108,12 @@ Every step claims a row under a unique index before it acts — `subscription_in
 (subscription_id, period_start, kind)`, `invoice_collection (invoice_id, offset_days)`,
 `dunning_action (invoice_id, level)` — inside a transaction that already holds the subscription
 or the invoice `FOR UPDATE`. `billing_run (run_day)` is the cheap layer on top: it keeps a second
-cron pass off the database and is the only one of the four a human may deliberately bypass.
+cron pass off the database and is the only one of the four a human may deliberately bypass. It
+speaks for **the whole night**, so only an unscoped pass may claim the bare day — a pass narrowed
+to one customer claims `day#customer`, or billing one account by hand at 02:00 hands the 03:00
+cron a finished row and every other customer is silently passed over until tomorrow. A pass that
+*threw* did not finish: it is retried, unlike one that finished with per-step failures in its
+report.
 
 One status change, one function: `transitionSubscriptionIn()` in
 `src/server/subscriptions/service.ts`. The state machine is `src/server/subscriptions/state.ts`
@@ -126,7 +131,13 @@ customer owes and negative when we do — an upgrade invoices it, a downgrade cr
 number** to the account. There is no second rule for the way back, and `reversals.ts` keeps the
 rest of them: a renewal taken back is a Rechnungskorrektur *plus* the coupon period given back
 *plus* the period rolled to where it was by `precedingPeriod`, the exact inverse of the
-`followingPeriod` that moved it forward.
+`followingPeriod` that moved it forward. **The way back gives back exactly what the way out
+took, and no more** — a renewal that consumed no coupon period (because none was left) gets
+none back, or an operator correcting an unrelated mistake hands out a discount nobody was
+promised. A **cancellation goes through that same function**: a renewal is invoiced ahead of
+its period, and that invoice is what reminds people to cancel, so a period that will not be
+delivered is taken back in the cancellation's own transaction — only the cancelled Abo's
+positions when the document groups several, and never a period that has already begun.
 
 A renewal is priced by `calculateQuote()` like everything else, fed the subscription item's own
 **snapshot** — a running Abo is not repriced by a catalog that has moved on. A price reaches a
