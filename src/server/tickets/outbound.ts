@@ -40,9 +40,16 @@ export type ReplyInput = {
 };
 
 export type ReplyResult = {
-    messageId: string;
+    /** Null when the mail went out but could not be written down. */
+    messageId: string | null;
     internetMessageId: string | null;
     delivered: boolean;
+    /**
+     * Whether the ticket now holds a record of this reply. False is the
+     * one state the operator has to be told about by name: the customer
+     * has the answer, so sending it again sends it twice.
+     */
+    recorded: boolean;
     recipients: string[];
 };
 
@@ -237,67 +244,98 @@ export async function replyToTicket(
 
     const internetMessageId = normalizeMessageId(sent.internetMessageId);
 
-    return db.transaction(async (tx) => {
-        const [message] = await tx
-            .insert(schema.ticketMessage)
-            .values({
-                ticketId: ticket.id,
-                direction: "outbound",
-                authorType: "staff",
-                authorId: actor.id ?? null,
-                authorName: input.authorName ?? actor.label ?? null,
-                authorEmail: department.mailbox,
-                subject,
-                toAddresses: to,
-                ccAddresses: cc,
-                displayText: body,
-                displayHtml: `<div>${textToHtml(body)}</div>`,
-                originalHtml: html,
-                originalText: body,
-                internetMessageId,
-                inReplyTo: last?.internetMessageId ?? null,
-                references: last?.internetMessageId
-                    ? [...(last.references ?? []), last.internetMessageId]
-                    : (last?.references ?? []),
-                channelMessageId: sent.channelMessageId,
-                conversationId: sent.conversationId ?? ticket.conversationId,
-                sentAt: new Date(),
-            })
-            .returning({ id: schema.ticketMessage.id });
+    /**
+     * The mail is gone the moment `send` returns, and everything below is a
+     * record of it. The old comment here said a reply sent but not recorded
+     * "is picked up as inbound on the next pass and filed against the
+     * ticket anyway" — it is not: the loop protection refuses it, first on
+     * the Message-ID we were about to store and then on the mailbox it came
+     * from, which is the whole of its job. So a record that fails is said
+     * out loud and handed back as `recorded: false`, because the one thing
+     * that must not happen next is the operator pressing send again.
+     */
+    try {
+        return await db.transaction(async (tx) => {
+            const [message] = await tx
+                .insert(schema.ticketMessage)
+                .values({
+                    ticketId: ticket.id,
+                    direction: "outbound",
+                    authorType: "staff",
+                    authorId: actor.id ?? null,
+                    authorName: input.authorName ?? actor.label ?? null,
+                    authorEmail: department.mailbox,
+                    subject,
+                    toAddresses: to,
+                    ccAddresses: cc,
+                    displayText: body,
+                    displayHtml: `<div>${textToHtml(body)}</div>`,
+                    originalHtml: html,
+                    originalText: body,
+                    internetMessageId,
+                    inReplyTo: last?.internetMessageId ?? null,
+                    references: last?.internetMessageId
+                        ? [...(last.references ?? []), last.internetMessageId]
+                        : (last?.references ?? []),
+                    channelMessageId: sent.channelMessageId,
+                    conversationId:
+                        sent.conversationId ?? ticket.conversationId,
+                    sentAt: new Date(),
+                })
+                .returning({ id: schema.ticketMessage.id });
 
-        await tx
-            .update(schema.ticket)
-            .set({
-                status: input.closeTicket ? "closed" : "waiting",
-                closedAt: input.closeTicket ? new Date() : null,
-                firstResponseAt: ticket.firstResponseAt ?? new Date(),
-                lastMessageAt: new Date(),
-                conversationId:
-                    ticket.conversationId ?? sent.conversationId ?? null,
-                updatedAt: new Date(),
-            })
-            .where(eq(schema.ticket.id, ticket.id));
+            await tx
+                .update(schema.ticket)
+                .set({
+                    status: input.closeTicket ? "closed" : "waiting",
+                    closedAt: input.closeTicket ? new Date() : null,
+                    firstResponseAt: ticket.firstResponseAt ?? new Date(),
+                    lastMessageAt: new Date(),
+                    conversationId:
+                        ticket.conversationId ?? sent.conversationId ?? null,
+                    updatedAt: new Date(),
+                })
+                .where(eq(schema.ticket.id, ticket.id));
 
-        await audit(tx, {
-            actor,
-            action: "ticket.reply",
-            entityType: "ticket",
-            entityId: ticket.id,
-            after: {
-                to: to.map((address) => address.email),
-                cc: cc.map((address) => address.email),
-                closed: Boolean(input.closeTicket),
+            await audit(tx, {
+                actor,
+                action: "ticket.reply",
+                entityType: "ticket",
+                entityId: ticket.id,
+                after: {
+                    to: to.map((address) => address.email),
+                    cc: cc.map((address) => address.email),
+                    closed: Boolean(input.closeTicket),
+                    internetMessageId,
+                },
+            });
+
+            return {
+                messageId: message.id,
                 internetMessageId,
-            },
+                delivered: true,
+                recorded: true,
+                recipients: to.map((address) => address.email),
+            };
         });
+    } catch (error) {
+        console.error(
+            "[tickets] the reply to",
+            ticket.number,
+            "went out as",
+            internetMessageId,
+            "but could not be recorded:",
+            error,
+        );
 
         return {
-            messageId: message.id,
+            messageId: null,
             internetMessageId,
             delivered: true,
+            recorded: false,
             recipients: to.map((address) => address.email),
         };
-    });
+    }
 }
 
 /**
@@ -361,31 +399,21 @@ export async function sendTicketConfirmation(
         department.name,
     ].join("\n");
 
+    let sent: Awaited<ReturnType<MailChannel["send"]>>;
+
+    /**
+     * Only the send itself is in here. Recording it is a separate failure
+     * with the opposite remedy: an allowance given back for a mail that did
+     * go out is an allowance the next message spends on a second copy, and
+     * the budget is the one thing standing between an autoresponder and us.
+     */
     try {
-        const sent = await channel.send(department.mailbox, {
+        sent = await channel.send(department.mailbox, {
             to: [{ email: recipient, name: ticket.requesterName }],
             subject,
             html: `<div>${textToHtml(text)}</div>`,
             text,
         });
-
-        await db.insert(schema.ticketMessage).values({
-            ticketId: ticket.id,
-            direction: "outbound",
-            authorType: "system",
-            authorEmail: department.mailbox,
-            subject,
-            toAddresses: [{ email: recipient, name: ticket.requesterName }],
-            displayText: text,
-            originalText: text,
-            internetMessageId: normalizeMessageId(sent.internetMessageId),
-            channelMessageId: sent.channelMessageId,
-            conversationId: sent.conversationId,
-            isAutomated: true,
-            sentAt: new Date(),
-        });
-
-        return { sent: true };
     } catch (error) {
         // The allowance was claimed for a mail that never went out.
         await releaseAutoReply(db, recipient, now);
@@ -398,6 +426,63 @@ export async function sendTicketConfirmation(
         );
 
         return { sent: false, reason: "send-failed" };
+    }
+
+    try {
+        await db.transaction(async (tx) => {
+            await tx.insert(schema.ticketMessage).values({
+                ticketId: ticket.id,
+                direction: "outbound",
+                authorType: "system",
+                authorEmail: department.mailbox,
+                subject,
+                toAddresses: [{ email: recipient, name: ticket.requesterName }],
+                displayText: text,
+                originalText: text,
+                internetMessageId: normalizeMessageId(sent.internetMessageId),
+                channelMessageId: sent.channelMessageId,
+                conversationId: sent.conversationId,
+                isAutomated: true,
+                sentAt: new Date(),
+            });
+
+            // Rule 8. A mail left this installation in a customer's name;
+            // that it was this system's own idea and not a person's is what
+            // the actor says, and is exactly why it has to be recorded.
+            await audit(tx, {
+                actor: { type: "system", label: `channel:${department.slug}` },
+                action: "ticket.confirmation",
+                entityType: "ticket",
+                entityId: ticket.id,
+                after: {
+                    to: recipient,
+                    internetMessageId: normalizeMessageId(
+                        sent.internetMessageId,
+                    ),
+                },
+            });
+        });
+
+        return { sent: true };
+    } catch (error) {
+        /**
+         * The mail is already with the customer, so the allowance stays
+         * spent. What is lost is our record of having sent it — which is
+         * the half `isOwnOutbound` reads, so this copy coming back to us
+         * would not be recognised as ours. The address is still one of our
+         * own mailboxes, which is the second layer, and this is loud
+         * because it is the first one failing.
+         */
+        console.error(
+            "[tickets] the confirmation for",
+            ticket.number,
+            "went out but could not be recorded — its Message-ID",
+            normalizeMessageId(sent.internetMessageId),
+            "is now unknown to the loop protection:",
+            error,
+        );
+
+        return { sent: true, reason: "not-recorded" };
     }
 }
 

@@ -115,13 +115,44 @@ const ALLOWED = new Set([
 const SELF_CLOSING = new Set(["br", "hr", "img", "col"]);
 
 /**
+ * The exact `id` values a mail client marks its quoted history with.
+ *
+ * `id` is otherwise dropped, and deliberately: an arbitrary one is a DOM
+ * clobbering primitive. These three are not arbitrary — they are a fixed
+ * vocabulary Outlook and Outlook Web use — and without them
+ * `stripQuotedHtml` cannot see where the quote begins, because sanitising
+ * happens first. Half the quote markers in `quoting.ts` were being erased
+ * by this file before the stripper ever ran, so an Outlook reply arrived
+ * with the whole thread under it and every round trip quoted the quote.
+ */
+const QUOTE_IDS = new Set(["divrplyfwdmsg", "appendonsend", "signature"]);
+
+/**
  * Attributes that may survive, per tag. `style` is kept — an email without
  * it is unreadable — but filtered below, because `style` is where
  * `expression()`, `url(javascript:…)` and `position:fixed` live.
  */
 const ATTRIBUTES: Record<string, Set<string>> = {
-    "*": new Set(["style", "class", "dir", "align", "title", "lang"]),
-    a: new Set(["href", "target", "rel"]),
+    "*": new Set([
+        "style",
+        "class",
+        "dir",
+        "align",
+        "title",
+        "lang",
+        // Both filtered by value below; both inert, and both are markers
+        // the quote stripper reads. The second is our own, put on every
+        // outbound reply so a client we have never seen is still stripped.
+        "id",
+        "data-virtify-quote",
+    ]),
+    /**
+     * No `target` and no `rel` from the sender: both are appended below, and
+     * a duplicate attribute in HTML is won by the *first* one — so a mail
+     * carrying `rel="opener"` would have kept it and the sanitiser's own
+     * `noopener` would have been the one ignored.
+     */
+    a: new Set(["href"]),
     img: new Set(["src", "alt", "width", "height"]),
     td: new Set(["colspan", "rowspan", "valign", "bgcolor", "width", "height"]),
     th: new Set(["colspan", "rowspan", "valign", "bgcolor", "width", "height"]),
@@ -135,7 +166,8 @@ const ATTRIBUTES: Record<string, Set<string>> = {
     tr: new Set(["valign", "bgcolor"]),
     col: new Set(["width", "span"]),
     font: new Set(["color", "face", "size"]),
-    blockquote: new Set(["cite"]),
+    // `type="cite"` is Apple Mail's quote marker; the value is checked below.
+    blockquote: new Set(["cite", "type"]),
 };
 
 /**
@@ -300,6 +332,24 @@ function attributesFor(tag: string, raw: string): string {
             if (value === "") {
                 continue;
             }
+        }
+
+        /**
+         * The three markers, each narrowed to the one thing it is for. An
+         * `id` outside the fixed vocabulary goes, `type` survives only as
+         * `cite`, and ours is rewritten to a constant — so none of them can
+         * carry a value a sender chose.
+         */
+        if (name === "id" && !QUOTE_IDS.has(value.trim().toLowerCase())) {
+            continue;
+        }
+
+        if (name === "type" && value.trim().toLowerCase() !== "cite") {
+            continue;
+        }
+
+        if (name === "data-virtify-quote") {
+            value = "1";
         }
 
         out.push(

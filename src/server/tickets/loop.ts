@@ -56,7 +56,18 @@ export function autoSubmitted(message: InboundMessage): boolean {
         return false;
     }
 
-    return value.split(";")[0].trim().toLowerCase() !== "no";
+    /**
+     * The header can arrive more than once — a relay adds its own — and the
+     * channel hands duplicates over joined with a comma. Read as one string,
+     * `no, no` is not `no`, and a message two humans' mail servers both
+     * called human would come out automatic. So every occurrence is judged,
+     * and the message is a person's only if they all say so.
+     */
+    return value
+        .split(",")
+        .map((entry) => entry.split(";")[0].trim().toLowerCase())
+        .filter((entry) => entry !== "")
+        .some((entry) => entry !== "no");
 }
 
 /**
@@ -99,13 +110,31 @@ export function isBounce(message: InboundMessage): boolean {
         return true;
     }
 
-    const from = message.from?.email ?? "";
+    const from = (message.from?.email ?? "").toLowerCase();
 
-    return (
-        from.startsWith("postmaster@") ||
+    if (
         from.startsWith("mailer-daemon@") ||
         // The fixed local part Exchange Online sends its NDRs from.
         from.startsWith("microsoftexchange329e71ec88ae4615bbc36ab6ce41109e@")
+    ) {
+        return true;
+    }
+
+    /**
+     * **`postmaster@` is a person here.**
+     *
+     * RFC 2142 requires every domain to have one, and in a hosting
+     * company's support mailbox it is one of the addresses customers
+     * actually write from — about mail, usually, which is the subject
+     * least likely to survive being silently dropped. So the address alone
+     * is not enough: it counts only together with a marker a human's client
+     * does not set. Without that, the mail is a customer's and is filed.
+     */
+    return (
+        from.startsWith("postmaster@") &&
+        (autoSubmitted(message) ||
+            Boolean(header(message.headers, "diagnostic-code")) ||
+            Boolean(header(message.headers, "x-postfix-sender")))
     );
 }
 
@@ -173,18 +202,25 @@ export function classifyInbound(
         return { kind: "ignore", reason: "bounce", automated: true };
     }
 
-    if (autoSubmitted(message)) {
-        return { kind: "ignore", reason: "auto-submitted", automated: true };
-    }
-
-    if (autoResponseSuppressed(message)) {
-        return {
-            kind: "ignore",
-            reason: "auto-response-suppressed",
-            automated: true,
-        };
-    }
-
+    /**
+     * **Automatic is a reason not to answer, not a reason not to listen.**
+     *
+     * The two decisions this file exists to keep apart were collapsed here:
+     * `Auto-Submitted` and `X-Auto-Response-Suppress` were being used to
+     * refuse the message outright, which is the opposite of what the header
+     * of this file says and the wrong half of the rule. In a hosting
+     * company's mailbox the automatic mail is often the mail that matters —
+     * a customer's monitoring saying a server is down, a registrar's
+     * transfer notice, a datacentre's maintenance window — and all of it
+     * was being dropped where nobody would ever look for it.
+     *
+     * So it is filed and marked `automated`, which is the flag the
+     * acknowledgement already asks about before it goes out. Nothing
+     * automatic is ever answered automatically; that part has not changed,
+     * and it is the part the loop depends on. A bounce stays refused above:
+     * it is not a message from anybody, and a ticket addressed to an
+     * address just proved undeliverable is the first step of the loop.
+     */
     return { kind: "accept", automated };
 }
 

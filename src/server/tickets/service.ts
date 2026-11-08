@@ -406,11 +406,42 @@ export async function mergeTickets(
             );
         }
 
+        /**
+         * **A merge moves messages, so it can move them into somebody
+         * else's account.** Every message of the source ends up on the
+         * target, and the target's customer reads the target in the portal:
+         * merging A's ticket onto B's hands B the whole of A's
+         * correspondence, and the picker is a list of ticket numbers.
+         *
+         * An *unowned* source onto an owned target is the one direction
+         * that is meant — "this stranger is in fact this customer" is half
+         * of what merging is for. Owned onto unowned is refused rather than
+         * silently correct: it would take a customer's own thread out of
+         * their portal, and the merge they wanted is the other way round.
+         */
+        if (
+            source.customerId !== null &&
+            source.customerId !== target.customerId
+        ) {
+            throw new TicketError(
+                target.customerId === null
+                    ? "Das Ziel-Ticket gehört zu keinem Kunden. Führe in die andere Richtung zusammen."
+                    : "Die beiden Tickets gehören zu verschiedenen Kunden.",
+            );
+        }
+
         await tx
             .update(schema.ticketMessage)
             .set({
                 ticketId: target.id,
-                mergedFromTicketId: source.id,
+                /**
+                 * Where a message came from *originally*, not where it was
+                 * standing a moment ago. Merging C into B and then B into A
+                 * used to overwrite C's marker with B, and unmerging C then
+                 * gave back an empty ticket while its messages stayed in A
+                 * for ever. A marker is written once and never rewritten.
+                 */
+                mergedFromTicketId: sql`coalesce(${schema.ticketMessage.mergedFromTicketId}, ${source.id})`,
                 updatedAt: new Date(),
             })
             .where(eq(schema.ticketMessage.ticketId, source.id));

@@ -69,12 +69,17 @@ async function attempt(
 
         console.error("[tickets] an action failed:", error);
 
+        /**
+         * Only a `TicketError` is written for a person to read. Everything
+         * else is a `GraphError` or a database error, whose message is
+         * English and carries a URL, a status and 300 bytes of somebody
+         * else's response body — none of which belongs on a German screen,
+         * and some of which is nobody's business but the log's.
+         */
         return {
             status: "error",
             message:
-                error instanceof Error
-                    ? error.message
-                    : "Das hat nicht funktioniert.",
+                "Das hat nicht funktioniert. Die Einzelheiten stehen im Log.",
         };
     }
 }
@@ -109,6 +114,16 @@ export async function replyAction(
             },
             actor,
         );
+
+        if (!result.recorded) {
+            // The customer has the answer. Saying "gesendet" here and
+            // showing nothing in the conversation is how it gets sent twice.
+            return (
+                `Antwort an ${result.recipients.join(", ")} gesendet, ` +
+                "konnte aber nicht im Ticket gespeichert werden. " +
+                "Bitte nicht erneut senden — die Nachricht ist beim Kunden."
+            );
+        }
 
         return `Antwort an ${result.recipients.join(", ")} gesendet.`;
     });

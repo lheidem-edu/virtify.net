@@ -115,9 +115,22 @@ export async function listTickets(
             departmentName: schema.ticketDepartment.name,
             customerName: schema.customer.name,
             assigneeName: schema.staffUser.name,
-            messageCount: sql<number>`(
+            /**
+             * A customer counts what a customer can read. Counting internal
+             * notes here would tell them how many there are and that they
+             * exist at all — the one thing the direction filter everywhere
+             * else is there to keep inside.
+             */
+            messageCount:
+                scope === ANY_CUSTOMER
+                    ? sql<number>`(
                 select count(*)::int from ${schema.ticketMessage}
                 where ${schema.ticketMessage.ticketId} = ${schema.ticket.id}
+            )`
+                    : sql<number>`(
+                select count(*)::int from ${schema.ticketMessage}
+                where ${schema.ticketMessage.ticketId} = ${schema.ticket.id}
+                  and ${schema.ticketMessage.direction} <> 'note'
             )`,
         })
         .from(schema.ticket)

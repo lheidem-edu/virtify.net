@@ -85,7 +85,54 @@ export type GraphChannelOptions = {
     fetchImpl?: GraphFetch;
     /** The folder processed mail is moved into. */
     processedFolder?: string;
+    /** Injected in tests, so a backoff costs no wall clock there. */
+    sleepImpl?: (ms: number) => Promise<void>;
 };
+
+/**
+ * Graph throttles, and says so properly.
+ *
+ * A mailbox under load answers 429 with a `Retry-After`, and 503/504 while
+ * a backend moves. None of those mean "this message cannot be filed" — they
+ * mean "not this second" — so a call that treats them as failures turns a
+ * busy morning into a sweep that reports failures, leaves claims open and
+ * comes back five minutes later to be throttled again on the same volume.
+ * Each retry is also another request against the same throttle, which is
+ * how a system digs itself in deeper the harder it tries.
+ *
+ * So: the documented wait is honoured when there is one, an exponential
+ * backoff when there is not, capped — because a worker holding a pg-boss
+ * job open for a quarter of an hour is its own failure. Past the cap the
+ * error is thrown and the claim stays open, which is the retry that was
+ * always there.
+ */
+const RETRYABLE = new Set([429, 503, 504]);
+const MAX_ATTEMPTS = 4;
+const MAX_BACKOFF_MS = 30_000;
+
+/** How long Graph asked us to wait, or a backoff when it did not say. */
+export function retryAfterMs(
+    header: string | null,
+    attempt: number,
+    now: number = Date.now(),
+): number {
+    if (header) {
+        const seconds = Number(header);
+
+        if (Number.isFinite(seconds) && seconds >= 0) {
+            return Math.min(seconds * 1000, MAX_BACKOFF_MS);
+        }
+
+        // The header is allowed to be an HTTP-date instead of a count.
+        const when = Date.parse(header);
+
+        if (Number.isFinite(when)) {
+            return Math.min(Math.max(when - now, 0), MAX_BACKOFF_MS);
+        }
+    }
+
+    return Math.min(2 ** attempt * 1000, MAX_BACKOFF_MS);
+}
 
 function addresses(
     list: { emailAddress?: { address?: string; name?: string } }[] | undefined,
@@ -177,6 +224,12 @@ export function normalizeGraphMessage(raw: {
 
 export function graphChannel(options: GraphChannelOptions): MailChannel {
     const doFetch = options.fetchImpl ?? fetch;
+    const sleep =
+        options.sleepImpl ??
+        ((ms: number) =>
+            new Promise<void>((resolve) => {
+                setTimeout(resolve, ms);
+            }));
     let token: TokenCache | null = null;
 
     async function accessToken(): Promise<string> {
@@ -236,19 +289,44 @@ export function graphChannel(options: GraphChannelOptions): MailChannel {
         init: RequestInit & { raw?: boolean } = {},
     ): Promise<T> {
         const url = path.startsWith("http") ? path : `${GRAPH}${path}`;
-        const response = await doFetch(url, {
-            ...init,
-            headers: {
-                authorization: `Bearer ${await accessToken()}`,
-                ...(init.body && !init.raw
-                    ? { "content-type": "application/json" }
-                    : {}),
-                ...(init.headers ?? {}),
-            },
-        });
+        let reauthed = false;
+        let response: Response;
 
-        if (response.status === 204) {
-            return undefined as T;
+        for (let attempt = 0; ; attempt += 1) {
+            response = await doFetch(url, {
+                ...init,
+                headers: {
+                    authorization: `Bearer ${await accessToken()}`,
+                    ...(init.body && !init.raw
+                        ? { "content-type": "application/json" }
+                        : {}),
+                    ...(init.headers ?? {}),
+                },
+            });
+
+            /**
+             * A token can stop being accepted before it expires — the secret
+             * was rolled, the app's grant was changed. One re-auth, because
+             * a second 401 on a freshly minted token is a real refusal and
+             * retrying it is how a misconfiguration becomes a request loop.
+             */
+            if (response.status === 401 && !reauthed) {
+                await response.text().catch(() => "");
+                reauthed = true;
+                token = null;
+                continue;
+            }
+
+            if (RETRYABLE.has(response.status) && attempt < MAX_ATTEMPTS - 1) {
+                // Drained, so the connection can be reused for the retry.
+                await response.text().catch(() => "");
+                await sleep(
+                    retryAfterMs(response.headers.get("retry-after"), attempt),
+                );
+                continue;
+            }
+
+            break;
         }
 
         if (!response.ok) {
@@ -274,7 +352,24 @@ export function graphChannel(options: GraphChannelOptions): MailChannel {
             return Buffer.from(await response.arrayBuffer()) as T;
         }
 
-        return (await response.json()) as T;
+        /**
+         * **An empty body is a success, not a parse error.**
+         *
+         * `POST …/messages/{id}/send` answers `202 Accepted` and, in
+         * Microsoft's own words, "doesn't return anything in the response
+         * body" — and `Response.json()` on an empty body throws. Keying this
+         * on 204 alone meant that the single most important call in the
+         * system threw *after the mail had gone out*: the reply was never
+         * recorded, the operator saw an error and pressed send again, and
+         * the customer got it twice.
+         *
+         * So the body decides, not the status. 204 and 202-with-nothing come
+         * back as undefined; an upload session's intermediate 202, which
+         * does carry `nextExpectedRanges`, is parsed like any other answer.
+         */
+        const text = await response.text();
+
+        return (text.trim() === "" ? undefined : JSON.parse(text)) as T;
     }
 
     const user = (mailbox: string) =>

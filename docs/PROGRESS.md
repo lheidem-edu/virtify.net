@@ -1733,6 +1733,125 @@ one's unique indexes.
   unknown sender; there is no full-text search over the conversation.
 - **The admin dashboard has no ticket widget.** `/admin/tickets` carries the counters.
 
+### Reviewed after the fact, and fixed
+
+Ten lenses over the phase, three independent skeptics per candidate, and every fix below
+mutation-checked by hand afterwards — a change was reverted and the suite had to go red, or
+the test was not holding anything. 823 tests became 857.
+
+**The one that would have stopped the phase working at all.** `POST …/messages/{id}/send`
+answers **202 Accepted with an empty body** — Microsoft's words — and `call()` short-circuited
+only on 204, so `Response.json()` ran on nothing and threw. Every outbound mail would have
+thrown *after it had gone out*: the reply unrecorded, an error on the operator's screen, and a
+second copy at the customer the moment they pressed send again. The fake answered `/send` with
+204 and so made the assumption true by construction; it now answers 202 the way Graph does,
+and the body decides whether there is anything to parse, not the status.
+
+**Who owns a ticket, changed by a number anybody can guess.** An inbound message matched to a
+ticket by its `[TKT-00123]` subject tag was linking that ticket to the sender's account when it
+had none — so any customer with a portal login could take over a stranger's conversation, in
+their portal, staff replies and all, by sending one mail with a guessed number in the subject.
+Adoption now happens only on a `message-id` match, the one signal that has to name an id we
+minted or already received. A subject tag or a conversation id files the message, flags it and
+leaves the linking to staff, which the ticket page already offers. The reply recipients were
+built on exactly this reasoning; this was the same hole by the other door.
+
+**Mail that was simply gone.** `reconcileMailbox` advanced the delta cursor whether or not the
+messages on the page had been dealt with. Graph never reports a message twice for one token,
+the message that threw is usually the one that was never claimed (the fetch comes first, the
+claim second), and nothing reads an open `inbound_mail` row — so a message that failed once was
+lost, silently, with a comment above the line saying it could not be. The cursor now waits for
+a page that had failures, which makes the delta path behave the way the notification path
+already does. The cost is that a message which fails for ever holds its mailbox's place; that
+is loud, and loud is this system's trade everywhere else.
+
+**And the attachment that would have held it there.** Graph answers `$value` with 405 for an
+item attachment and for a OneDrive reference, and 405 is not `gone`, so a forwarded calendar
+invitation threw out of `downloadAttachments` and took the whole message with it. One
+attachment is now skipped, named (`unreadable`) and counted in the sweep report; the message
+is what the customer wrote.
+
+**A ghost ticket per mail sent to two of our mailboxes.** When the unique index on
+`ticket_message.internet_message_id` refused a message, the transaction returned "duplicate"
+and *committed* — including the ticket it had opened and numbered a moment earlier. A customer
+copying `support@` and `abuse@` got a real ticket in one queue and an empty one in the other.
+It now rolls back, which hands the number back with it, and the claim records where the message
+really is.
+
+**The attachments of a message that was filed.** The `catch` around the transaction also
+covered everything after the commit, so a dropped connection between the commit and
+`markInboundHandled` deleted the storage bytes of a message the customer can see. Only the
+transaction is in the `try` now.
+
+**Merging, which moves messages between accounts.** `mergeTickets` never checked that the two
+tickets belong to the same customer. An unowned source onto an owned target is the direction
+that is the point of merging and is still allowed; anything else is refused. And a second merge
+was overwriting the first's `merged_from_ticket_id`, so unmerging the inner ticket handed back
+an empty one while its messages stayed where they were — the marker is now written once and
+never rewritten.
+
+**Automatic is a reason not to answer, not a reason not to listen.** `classifyInbound` was
+refusing `Auto-Submitted` and `X-Auto-Response-Suppress` mail outright, which is the opposite
+of what `loop.ts`'s own header says it does and the wrong half of the rule. In a hosting
+mailbox that is a customer's monitoring saying a machine is down, a registrar's transfer
+notice, a datacentre's maintenance window — all of it dropped where nobody would look for it.
+It is filed and marked `automated`, which is the flag the acknowledgement already asks about,
+so nothing automatic is ever answered automatically. A bounce stays refused: it is not a
+message from anybody. **`postmaster@` is a person here** — RFC 2142 requires every domain to
+have one and hosting customers write from it, usually about mail — so the address alone no
+longer makes a bounce; it needs a marker a human's client does not set. And a repeated
+`Auto-Submitted: no` arrives joined with a comma, which read as one string is not `no`, so
+every occurrence is judged separately.
+
+**Quote stripping that had been switched off by its own sanitiser.** `prepareBody` sanitises
+before it strips, deliberately — but the allowlist dropped `id`, `type` on `blockquote` and
+`data-` attributes, which is where five of the eleven markers live: Outlook desktop, Outlook
+Web, Apple Mail, the signature marker, and **our own**, the one put on every outbound reply so
+a client we have never seen is still stripped. Every Outlook reply therefore arrived with the
+whole thread under it and re-quoted it on the way back out. The three attributes now survive,
+each narrowed to the one thing it is for — `id` only as one of three fixed words, `type` only
+as `cite`, ours rewritten to a constant — so none of them can carry a value a sender chose.
+
+**Microsoft Graph throttles and says so properly.** Nothing honoured `Retry-After`, and no
+request was retried at all. A busy morning would have been a sweep reporting failures and
+coming back five minutes later to be throttled again on the same volume. 429, 503 and 504 are
+now retried up to four times, honouring the documented wait and backing off exponentially when
+there is none, capped at thirty seconds; a 401 re-authenticates once, because a second refusal
+of a freshly minted token is real.
+
+**Smaller, and each of them real.**
+
+- "Erneut verarbeiten" told the operator the message would be fetched again. Clearing the claim
+  did nothing of the sort — nothing reads an open `inbound_mail` row, the cursor had moved past
+  it and it was sitting in Processed. It now writes the one `mail_notification` row the webhook
+  writes, which is where work waits.
+- The portal says "Du bekommst eine Bestätigung an deine Kontaktadresse" and sends one now. It
+  is not a nicety: it is the mail the customer replies to, and the tag in its subject is how
+  that reply comes back to this ticket instead of opening a second one.
+- A staff reply that is sent but cannot be recorded comes back as `recorded: false` and the
+  operator is told, by name, not to send it again. The old comment claimed the next inbound pass
+  would file it; the loop protection refuses it, which is its job.
+- `sendTicketConfirmation` gave the hourly allowance back when the *recording* failed, for a
+  mail that had gone out. Only a failed send gives it back now.
+- The acknowledgement wrote a ticket message with no audit row (rule 8), and not in a
+  transaction with it (rule 4). Both now.
+- A contact without `can_tickets` could still close the account's tickets: the page hid the
+  form, the server action did not check.
+- The message count on a customer's ticket list counted internal notes, telling them how many
+  there are and that they exist.
+- A plain-text message's quoted history could not be shown at all — the toggle had the same
+  expression in both branches.
+- Graph's English error text, URL and 300 bytes of response body were shown to staff as the UI
+  message. The log keeps them; the screen gets a German sentence.
+- The Graph subscription asked for exactly the documented ceiling of 4230 minutes, measured
+  against our clock and refused against Microsoft's. Ten minutes of margin.
+
+**A test that was holding nothing.** No test asserted that `loadTicket` withholds an internal
+note from the customer — the two that mention notes both cover the *serializer*, and the portal
+page has no serializer in front of it. Removing the filter broke nothing. Two more guards had a
+`return` where they meant `throw`, so the test passed when its setup had failed.
+
+
 ### Still open in this phase
 
 - [ ] **Nothing has ever talked to Microsoft.** Every Graph interaction is tested against
@@ -1748,6 +1867,17 @@ one's unique indexes.
       a response-time report that does not exist yet.
 - [ ] **Merging does not deduplicate.** Two tickets merged keep both their opening
       messages; nothing notices that they say the same thing.
+- [ ] **A message that fails for ever holds its mailbox's delta cursor.** The fix above
+      chose a stalled, visible mailbox over a silently lost message, which is the right way
+      round — but there is no way for an operator to say "give up on this one". The sweep
+      report names the message and the mailbox stops advancing; what is missing is a button.
+- [ ] **A merge chain unmerges only inwards.** `C` into `B` into `A`, then unmerging `B`,
+      leaves `C`'s messages in `A` — they belong in `B`, which is still merged away. The
+      provenance is no longer destroyed, so the data to do this properly is there.
+- [ ] **No index on `ticket.merged_into_ticket_id` or `ticket_message.merged_from_ticket_id`.**
+      Every ticket detail view and every unmerge filters on one of them.
+- [ ] **`skippedAttachments` is counted in the sweep report and nowhere else.** The customer
+      who sent a 60 MB logfile is not told it did not arrive, and neither is the ticket.
 
 ## Phases 5–11
 
@@ -1763,7 +1893,9 @@ one's unique indexes.
 
 ## Carried over from before the conversion
 
-- **Timestamps are `timestamp`, not `timestamptz`** (58 columns), against hard rule 9. Postgres
+- **Timestamps are `timestamp`, not `timestamptz`** (58 columns before Phase 7, 91 after —
+  migration `0022` followed the existing pattern rather than deviating from it), against hard
+  rule 9. Postgres
   stores them without a zone and node-postgres then reads them as the server's local time, so a
   deployment in another zone would read every date back shifted. Fixing it is one migration that
   rewrites every timestamp column at once, which wants its own change and a look at the data

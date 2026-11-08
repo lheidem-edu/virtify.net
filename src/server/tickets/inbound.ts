@@ -13,6 +13,7 @@ import type { InboundMessage, MailChannel } from "./channels/types";
 import {
     claimInboundMail,
     markInboundHandled,
+    recordNotification,
     syntheticMessageId,
 } from "./claim";
 import { header, normalizeMessageId, parseMessageIds } from "./headers";
@@ -52,6 +53,18 @@ import { isOwnOutbound, matchContact, resolveThread } from "./threading";
  */
 
 type Db = typeof defaultDb;
+
+/**
+ * Thrown to roll back a transaction that opened a ticket for a message that
+ * turned out to be filed already. Carries where it is filed, so the claim
+ * can still point at the real thing.
+ */
+class AlreadyFiled extends Error {
+    constructor(readonly ticketId: string | null) {
+        super("the message is already filed");
+        this.name = "AlreadyFiled";
+    }
+}
 
 export type InboundResult =
     | {
@@ -192,8 +205,25 @@ export async function processInboundMessage(
     const inReplyTo =
         parseMessageIds(header(message.headers, "in-reply-to"))[0] ?? null;
 
+    /**
+     * Only the transaction is in here.
+     *
+     * The bytes were written to storage before it opened, so a transaction
+     * that does not commit leaves them belonging to nobody and they go. But
+     * everything *after* the commit — moving the message, recording the new
+     * provider id, closing the claim — happens to a message that is already
+     * a ticket, and a failure there must not take its attachments with it.
+     * A dropped connection between the commit and `markInboundHandled` used
+     * to delete the bytes of a message the customer can see in the portal.
+     */
+    let written: {
+        duplicate: boolean;
+        ticket: Ticket;
+        createdTicket: boolean;
+    };
+
     try {
-        const written = await db.transaction(async (tx) => {
+        written = await db.transaction(async (tx) => {
             let ticket: Ticket;
             let createdTicket = false;
 
@@ -275,6 +305,35 @@ export async function processInboundMessage(
                 .returning({ id: schema.ticketMessage.id });
 
             if (inserted.length === 0) {
+                /**
+                 * The message is already filed somewhere. Where, exactly,
+                 * matters for what we record — and if this attempt opened a
+                 * ticket a moment ago, that ticket now has no messages and
+                 * never will.
+                 *
+                 * Committing it leaves a numbered, empty ghost in the queue:
+                 * a customer who copies support@ and abuse@ on one mail gets
+                 * a real ticket in the first department and an empty one in
+                 * the second, which somebody then has to open to discover
+                 * there is nothing in it. So this rolls back instead —
+                 * `nextTicketNumber` holds its counter inside this very
+                 * transaction, so the number is handed back with it.
+                 */
+                const [elsewhere] = await tx
+                    .select({ ticketId: schema.ticketMessage.ticketId })
+                    .from(schema.ticketMessage)
+                    .where(
+                        eq(
+                            schema.ticketMessage.internetMessageId,
+                            internetMessageId,
+                        ),
+                    )
+                    .limit(1);
+
+                if (createdTicket) {
+                    throw new AlreadyFiled(elsewhere?.ticketId ?? null);
+                }
+
                 return { duplicate: true as const, ticket, createdTicket };
             }
 
@@ -296,6 +355,29 @@ export async function processInboundMessage(
 
             const unknownSender = ticket.unknownSender || contact === null;
 
+            /**
+             * **A guessable signal may not change who owns a ticket.**
+             *
+             * Linking an unowned ticket to the account of a contact who
+             * writes into it is right when the thread is really theirs, and
+             * a disclosure when it is not: ticket numbers are sequential,
+             * they travel on subject lines, and `[TKT-00123] Frage` sent to
+             * the mailbox by any customer with a portal login would
+             * otherwise hand them a stranger's whole conversation — the
+             * ticket would appear in their portal, scoped to them, staff
+             * replies and all. The same reasoning the reply recipients are
+             * already built on, by the other door.
+             *
+             * So only `message-id` adopts. It is the one signal a sender
+             * cannot invent: `In-Reply-To`/`References` have to name an id
+             * we minted or one we already received. A subject tag and a
+             * conversation id can both be arrived at from a guessed number,
+             * so a message matched by either is filed, flagged and left for
+             * staff to link from the ticket page.
+             */
+            const mayAdopt =
+                thread.kind === "ticket" && thread.matchedBy === "message-id";
+
             if (!createdTicket) {
                 await tx
                     .update(schema.ticket)
@@ -315,12 +397,13 @@ export async function processInboundMessage(
                         unknownSender,
                         conversationId:
                             ticket.conversationId ?? message.conversationId,
-                        // A ticket that arrived from an unknown address and
-                        // whose sender is now a known contact gets linked.
-                        customerId:
-                            ticket.customerId ?? contact?.customerId ?? null,
-                        contactId:
-                            ticket.contactId ?? contact?.contactId ?? null,
+                        // See `mayAdopt` above.
+                        customerId: mayAdopt
+                            ? (ticket.customerId ?? contact?.customerId ?? null)
+                            : ticket.customerId,
+                        contactId: mayAdopt
+                            ? (ticket.contactId ?? contact?.contactId ?? null)
+                            : ticket.contactId,
                         updatedAt: new Date(),
                     })
                     .where(eq(schema.ticket.id, ticket.id));
@@ -346,60 +429,69 @@ export async function processInboundMessage(
 
             return { duplicate: false as const, ticket, createdTicket };
         });
-
-        if (written.duplicate) {
-            // Nothing was recorded, so the bytes this attempt wrote belong
-            // to nobody. The way back from a write that was never recorded.
-            await removeOrphans(stored.map((entry) => entry.storageKey));
-
-            const newId = await finishWithProvider(options, message, mailbox);
-
-            await markInboundHandled(db, claim.id, {
-                outcome: "duplicate",
-                ticketId: written.ticket.id,
-                channelMessageId: newId,
-            });
-
-            return { kind: "duplicate", ticketId: written.ticket.id };
-        }
-
-        const newChannelId = await finishWithProvider(
-            options,
-            message,
-            mailbox,
-        );
-
-        if (newChannelId) {
-            await db
-                .update(schema.ticketMessage)
-                .set({ channelMessageId: newChannelId })
-                .where(eq(schema.ticketMessage.id, ticketMessageId));
-        }
-
-        await markInboundHandled(db, claim.id, {
-            outcome: "ticket",
-            ticketId: written.ticket.id,
-            ticketMessageId,
-            channelMessageId: newChannelId,
-        });
-
-        return {
-            kind: "filed",
-            ticketId: written.ticket.id,
-            ticketNumber: written.ticket.number,
-            ticketMessageId,
-            createdTicket: written.createdTicket,
-            matchedBy: thread.kind === "ticket" ? thread.matchedBy : "new",
-            automated: verdict.automated,
-            unknownSender: contact === null,
-            skippedAttachments: skipped,
-        };
     } catch (error) {
         // The transaction rolled back, so these bytes belong to nobody.
         await removeOrphans(stored.map((entry) => entry.storageKey));
 
+        if (error instanceof AlreadyFiled) {
+            // The ticket this attempt opened went back with the rollback.
+            const newId = await finishWithProvider(options, message, mailbox);
+
+            await markInboundHandled(db, claim.id, {
+                outcome: "duplicate",
+                ticketId: error.ticketId,
+                channelMessageId: newId,
+            });
+
+            return { kind: "duplicate", ticketId: error.ticketId };
+        }
+
         throw error;
     }
+
+    if (written.duplicate) {
+        // Nothing was recorded, so the bytes this attempt wrote belong
+        // to nobody. The way back from a write that was never recorded.
+        await removeOrphans(stored.map((entry) => entry.storageKey));
+
+        const newId = await finishWithProvider(options, message, mailbox);
+
+        await markInboundHandled(db, claim.id, {
+            outcome: "duplicate",
+            ticketId: written.ticket.id,
+            channelMessageId: newId,
+        });
+
+        return { kind: "duplicate", ticketId: written.ticket.id };
+    }
+
+    const newChannelId = await finishWithProvider(options, message, mailbox);
+
+    if (newChannelId) {
+        await db
+            .update(schema.ticketMessage)
+            .set({ channelMessageId: newChannelId })
+            .where(eq(schema.ticketMessage.id, ticketMessageId));
+    }
+
+    await markInboundHandled(db, claim.id, {
+        outcome: "ticket",
+        ticketId: written.ticket.id,
+        ticketMessageId,
+        channelMessageId: newChannelId,
+    });
+
+    return {
+        kind: "filed",
+        ticketId: written.ticket.id,
+        ticketNumber: written.ticket.number,
+        ticketMessageId,
+        createdTicket: written.createdTicket,
+        matchedBy: thread.kind === "ticket" ? thread.matchedBy : "new",
+        automated: verdict.automated,
+        unknownSender: contact === null,
+        skippedAttachments: skipped,
+    };
 }
 
 async function departmentFor(
@@ -464,25 +556,59 @@ async function finishWithProvider(
  * The other direction of the pipeline, and it exists because "processed"
  * is a claim this system makes about its own work and claims are sometimes
  * wrong — a department created after the fact, a stripping rule that ate
- * the message, a ticket deleted by mistake. Clearing the claim is all it
- * takes: the next pass fetches the message afresh and files it.
+ * the message, a ticket deleted by mistake.
+ *
+ * **Clearing the claim is not enough**, which is what this used to do while
+ * telling the operator the message would be fetched again. Nothing reads an
+ * open `inbound_mail` row: the delta cursor has long since moved past the
+ * message and it is sitting in the processed folder, so re-opening the row
+ * made it eligible for a pass that was never going to come. So the work is
+ * put back where work waits — one `mail_notification` row, the same row the
+ * webhook writes, saying "look at this message in this mailbox again". The
+ * provider id is the current one, because `markInboundHandled` kept it
+ * through the move.
  */
 export async function reopenInboundMail(
     db: Db,
     inboundMailId: string,
 ): Promise<boolean> {
-    const updated = await db
-        .update(schema.inboundMail)
-        .set({
-            handledAt: null,
-            outcome: null,
-            reason: null,
-            updatedAt: new Date(),
-        })
-        .where(eq(schema.inboundMail.id, inboundMailId))
-        .returning({ id: schema.inboundMail.id });
+    return db.transaction(async (tx) => {
+        const [row] = await tx
+            .update(schema.inboundMail)
+            .set({
+                handledAt: null,
+                outcome: null,
+                reason: null,
+                updatedAt: new Date(),
+            })
+            .where(eq(schema.inboundMail.id, inboundMailId))
+            .returning({
+                channel: schema.inboundMail.channel,
+                mailbox: schema.inboundMail.mailbox,
+                channelMessageId: schema.inboundMail.channelMessageId,
+            });
 
-    return updated.length > 0;
+        if (!row) {
+            return false;
+        }
+
+        if (!row.channelMessageId) {
+            // Nothing to fetch: the provider id was never recorded, so the
+            // message cannot be asked for by name. The claim is open and the
+            // caller is told this did not amount to a re-queue.
+            return false;
+        }
+
+        await recordNotification(tx, {
+            channel: row.channel,
+            mailbox: row.mailbox,
+            subscriptionId: "manual",
+            resourceId: row.channelMessageId,
+            changeType: "reprocess",
+        });
+
+        return true;
+    });
 }
 
 /** How the inbound pipeline has been doing lately, for the admin area. */

@@ -162,14 +162,46 @@ provider's id changes the moment the message is moved — which is the last thin
 A ticket system mails back what it is mailed, into a mailbox that receives its own outbound
 copies, so **loop protection is not a nicety**: `src/server/tickets/loop.ts` refuses our own
 outbound (by the Message-ID Exchange gave the draft, read back *before* the send), anything
-from our own mailboxes, bounces, `Auto-Submitted` ≠ `no` and `X-Auto-Response-Suppress`, and
-`auto_reply_budget (recipient, window)` caps acknowledgements per sender per hour with a
-conditional update — claimed before the send and **given back** when it fails.
+from our own mailboxes, and bounces, and `auto_reply_budget (recipient, window)` caps
+acknowledgements per sender per hour with a conditional update — claimed before the send and
+**given back** when the *send* fails, never when the recording does: the customer has that
+mail, and an allowance handed back for it is the allowance the next message spends on a
+second copy. **Automatic is a reason not to answer, not a reason not to listen** — the two
+decisions that file live in `classifyInbound`, and whether anything automatic may go back in
+`isAutomated`. `Auto-Submitted` ≠ `no` and `X-Auto-Response-Suppress` mark a message
+`automated`, which is what the acknowledgement asks about; they do not refuse it, because in
+a hosting mailbox the automatic mail is a customer's monitoring saying a machine is down. A
+bounce is refused, because it is not a message from anybody — but `postmaster@` is a person
+here and needs a second signal before it counts as one.
 
-A reply goes to the people the ticket already knows about — the requester and the contacts
-of its account — and never to whoever sent the last message. A ticket number travels on a
-subject line, so anybody who learns one can post into the conversation; replying to them
-would turn a guessable number into a way of reading somebody else's support history.
+**A guessable signal may not decide who owns a ticket, and may not be replied to.** A ticket
+number travels on a subject line and the numbers are sequential, so anybody who learns or
+guesses one can post into the conversation. A reply therefore goes to the people the ticket
+already knows about — the requester and the contacts of its account — and never to whoever
+sent the last message; and an unowned ticket is linked to a contact's account only on a
+`message-id` match, which has to name an id we minted or already received. Either rule
+written the other way turns a guessed number into somebody else's support history, once
+through the mailbox and once through the portal. A merge moves messages between tickets, so
+it is the third door: it stays inside one account, except for the unowned source that is the
+point of merging.
+
+**The delta cursor only moves past mail that was dealt with.** Graph never reports a message
+twice for one token and nothing reads an open `inbound_mail` row back, so advancing over a
+message whose pass threw is a mail silently gone — and the one that threw is usually the one
+that was never claimed, because the fetch comes first and the claim second. A page with
+failures keeps its cursor, which makes the delta path behave the way the notification path
+already does. A message that fails for ever then holds its mailbox's place, which is loud
+rather than quiet, and loud is the trade this system makes everywhere else. That is also why
+**one attachment may never take its message down**: Graph answers `$value` with 405 for an
+item attachment, which is not `gone`, and one forwarded calendar invitation would otherwise
+stop the queue.
+
+**An empty body is a success.** `POST …/messages/{id}/send` answers `202 Accepted` with
+nothing in it, so what is parsed is decided by the body and not by the status — keying it on
+204 meant the most important call in the system threw *after the mail had gone out*. And
+Graph throttles properly: 429 with `Retry-After`, honoured, with an exponential backoff when
+it says nothing and a cap, because a worker holding a job open for a quarter of an hour is
+its own failure.
 
 A ticket's HTML is sanitised *and* rendered in `<iframe sandbox srcdoc=…>` with neither
 `allow-scripts` nor `allow-same-origin`. The frame is what actually protects the page;

@@ -77,34 +77,49 @@ describe("what may become a ticket message", () => {
         ).toMatchObject({ reason: "no-sender" });
     });
 
-    it("refuses an out-of-office and never calls it a person's message", () => {
-        const result = verdict(
-            inboundMessage({
-                headers: { "x-auto-response-suppress": "All" },
-            }),
-        );
-
-        expect(result).toEqual({
-            kind: "ignore",
-            reason: "auto-response-suppressed",
-            automated: true,
-        });
+    it("files an out-of-office and never calls it a person's message", () => {
+        /**
+         * The two decisions this module keeps apart. Automatic is a reason
+         * not to *answer* — `handleMessage` asks `automated` before it sends
+         * an acknowledgement — and never a reason not to listen: in a
+         * hosting mailbox the automatic mail is often a customer's
+         * monitoring saying a machine is down.
+         */
+        expect(
+            verdict(
+                inboundMessage({
+                    headers: { "x-auto-response-suppress": "All" },
+                }),
+            ),
+        ).toEqual({ kind: "accept", automated: true });
     });
 
-    it("refuses anything Auto-Submitted that is not `no`", () => {
+    it("marks anything Auto-Submitted that is not `no` as automated", () => {
         for (const value of [
             "auto-generated",
             "auto-replied",
             "auto-notified",
             "AUTO-GENERATED",
             "auto-generated; owner-email=x@y.net",
+            // Two relays, two headers, joined with a comma by the channel.
+            "no, auto-generated",
         ]) {
             expect(
                 verdict(
                     inboundMessage({ headers: { "auto-submitted": value } }),
                 ),
-            ).toMatchObject({ reason: "auto-submitted" });
+            ).toEqual({ kind: "accept", automated: true });
         }
+    });
+
+    it("is not fooled into automated by a header repeated as `no`", () => {
+        // `no, no` read as one string is not `no`, and a message two mail
+        // servers both called human must not come out as a machine's.
+        expect(
+            verdict(
+                inboundMessage({ headers: { "auto-submitted": "no, no" } }),
+            ),
+        ).toEqual({ kind: "accept", automated: false });
     });
 
     it("accepts Auto-Submitted: no, which RFC 3834 says a person sent", () => {
@@ -130,8 +145,13 @@ describe("what may become a ticket message", () => {
                 headers: { "x-failed-recipients": "weg@example.net" },
             }),
         );
+        // `postmaster@` alone is a person — see the test below — so the
+        // bounce case is the one that also carries a machine's marker.
         const byPostmaster = verdict(
-            inboundMessage({ from: { email: "postmaster@example.org" } }),
+            inboundMessage({
+                from: { email: "postmaster@example.org" },
+                headers: { "auto-submitted": "auto-replied" },
+            }),
         );
         const byExchange = verdict(
             inboundMessage({
@@ -154,6 +174,31 @@ describe("what may become a ticket message", () => {
                 automated: true,
             });
         }
+    });
+
+    it("files mail from a customer's postmaster@, which is a person", () => {
+        /**
+         * RFC 2142 makes every domain have one, and in a hosting company's
+         * mailbox it is an address customers write from — about mail, which
+         * is the subject least likely to survive being dropped in silence.
+         */
+        expect(
+            verdict(
+                inboundMessage({
+                    from: { email: "postmaster@kundendomain.de" },
+                    subject: "Unsere Mails kommen nicht an",
+                }),
+            ),
+        ).toEqual({ kind: "accept", automated: false });
+
+        // mailer-daemon@ is never a person, and still is not.
+        expect(
+            verdict(
+                inboundMessage({
+                    from: { email: "mailer-daemon@example.org" },
+                }),
+            ),
+        ).toEqual({ kind: "ignore", reason: "bounce", automated: true });
     });
 
     it("does not mistake a plain multipart/report for a bounce", () => {

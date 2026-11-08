@@ -22,14 +22,24 @@ export default function MessageBody({
     displayText,
     displayHtml,
     originalHtml,
+    originalText,
 }: {
     displayText: string;
     displayHtml: string | null;
     originalHtml: string | null;
+    originalText: string | null;
 }) {
     const [showOriginal, setShowOriginal] = useState(false);
     const html = showOriginal ? originalHtml : displayHtml;
-    const hasOriginal = Boolean(originalHtml) && originalHtml !== displayHtml;
+    /**
+     * A plain-text mail has a history too, and stripping it is the same
+     * guess about somebody else's client that the HTML half makes. Offering
+     * the original only for HTML would hide the quoted part of exactly the
+     * messages whose quoting is least reliable.
+     */
+    const hasOriginal = html
+        ? Boolean(originalHtml) && originalHtml !== displayHtml
+        : Boolean(originalText) && originalText !== displayText;
 
     return (
         <div className="mt-3 space-y-2">
@@ -43,7 +53,7 @@ export default function MessageBody({
                 />
             ) : (
                 <pre className="whitespace-pre-wrap font-sans text-sm leading-6">
-                    {showOriginal ? displayText : displayText}
+                    {showOriginal ? (originalText ?? displayText) : displayText}
                 </pre>
             )}
 

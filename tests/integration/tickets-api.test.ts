@@ -369,6 +369,54 @@ describe.skipIf(!available)("/api/v1/tickets", () => {
         }
     });
 
+    it("does not load a note for the customer portal, which has no second layer", async () => {
+        const { loadTicket } = await import("@/server/tickets/repository");
+
+        // The portal page renders `loaded.messages` directly — there is no
+        // `serializeTicket` in front of it — so the query not returning the
+        // note is the whole of the guarantee, and this is what holds it.
+        const loaded = await loadTicket(ticketId, customerId, db);
+
+        if (!loaded) {
+            throw new Error("the ticket should load for its own customer");
+        }
+
+        expect(loaded.messages.some((row) => row.id === noteId)).toBe(false);
+        expect(
+            loaded.messages.some((row) =>
+                row.displayText.includes("ruft ständig an"),
+            ),
+        ).toBe(false);
+        // Not vacuous: the ticket's real traffic is there alongside it.
+        expect(loaded.messages.length).toBeGreaterThan(0);
+    });
+
+    it("does not count internal notes in the number the customer is shown", async () => {
+        const { listTickets, ANY_CUSTOMER } = await import(
+            "@/server/tickets/repository"
+        );
+
+        const mine = await listTickets(customerId, {}, db);
+        const row = mine.rows.find((entry) => entry.id === ticketId);
+
+        if (!row) {
+            throw new Error("the ticket should be in its own account's list");
+        }
+
+        const staffView = await listTickets(
+            ANY_CUSTOMER as Parameters<typeof listTickets>[0],
+            {},
+            db,
+        );
+        const staffRow = staffView.rows.find((entry) => entry.id === ticketId);
+
+        // Staff see everything; the customer sees what they may read. The
+        // difference is exactly the notes — a count that included them would
+        // say how many there are and that they exist at all.
+        expect(staffRow?.messageCount).toBeGreaterThan(row.messageCount);
+        expect(row.messageCount).toBe((staffRow?.messageCount ?? 0) - 1);
+    });
+
     it("leaves a note out even when the loader was asked for one", async () => {
         const { loadTicket, ANY_CUSTOMER } = await import(
             "@/server/tickets/repository"

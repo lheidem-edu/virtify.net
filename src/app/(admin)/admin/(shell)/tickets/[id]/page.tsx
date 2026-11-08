@@ -142,6 +142,7 @@ export default async function Page({
                                     displayText={message.displayText}
                                     displayHtml={message.displayHtml}
                                     originalHtml={message.originalHtml}
+                                    originalText={message.originalText}
                                 />
 
                                 {message.attachments.length > 0 ? (

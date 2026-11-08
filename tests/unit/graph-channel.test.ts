@@ -4,6 +4,7 @@ import {
     GraphError,
     graphChannel,
     normalizeGraphMessage,
+    retryAfterMs,
 } from "@/server/tickets/channels/graph";
 
 /**
@@ -334,7 +335,8 @@ describe("the channel", () => {
                     conversationId: "conv1",
                 },
             ],
-            [/messages\/draft-1\/send$/, null],
+            // Graph answers `/send` with 202 and an empty body, not 204.
+            [/messages\/draft-1\/send$/, null, 202],
             [/messages\/draft-1$/, { id: "draft-1" }],
         ]);
 
@@ -384,7 +386,7 @@ describe("the channel", () => {
         const { fetch, calls } = recorder([
             TOKEN,
             [/messages\/draft-2\?\$select/, { internetMessageId: "<x@y.net>" }],
-            [/messages\/draft-2\/send$/, null],
+            [/messages\/draft-2\/send$/, null, 202],
             [/users\/[^/]+\/messages$/, { id: "draft-2" }],
         ]);
 
@@ -464,5 +466,201 @@ describe("the channel", () => {
                 error.code === "ErrorAccessDenied" &&
                 !error.gone,
         );
+    });
+});
+
+/**
+ * Throttling, which is the one Graph behaviour this installation is
+ * guaranteed to meet and has never met. A mailbox under load answers 429
+ * with a `Retry-After`; treating that as a failure would leave a sweep
+ * reporting failures and coming back five minutes later to be throttled
+ * again on the same volume.
+ */
+describe("graphChannel under throttling", () => {
+    /** A fetch that answers with the given responses in order. */
+    function sequence(
+        responses: { status: number; body?: unknown; retryAfter?: string }[],
+    ) {
+        const attempts: string[] = [];
+        let index = 0;
+
+        const impl = (async (input: RequestInfo | URL) => {
+            const url = String(input);
+
+            if (/login\.microsoftonline\.com/.test(url)) {
+                attempts.push("token");
+
+                return new Response(
+                    JSON.stringify({
+                        access_token: `t0ken-${attempts.length}`,
+                        expires_in: 3600,
+                    }),
+                    { status: 200 },
+                );
+            }
+
+            attempts.push(url);
+
+            const next = responses[Math.min(index, responses.length - 1)];
+            index += 1;
+
+            return new Response(
+                next.body === undefined ? "{}" : JSON.stringify(next.body),
+                {
+                    status: next.status,
+                    headers: {
+                        "content-type": "application/json",
+                        ...(next.retryAfter
+                            ? { "retry-after": next.retryAfter }
+                            : {}),
+                    },
+                },
+            );
+        }) as unknown as typeof fetch;
+
+        return { fetch: impl, attempts };
+    }
+
+    function channelWith(impl: typeof fetch) {
+        const waited: number[] = [];
+
+        const channel = graphChannel({
+            auth: AUTH,
+            fetchImpl: impl,
+            sleepImpl: async (ms) => {
+                waited.push(ms);
+            },
+        });
+
+        return { channel, waited };
+    }
+
+    it("retries a 429 and waits exactly as long as Graph asked", async () => {
+        const { fetch, attempts } = sequence([
+            { status: 429, retryAfter: "7" },
+            { status: 200, body: { id: "AAMk", subject: "Hilfe" } },
+        ]);
+        const { channel, waited } = channelWith(fetch);
+
+        const message = await channel.getMessage("support@example.net", "AAMk");
+
+        expect(message?.subject).toBe("Hilfe");
+        expect(waited).toEqual([7000]);
+        // One token call, then the throttled attempt, then the one that won.
+        expect(attempts.filter((url) => url !== "token")).toHaveLength(2);
+    });
+
+    it("waits a backoff of its own when Graph names no delay", async () => {
+        const { fetch } = sequence([
+            { status: 503 },
+            { status: 504 },
+            { status: 200, body: { id: "AAMk", subject: "endlich" } },
+        ]);
+        const { channel, waited } = channelWith(fetch);
+
+        await channel.getMessage("support@example.net", "AAMk");
+
+        // Exponential from one second, and it did grow between the two.
+        expect(waited).toEqual([1000, 2000]);
+    });
+
+    it("gives up rather than hammering a mailbox that keeps refusing", async () => {
+        const { fetch, attempts } = sequence([
+            { status: 429, retryAfter: "1" },
+        ]);
+        const { channel, waited } = channelWith(fetch);
+
+        await expect(
+            channel.getMessage("support@example.net", "AAMk"),
+        ).rejects.toSatisfy(
+            (error: unknown) =>
+                error instanceof GraphError && error.status === 429,
+        );
+
+        // Four attempts in all, three waits between them — and then it stops,
+        // because the claim is still open and the next pass is the real retry.
+        expect(attempts.filter((url) => url !== "token")).toHaveLength(4);
+        expect(waited).toHaveLength(3);
+    });
+
+    it("never waits longer than the cap, whatever Retry-After says", async () => {
+        const { fetch } = sequence([
+            { status: 429, retryAfter: "86400" },
+            { status: 200, body: { id: "AAMk" } },
+        ]);
+        const { channel, waited } = channelWith(fetch);
+
+        await channel.getMessage("support@example.net", "AAMk");
+
+        expect(waited).toEqual([30_000]);
+    });
+
+    it("fetches a new token once when one stops being accepted", async () => {
+        const { fetch, attempts } = sequence([
+            {
+                status: 401,
+                body: { error: { code: "InvalidAuthenticationToken" } },
+            },
+            { status: 200, body: { id: "AAMk", subject: "wieder da" } },
+        ]);
+        const { channel, waited } = channelWith(fetch);
+
+        const message = await channel.getMessage("support@example.net", "AAMk");
+
+        expect(message?.subject).toBe("wieder da");
+        // Two token calls: the first one, and the one the 401 forced.
+        expect(attempts.filter((url) => url === "token")).toHaveLength(2);
+        // A re-auth is not a throttle: nothing was waited for.
+        expect(waited).toEqual([]);
+    });
+
+    it("does not loop on a second refusal of a freshly minted token", async () => {
+        const { fetch, attempts } = sequence([
+            {
+                status: 401,
+                body: { error: { code: "InvalidAuthenticationToken" } },
+            },
+        ]);
+        const { channel } = channelWith(fetch);
+
+        await expect(
+            channel.getMessage("support@example.net", "AAMk"),
+        ).rejects.toSatisfy(
+            (error: unknown) =>
+                error instanceof GraphError && error.status === 401,
+        );
+
+        expect(attempts.filter((url) => url !== "token")).toHaveLength(2);
+    });
+});
+
+describe("retryAfterMs", () => {
+    it("reads a count of seconds", () => {
+        expect(retryAfterMs("12", 0)).toBe(12_000);
+    });
+
+    it("reads an HTTP-date, which the header is also allowed to be", () => {
+        const now = Date.parse("2026-11-08T09:00:00Z");
+
+        expect(retryAfterMs("Sun, 08 Nov 2026 09:00:05 GMT", 0, now)).toBe(
+            5000,
+        );
+    });
+
+    it("treats a date already past as no wait at all", () => {
+        const now = Date.parse("2026-11-08T09:00:00Z");
+
+        expect(retryAfterMs("Sun, 08 Nov 2026 08:59:00 GMT", 0, now)).toBe(0);
+    });
+
+    it("backs off exponentially when the header says nothing", () => {
+        expect([0, 1, 2, 3].map((n) => retryAfterMs(null, n))).toEqual([
+            1000, 2000, 4000, 8000,
+        ]);
+    });
+
+    it("caps both forms at half a minute", () => {
+        expect(retryAfterMs("3600", 0)).toBe(30_000);
+        expect(retryAfterMs(null, 20)).toBe(30_000);
     });
 });

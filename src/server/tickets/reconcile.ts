@@ -57,6 +57,19 @@ function count(report: SweepReport, result: InboundResult) {
               : result.kind;
 
     report.results[key] = (report.results[key] ?? 0) + 1;
+
+    /**
+     * An attachment the pipeline could not keep was being returned and
+     * dropped on the floor — nobody was told. It is the operator's business:
+     * the customer thinks they sent us the logfile.
+     */
+    if (result.kind === "filed") {
+        for (const skipped of result.skippedAttachments) {
+            const reason = `attachment:${skipped.reason}`;
+
+            report.results[reason] = (report.results[reason] ?? 0) + 1;
+        }
+    }
 }
 
 export type SweepContext = {
@@ -188,10 +201,13 @@ export async function reconcileMailbox(
         return report;
     }
 
+    let failed = 0;
+
     for (const id of page.messageIds) {
         try {
             await handleMessage(db, context, mailbox, id, own, report);
         } catch (error) {
+            failed += 1;
             report.failures.push({
                 stage: `message:${id.slice(0, 16)}`,
                 detail: describe(error),
@@ -200,20 +216,35 @@ export async function reconcileMailbox(
     }
 
     /**
-     * The cursor advances only when the whole page was walked without the
-     * pass itself falling over — and `handleMessage` records a per-message
-     * failure rather than throwing, so one unreadable message does not cost
-     * the mailbox its place. A message that failed is still claimed as
-     * unhandled in `inbound_mail`, so it is not lost either way.
+     * **The cursor only moves past mail that was actually dealt with.**
+     *
+     * A delta token says "you have seen everything up to here", and Graph
+     * takes that at its word: a message already reported is not reported
+     * again. So advancing over a message whose pass threw is not a retry
+     * postponed, it is a mail silently gone — and the message that threw is
+     * usually the one that was never claimed at all, because the fetch is
+     * the first thing `processInboundMessage` does and the claim is the
+     * second. Nothing reads an open `inbound_mail` row back either. There
+     * is no second chance anywhere; this is it.
+     *
+     * Holding the cursor makes the delta path behave the way the
+     * notification path already does — the row stays pending, the next pass
+     * is a real retry — and re-walking is free of consequence because the
+     * claim and the unique index make every message past the first a no-op.
+     * What it costs is that a message which fails for ever holds its
+     * mailbox's place: loud (it is in `failures` and on the admin page, and
+     * the mailbox stops advancing) rather than quiet, which is the trade
+     * this system makes everywhere else.
      */
-    if (page.deltaLink) {
+    if (page.deltaLink && failed === 0) {
         await saveDelta(db, mailbox, page.deltaLink);
     }
 
     report.delta.push({
         mailbox,
         fetched: page.messageIds.length,
-        deltaAdvanced: Boolean(page.deltaLink),
+        // What happened, not what was on offer.
+        deltaAdvanced: Boolean(page.deltaLink) && failed === 0,
     });
 
     return report;

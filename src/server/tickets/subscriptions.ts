@@ -23,8 +23,18 @@ import { listDepartments } from "./departments";
 
 type Db = typeof defaultDb;
 
-/** Ask for the maximum; renew at a third of it left. */
-export const SUBSCRIPTION_MINUTES = 4_230;
+/**
+ * Ask for just under the maximum; renew at a third of it left.
+ *
+ * Graph's ceiling for a mailbox subscription is 4230 minutes, and the
+ * expiry we send is an absolute instant computed from *our* clock against
+ * which *Graph* measures the ceiling. Asking for exactly 4230 means a
+ * server whose clock is ten seconds fast asks for 4230 minutes and one
+ * second, which is refused — and the mailbox then has no subscription at
+ * all until somebody reads the log. Ten minutes of margin costs nothing;
+ * the renewal happens a day before expiry regardless.
+ */
+export const SUBSCRIPTION_MINUTES = 4_220;
 export const RENEW_WHEN_MINUTES_LEFT = 1_440;
 
 export type SubscriptionSyncReport = {

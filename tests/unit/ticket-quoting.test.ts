@@ -210,3 +210,81 @@ describe("prepareBody", () => {
         expect(prepared.originalText).toBe("Zeile eins\nZeile zwei");
     });
 });
+
+/**
+ * The markers have to survive the sanitiser, because the sanitiser runs
+ * first. Four of these are carried on attributes that an allowlist would
+ * drop by default — `id` and `type` and our own `data-` marker — and
+ * dropping them meant an Outlook or Apple Mail reply arrived with the whole
+ * thread underneath it, re-quoted on every round trip.
+ */
+describe("prepareBody strips what the real clients send", () => {
+    const CLIENTS: { name: string; html: string }[] = [
+        {
+            name: "Outlook desktop",
+            html: '<p>Passt, danke!</p><div id="divRplyFwdMsg"><hr><b>Von:</b> Support<br>Seit heute Morgen ist der Server weg.</div>',
+        },
+        {
+            name: "Outlook Web",
+            html: '<p>Passt, danke!</p><div id="appendonsend"></div><div>Seit heute Morgen ist der Server weg.</div>',
+        },
+        {
+            name: "Apple Mail",
+            html: '<p>Passt, danke!</p><blockquote type="cite"><div>Seit heute Morgen ist der Server weg.</div></blockquote>',
+        },
+        {
+            name: "Gmail",
+            html: '<p>Passt, danke!</p><div class="gmail_quote"><div>Seit heute Morgen ist der Server weg.</div></div>',
+        },
+        {
+            name: "Thunderbird",
+            html: '<p>Passt, danke!</p><div class="moz-cite-prefix">Am 08.11.26 schrieb Support:</div><blockquote>Seit heute Morgen ist der Server weg.</blockquote>',
+        },
+        {
+            name: "our own reply, quoted back",
+            html: '<p>Passt, danke!</p><div data-virtify-quote="1"><p>Am 8.11. schrieb Support:</p><div>Seit heute Morgen ist der Server weg.</div></div>',
+        },
+    ];
+
+    for (const client of CLIENTS) {
+        it(`cuts the quote a ${client.name} reply carries`, () => {
+            const prepared = prepareBody({ html: client.html, text: null });
+
+            expect(prepared.stripped).toBe(true);
+            expect(prepared.displayText).toBe("Passt, danke!");
+            // The whole thing is still kept, which is what the operator
+            // gets back from "Original mit Verlauf anzeigen".
+            expect(prepared.originalText).toContain("Server weg");
+        });
+    }
+
+    it("keeps an id out that is not one of the three markers", () => {
+        const prepared = prepareBody({
+            html: '<p id="beliebig">Hallo</p>',
+            text: null,
+        });
+
+        // `id` is a DOM clobbering primitive, so the vocabulary is fixed.
+        expect(prepared.originalHtml).not.toContain("beliebig");
+        expect(prepared.originalHtml).toContain("Hallo");
+    });
+
+    it("does not let a sender choose what our own marker says", () => {
+        const prepared = prepareBody({
+            html: '<div data-virtify-quote="nein">Hallo</div>',
+            text: null,
+        });
+
+        expect(prepared.originalHtml).toContain('data-virtify-quote="1"');
+        expect(prepared.originalHtml).not.toContain("nein");
+    });
+
+    it("keeps `type` only as `cite`", () => {
+        const prepared = prepareBody({
+            html: '<blockquote type="irgendwas">Hallo</blockquote>',
+            text: null,
+        });
+
+        expect(prepared.originalHtml).not.toContain("irgendwas");
+    });
+});

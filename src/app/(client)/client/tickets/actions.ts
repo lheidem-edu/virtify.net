@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { getCurrentCustomer } from "@/server/customers/current";
+import { mailChannel } from "@/server/tickets/channels";
+import { sendTicketConfirmation } from "@/server/tickets/outbound";
 import { loadTicket } from "@/server/tickets/repository";
 import {
     addCustomerMessage,
@@ -11,6 +13,7 @@ import {
     TicketError,
     updateTicket,
 } from "@/server/tickets/service";
+import { loadMailChannelConfig } from "@/server/tickets/settings";
 
 /**
  * The customer's two buttons: open a ticket, answer one.
@@ -68,6 +71,34 @@ export async function createTicketAction(
         throw error;
     }
 
+    /**
+     * The acknowledgement the portal promises — "Du bekommst eine
+     * Bestätigung an deine Kontaktadresse" — and which only mail-opened
+     * tickets used to get. It is not a nicety here: it is the mail the
+     * customer replies to, and the tag in its subject is how that reply
+     * comes back to this ticket rather than opening a second one.
+     *
+     * Best effort and deliberately after the ticket exists, the same way
+     * the inbound pass does it: a ticket with no acknowledgement is a far
+     * better state than an acknowledgement for a ticket that does not.
+     */
+    try {
+        const config = await loadMailChannelConfig();
+        const channel = await mailChannel(config.id);
+
+        if (channel) {
+            await sendTicketConfirmation(db, channel, {
+                ticketId,
+                limitPerHour: config.autoReplyPerHour,
+            });
+        }
+    } catch (error) {
+        console.error(
+            "[tickets] the confirmation for a portal ticket could not be sent:",
+            error,
+        );
+    }
+
     revalidatePath("/client/tickets");
     revalidatePath("/admin/tickets");
     redirect(`/client/tickets/${ticketId}`);
@@ -123,6 +154,16 @@ export async function closeAction(
     form: FormData,
 ): Promise<ClientTicketState> {
     const { customer, contact } = await getCurrentCustomer();
+
+    // The page hides the form, but a server action is reachable without the
+    // page — the same check the reply makes, for the same reason.
+    if (!contact.canTickets) {
+        return {
+            status: "error",
+            message: "Dieser Zugang darf keine Tickets bearbeiten.",
+        };
+    }
+
     const ticketId = String(form.get("ticketId") ?? "");
     const loaded = await loadTicket(ticketId, customer.id, db);
 

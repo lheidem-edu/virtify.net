@@ -60,7 +60,7 @@ export type SkippedAttachment = {
     skipped: true;
     filename: string;
     sizeBytes: number;
-    reason: "too-large" | "gone";
+    reason: "too-large" | "gone" | "unreadable";
 };
 
 /**
@@ -97,11 +97,42 @@ export async function downloadAttachments(
             continue;
         }
 
-        const bytes = await channel.downloadAttachment(
-            mailbox,
-            channelMessageId,
-            attachment.id,
-        );
+        let bytes: Buffer | null;
+
+        /**
+         * **One attachment may not take the message down with it.**
+         *
+         * Graph answers `$value` with a 405 for an item attachment and for
+         * a OneDrive reference — neither of which is `gone`, so it used to
+         * come out of here as a throw, the message never became a ticket,
+         * and (since the delta cursor now waits for a message that failed)
+         * the whole mailbox would stop behind it. The message is what the
+         * customer wrote; the attachment is skipped, named and shown.
+         */
+        try {
+            bytes = await channel.downloadAttachment(
+                mailbox,
+                channelMessageId,
+                attachment.id,
+            );
+        } catch (error) {
+            console.error(
+                "[tickets] could not fetch the attachment",
+                attachment.filename,
+                "of",
+                channelMessageId,
+                error,
+            );
+
+            results.push({
+                skipped: true,
+                filename: safeFilename(attachment.filename),
+                sizeBytes: attachment.sizeBytes,
+                reason: "unreadable",
+            });
+
+            continue;
+        }
 
         if (!bytes) {
             results.push({

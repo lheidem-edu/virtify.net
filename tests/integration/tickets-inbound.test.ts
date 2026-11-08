@@ -283,7 +283,7 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
             expect(opened.kind).toBe("filed");
 
             if (opened.kind !== "filed") {
-                return;
+                throw new Error(`the first message was ${opened.kind}`);
             }
 
             const tag = `TKT-${String(opened.ticketNumber).padStart(5, "0")}`;
@@ -308,6 +308,132 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
                 ticketId: opened.ticketId,
                 createdTicket: false,
                 matchedBy: "subject-tag",
+            });
+        });
+
+        /**
+         * Who a ticket belongs to, and what is allowed to change that.
+         *
+         * A ticket number is sequential and travels on a subject line, so a
+         * signal anybody can produce must not be able to move a ticket into
+         * somebody's account — the portal scopes on `customer_id`, so that
+         * would hand over the whole conversation.
+         */
+        describe("adopting an unowned ticket", () => {
+            async function strangerTicket() {
+                const opening = inboundMessage({
+                    from: { email: "fremder@example.org", name: "Fremder" },
+                    subject: "Abuse-Meldung",
+                });
+                const channel = fakeChannel({ messages: [opening] });
+
+                const opened = await processInboundMessage(
+                    db,
+                    options(channel, opening.channelMessageId),
+                );
+
+                if (opened.kind !== "filed") {
+                    throw new Error(`the opening mail was ${opened.kind}`);
+                }
+
+                const [row] = await db
+                    .select()
+                    .from(schema.ticket)
+                    .where(eq(schema.ticket.id, opened.ticketId))
+                    .limit(1);
+
+                // The premise: it really is unowned to begin with.
+                expect(row.customerId).toBeNull();
+                expect(row.unknownSender).toBe(true);
+
+                return { opened, channel, opening };
+            }
+
+            it("refuses a subject tag, which anybody can guess", async () => {
+                const { opened, channel } = await strangerTicket();
+                const { customerId, email } = await nextCustomer();
+
+                const tag = `TKT-${String(opened.ticketNumber).padStart(5, "0")}`;
+
+                channel.add(
+                    inboundMessage({
+                        channelMessageId: "AAMk-guess",
+                        internetMessageId: "<guess@example.net>",
+                        from: { email, name: "Angreifer" },
+                        subject: `[${tag}] Frage`,
+                        conversationId: "eigene-konversation",
+                        headers: {},
+                    }),
+                );
+
+                const result = await processInboundMessage(
+                    db,
+                    options(channel, "AAMk-guess"),
+                );
+
+                // It is filed — a stray sender is filed and flagged, not
+                // dropped — but it changes nothing about who owns the thread.
+                expect(result).toMatchObject({
+                    kind: "filed",
+                    ticketId: opened.ticketId,
+                    matchedBy: "subject-tag",
+                });
+
+                const [row] = await db
+                    .select()
+                    .from(schema.ticket)
+                    .where(eq(schema.ticket.id, opened.ticketId))
+                    .limit(1);
+
+                expect(row.customerId).toBeNull();
+                expect(row.contactId).toBeNull();
+
+                // And the decisive consequence: it is not in their portal.
+                const { listTickets } = await import(
+                    "@/server/tickets/repository"
+                );
+                const mine = await listTickets(customerId, {}, db);
+
+                expect(
+                    mine.rows.some((entry) => entry.id === opened.ticketId),
+                ).toBe(false);
+            });
+
+            it("accepts an In-Reply-To, which it cannot", async () => {
+                const { opened, opening, channel } = await strangerTicket();
+                const { customerId, email } = await nextCustomer();
+
+                channel.add(
+                    inboundMessage({
+                        channelMessageId: "AAMk-reply",
+                        internetMessageId: "<echt@example.net>",
+                        from: { email, name: "Dieselbe Person" },
+                        subject: "ganz anderer Betreff",
+                        conversationId: "noch-eine-konversation",
+                        headers: {
+                            "in-reply-to": opening.internetMessageId ?? "",
+                        },
+                    }),
+                );
+
+                expect(
+                    await processInboundMessage(
+                        db,
+                        options(channel, "AAMk-reply"),
+                    ),
+                ).toMatchObject({
+                    kind: "filed",
+                    ticketId: opened.ticketId,
+                    matchedBy: "message-id",
+                });
+
+                const [row] = await db
+                    .select()
+                    .from(schema.ticket)
+                    .where(eq(schema.ticket.id, opened.ticketId))
+                    .limit(1);
+
+                expect(row.customerId).toBe(customerId);
             });
         });
 
@@ -676,8 +802,8 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
     describe("loop protection", () => {
         it("records why it ignored a message and still moves it out", async () => {
             const message = inboundMessage({
-                from: { email: "chef@example.org" },
-                headers: { "x-auto-response-suppress": "All" },
+                from: { email: "mailer-daemon@example.org" },
+                headers: { "return-path": "<>" },
             });
             const channel = fakeChannel({ messages: [message] });
 
@@ -688,7 +814,7 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
 
             expect(result).toEqual({
                 kind: "ignored",
-                reason: "auto-response-suppressed",
+                reason: "bounce",
             });
 
             const [row] = await db
@@ -702,13 +828,72 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
                 );
 
             expect(row.outcome).toBe("ignored");
-            expect(row.reason).toBe("auto-response-suppressed");
+            expect(row.reason).toBe("bounce");
             expect(row.handledAt).not.toBeNull();
             expect(row.ticketId).toBeNull();
 
             // Still moved: a message left in the inbox is one the next delta
             // pass picks up for ever.
             expect(channel.moved).toHaveLength(1);
+        });
+
+        it("files an automatic message and never acknowledges it", async () => {
+            /**
+             * The whole of the rule, end to end: a customer's monitoring
+             * writes in, the message becomes a ticket so somebody sees it,
+             * and no acknowledgement goes back — which is what would have
+             * started a conversation between two machines.
+             */
+            const { email } = await nextCustomer();
+            const message = inboundMessage({
+                from: { email },
+                subject: "ALARM: web01 antwortet nicht",
+                headers: { "auto-submitted": "auto-generated" },
+            });
+            const channel = fakeChannel({ messages: [message] });
+
+            const result = await handleMessage(
+                db,
+                {
+                    channel,
+                    config: {
+                        ...DEFAULT_MAIL_CHANNEL,
+                        id: "msgraph" as const,
+                        label: "Graph",
+                        enabled: true,
+                    },
+                },
+                MAILBOX,
+                message.channelMessageId,
+                [MAILBOX],
+                {
+                    notifications: { handled: 0, failed: 0 },
+                    delta: [],
+                    results: {},
+                    confirmations: 0,
+                    failures: [],
+                },
+            );
+
+            expect(result).toMatchObject({
+                kind: "filed",
+                createdTicket: true,
+                automated: true,
+            });
+
+            if (result.kind !== "filed") {
+                throw new Error("the alarm was not filed");
+            }
+
+            const [row] = await db
+                .select()
+                .from(schema.ticketMessage)
+                .where(eq(schema.ticketMessage.id, result.ticketMessageId));
+
+            expect(row.isAutomated).toBe(true);
+
+            // And nothing was mailed back.
+            expect(channel.sent).toEqual([]);
         });
 
         it("recognises our own outbound copy by the Message-ID we stored", async () => {
@@ -843,7 +1028,7 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
             expect(result.kind).toBe("filed");
 
             if (result.kind !== "filed") {
-                return;
+                throw new Error(`the message was ${result.kind}`);
             }
 
             expect(result.skippedAttachments).toEqual([
@@ -1007,6 +1192,206 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
             // The allowance was given back, so the retry can actually send.
             expect(await claimAutoReply(db, email, 1)).toBe(true);
         });
+
+        it("keeps the allowance spent when the mail went out but could not be recorded", async () => {
+            const { email } = await nextCustomer();
+            const message = inboundMessage({ from: { email } });
+            const channel = fakeChannel({ messages: [message] });
+
+            const opened = await processInboundMessage(
+                db,
+                options(channel, message.channelMessageId),
+            );
+
+            if (opened.kind !== "filed") {
+                throw new Error("the first message was not filed");
+            }
+
+            /**
+             * The send succeeds and only the record of it fails — the one
+             * case where giving the allowance back would be wrong, because
+             * the customer already has the mail and the next message would
+             * spend that allowance on a second copy.
+             */
+            const recordBroken = new Proxy(db, {
+                get(target, property) {
+                    const value = Reflect.get(target, property, target);
+
+                    // The recording is one transaction — the message and
+                    // its audit row together — so breaking that breaks the
+                    // record and nothing else.
+                    if (property === "transaction") {
+                        return () => {
+                            throw new Error("could not record the mail");
+                        };
+                    }
+
+                    return typeof value === "function"
+                        ? value.bind(target)
+                        : value;
+                },
+            }) as TestDb;
+
+            const result = await sendTicketConfirmation(recordBroken, channel, {
+                ticketId: opened.ticketId,
+                limitPerHour: 1,
+            });
+
+            // It really did go out, and the caller is told so.
+            expect(result).toEqual({ sent: true, reason: "not-recorded" });
+            expect(channel.sent).toHaveLength(1);
+
+            // And the allowance stays spent, so no second copy follows.
+            expect(await claimAutoReply(db, email, 1)).toBe(false);
+        });
+    });
+
+    it("files the message when an attachment cannot be fetched at all", async () => {
+        /**
+         * Graph answers `$value` with 405 for an item attachment and for a
+         * OneDrive reference, and 405 is not `gone`. That used to come out
+         * of the pipeline as a throw — the message never became a ticket,
+         * and now that the delta cursor waits for a message that failed, the
+         * whole mailbox would stop behind one forwarded calendar invitation.
+         */
+        const { email } = await nextCustomer();
+        const message = inboundMessage({
+            from: { email },
+            subject: "Mit Termin im Anhang",
+            hasAttachments: true,
+            attachments: [
+                {
+                    id: "att-item",
+                    filename: "Termin.ics",
+                    contentType: "application/octet-stream",
+                    sizeBytes: 400,
+                    isInline: false,
+                    contentId: null,
+                },
+            ],
+        });
+
+        const channel = fakeChannel({ messages: [message] });
+
+        channel.downloadAttachment = async () => {
+            throw Object.assign(new Error("Graph said 405"), { status: 405 });
+        };
+
+        const result = await processInboundMessage(
+            db,
+            options(channel, message.channelMessageId),
+        );
+
+        if (result.kind !== "filed") {
+            throw new Error(`the message was ${result.kind}`);
+        }
+
+        expect(result.skippedAttachments).toEqual([
+            {
+                skipped: true,
+                filename: "Termin.ics",
+                sizeBytes: 400,
+                reason: "unreadable",
+            },
+        ]);
+
+        // The message itself is all there, which is the point.
+        const [row] = await db
+            .select()
+            .from(schema.ticketMessage)
+            .where(eq(schema.ticketMessage.id, result.ticketMessageId));
+
+        expect(row.subject).toBe("Mit Termin im Anhang");
+
+        const kept = await db
+            .select()
+            .from(schema.ticketAttachment)
+            .where(
+                eq(schema.ticketAttachment.messageId, result.ticketMessageId),
+            );
+
+        expect(kept).toEqual([]);
+    });
+
+    it("leaves no empty ticket behind when the mail is already filed elsewhere", async () => {
+        /**
+         * One mail, two of our mailboxes on it — a customer who copies
+         * support@ and abuse@. The claim is per mailbox, so the second one
+         * does its own pass; the unique index on `internet_message_id` then
+         * refuses the message. What must not happen is the ticket the second
+         * pass opened a moment earlier being committed anyway: a numbered,
+         * empty ghost in the queue that somebody has to open to find out
+         * there is nothing in it.
+         */
+        const second = "abuse@example.test";
+
+        await makeDepartment(db, { mailbox: second, isDefault: false });
+
+        const { email } = await nextCustomer();
+        const message = inboundMessage({
+            from: { email },
+            subject: "An zwei Postfächer",
+        });
+        const channel = fakeChannel({ messages: [message] });
+
+        const first = await processInboundMessage(
+            db,
+            options(channel, message.channelMessageId),
+        );
+
+        if (first.kind !== "filed") {
+            throw new Error(`the first pass was ${first.kind}`);
+        }
+
+        const before = await db.select().from(schema.ticket);
+
+        /**
+         * The second mailbox holds its own copy: a provider id of its own,
+         * a conversation of its own, and the sender's one Message-ID — which
+         * is exactly why that is the key the pipeline files on.
+         */
+        const copy = inboundMessage({
+            channelMessageId: "AAMk-kopie",
+            internetMessageId: message.internetMessageId,
+            from: { email },
+            subject: "An zwei Postfächer",
+            conversationId: "konversation-im-zweiten-postfach",
+            to: [{ email: second, name: "Abuse" }],
+        });
+
+        channel.add(copy);
+
+        const again = await processInboundMessage(db, {
+            ...options(channel, copy.channelMessageId),
+            mailbox: second,
+        });
+
+        // It is recognised as already filed, and told where.
+        expect(again).toEqual({
+            kind: "duplicate",
+            ticketId: first.ticketId,
+        });
+
+        const after = await db.select().from(schema.ticket);
+
+        // Not one new ticket — said as the set, because the damage is a row
+        // that exists rather than a count that moved.
+        expect(after.map((row) => row.id).sort()).toEqual(
+            before.map((row) => row.id).sort(),
+        );
+
+        // And the message is still filed exactly once, where it belongs.
+        const filed = await db
+            .select({ ticketId: schema.ticketMessage.ticketId })
+            .from(schema.ticketMessage)
+            .where(
+                eq(
+                    schema.ticketMessage.internetMessageId,
+                    message.internetMessageId ?? "",
+                ),
+            );
+
+        expect(filed).toEqual([{ ticketId: first.ticketId }]);
     });
 
     it("leaves the claim open when there is no department for the mailbox", async () => {
@@ -1111,6 +1496,28 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
 
         expect(reopened.handledAt).toBeNull();
         expect(reopened.outcome).toBeNull();
+
+        /**
+         * And the work is actually queued. Clearing the claim on its own put
+         * the row in a state nothing reads: the cursor had moved past the
+         * message and it was sitting in the processed folder, so "wird beim
+         * nächsten Abholen erneut verarbeitet" was not true of it.
+         */
+        const [queued] = await db
+            .select()
+            .from(schema.mailNotification)
+            .where(
+                eq(
+                    schema.mailNotification.resourceId,
+                    reopened.channelMessageId ?? "",
+                ),
+            );
+
+        expect(queued).toBeDefined();
+        expect(queued.handledAt).toBeNull();
+        expect(queued.mailbox).toBe(reopened.mailbox);
+        expect(queued.changeType).toBe("reprocess");
+
         expect(await reopenInboundMail(db, createId("inboundmail"))).toBe(
             false,
         );
@@ -1238,6 +1645,154 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
                     { type: "system", label: "test" },
                 ),
             ).rejects.toThrow(/selbst zusammengeführt/);
+        });
+
+        it("refuses to move one customer's messages into another's ticket", async () => {
+            /**
+             * A merge moves every message of the source onto the target, and
+             * the target's customer reads the target in the portal. The
+             * picker is a list of ticket numbers, so one wrong click would
+             * otherwise hand a stranger the whole correspondence.
+             */
+            const mine = await nextCustomer();
+            const theirs = await nextCustomer();
+
+            const a = inboundMessage({ from: { email: mine.email } });
+            const b = inboundMessage({ from: { email: theirs.email } });
+            const channel = fakeChannel({ messages: [a, b] });
+
+            const first = await processInboundMessage(
+                db,
+                options(channel, a.channelMessageId),
+            );
+            const second = await processInboundMessage(
+                db,
+                options(channel, b.channelMessageId),
+            );
+
+            if (first.kind !== "filed" || second.kind !== "filed") {
+                throw new Error("both messages should have been filed");
+            }
+
+            await expect(
+                mergeTickets(
+                    db,
+                    { sourceId: second.ticketId, targetId: first.ticketId },
+                    { type: "system", label: "test" },
+                ),
+            ).rejects.toThrow(/verschiedenen Kunden/);
+
+            // And nothing moved: the refusal is before the first write.
+            const stayed = await db
+                .select({ id: schema.ticketMessage.id })
+                .from(schema.ticketMessage)
+                .where(eq(schema.ticketMessage.ticketId, second.ticketId));
+
+            expect(stayed).toHaveLength(1);
+        });
+
+        it("lets an unowned ticket be merged onto a customer's, but not the other way", async () => {
+            const { email } = await nextCustomer();
+            const owned = inboundMessage({ from: { email } });
+            const stranger = inboundMessage({
+                from: { email: "fremder@example.org" },
+            });
+            const channel = fakeChannel({ messages: [owned, stranger] });
+
+            const mine = await processInboundMessage(
+                db,
+                options(channel, owned.channelMessageId),
+            );
+            const unowned = await processInboundMessage(
+                db,
+                options(channel, stranger.channelMessageId),
+            );
+
+            if (mine.kind !== "filed" || unowned.kind !== "filed") {
+                throw new Error("both messages should have been filed");
+            }
+
+            // The wrong way round is refused and says which way to go.
+            await expect(
+                mergeTickets(
+                    db,
+                    { sourceId: mine.ticketId, targetId: unowned.ticketId },
+                    { type: "system", label: "test" },
+                ),
+            ).rejects.toThrow(/andere Richtung/);
+
+            // The direction that is the point of merging is allowed.
+            await mergeTickets(
+                db,
+                { sourceId: unowned.ticketId, targetId: mine.ticketId },
+                { type: "system", label: "test" },
+            );
+
+            const moved = await db
+                .select({ id: schema.ticketMessage.id })
+                .from(schema.ticketMessage)
+                .where(eq(schema.ticketMessage.ticketId, mine.ticketId));
+
+            expect(moved).toHaveLength(2);
+        });
+
+        it("keeps the first merge's provenance when the target is merged on", async () => {
+            /**
+             * C into B, then B into A. Rewriting C's marker to B is how
+             * unmerging C used to hand back an empty ticket while its
+             * messages stayed in A for ever.
+             */
+            const { email } = await nextCustomer();
+            const messages = [
+                inboundMessage({ from: { email }, subject: "A" }),
+                inboundMessage({ from: { email }, subject: "B" }),
+                inboundMessage({ from: { email }, subject: "C" }),
+            ];
+            const channel = fakeChannel({ messages });
+            const ids: string[] = [];
+
+            for (const message of messages) {
+                const filed = await processInboundMessage(
+                    db,
+                    options(channel, message.channelMessageId),
+                );
+
+                if (filed.kind !== "filed") {
+                    throw new Error("not filed");
+                }
+
+                ids.push(filed.ticketId);
+            }
+
+            const [a, b, c] = ids;
+
+            await mergeTickets(
+                db,
+                { sourceId: c, targetId: b },
+                { type: "system", label: "test" },
+            );
+            await mergeTickets(
+                db,
+                { sourceId: b, targetId: a },
+                { type: "system", label: "test" },
+            );
+
+            await unmergeTicket(db, c, { type: "system", label: "test" });
+
+            const back = await db
+                .select({ subject: schema.ticketMessage.subject })
+                .from(schema.ticketMessage)
+                .where(eq(schema.ticketMessage.ticketId, c));
+
+            expect(back.map((row) => row.subject)).toEqual(["C"]);
+
+            // And B's own message is still where the second merge put it.
+            const inA = await db
+                .select({ subject: schema.ticketMessage.subject })
+                .from(schema.ticketMessage)
+                .where(eq(schema.ticketMessage.ticketId, a));
+
+            expect(inA.map((row) => row.subject).sort()).toEqual(["A", "B"]);
         });
     });
 
@@ -1600,6 +2155,63 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
             .where(eq(schema.mailboxState.mailbox, MAILBOX));
 
         expect(state.deltaLink).toBe("https://graph.invalid/delta?token=next");
+    });
+
+    it("does not move the cursor past a message whose pass threw", async () => {
+        /**
+         * The message that throws is almost always the one that was never
+         * claimed — the fetch is the first thing the pipeline does and the
+         * claim is the second — and Graph never reports a message twice for
+         * the same token. Advancing here is a mail gone, not a retry
+         * postponed, so the cursor waits.
+         */
+        const third = "cursor@example.test";
+
+        await makeDepartment(db, { mailbox: third, isDefault: false });
+
+        const { email } = await nextCustomer();
+        const good = inboundMessage({
+            from: { email },
+            subject: "geht durch",
+        });
+        const broken = inboundMessage({
+            from: { email },
+            subject: "geht nicht durch",
+        });
+
+        const channel = fakeChannel({
+            messages: [good, broken],
+            deltaIds: [good.channelMessageId, broken.channelMessageId],
+            failOn: {
+                [broken.channelMessageId]: new Error("Graph said 500"),
+            },
+        });
+
+        const config = {
+            ...DEFAULT_MAIL_CHANNEL,
+            id: "msgraph" as const,
+            label: "Graph",
+            enabled: true,
+        };
+
+        const report = await reconcileMailbox(db, { channel, config }, third);
+
+        // The good one was filed — the page was not abandoned wholesale.
+        expect(report.results["filed:new"]).toBe(1);
+        expect(report.failures).toHaveLength(1);
+        expect(report.failures[0].detail).toContain("Graph said 500");
+
+        // And the cursor stayed where it was, which the report also says.
+        expect(report.delta).toEqual([
+            { mailbox: third, fetched: 2, deltaAdvanced: false },
+        ]);
+
+        const [state] = await db
+            .select()
+            .from(schema.mailboxState)
+            .where(eq(schema.mailboxState.mailbox, third));
+
+        expect(state).toBeUndefined();
     });
 
     it("clears a delta link Graph no longer accepts, so the mailbox is reconciled again", async () => {
