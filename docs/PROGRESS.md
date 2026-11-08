@@ -1450,13 +1450,312 @@ and produce one invoice between them, with neither reporting a failure.
       applies it correctly when it builds the lines, but nothing tells the customer in advance
       what the next invoice will say.
 
+## Phase 7 — Ticketing mit einem Microsoft-365-Postfach · done
+
+`npm run typecheck`, `npm run lint`, `npm run format`, `npm run test` (823 tests),
+`npm run build` and `npm run openapi:generate` are green.
+
+**There are no tenant credentials for this installation, and none were gone looking for.**
+Everything below is written against the documented Graph contract and tested against
+hand-written payloads and a fake channel (`tests/helpers/graph.ts`). `docs/m365-setup.md`
+has the exact PowerShell an administrator runs in Entra and Exchange, including the
+Application Access Policy that restricts the app to the support mailbox — without which
+`Mail.ReadWrite` as an *application* permission is every mailbox in the tenant.
+
+### One message, one path
+
+Every route in — the webhook's notification, the five-minute delta reconciliation and the
+operator's "jetzt abholen" button — ends in `processInboundMessage()`
+(`src/server/tickets/inbound.ts`). A second path would be a second answer to "has this
+message already been filed", and the one that was wrong would be the one that filed it
+twice. The order is deliberate:
+
+1. fetch the message **from the provider**. Nothing in a notification is trusted to say
+   what arrived;
+2. claim it — `inbound_mail (mailbox, internet_message_id)`;
+3. decide whether it may become a ticket message at all (loop protection), before
+   anything is written or sent;
+4. thread it, match the sender, fetch the attachments;
+5. write the ticket and the message in one transaction, under the unique index on
+   `ticket_message.internet_message_id`;
+6. mark it read and move it to `Processed`;
+7. only then mark the claim handled.
+
+A failure anywhere before 7 leaves the claim open, so the next pass is a real retry — and
+the unique index means that retry cannot double what the first attempt did write. That
+split is the one `claimEvent()` / `applyPayment` already had: the claim keeps the common
+case off the database, the index is the safety net.
+
+**What each key speaks for**, stated because Phase 6 shipped two defects that were this
+question answered carelessly:
+
+- `inbound_mail (mailbox, internet_message_id)` speaks for **one email message in one
+  mailbox**. The RFC 5322 Message-ID rather than the provider's id, because the provider's
+  id changes the moment the message is moved — which is the last thing we do to it. A
+  message with no Message-ID gets a synthetic one derived from mailbox, sender, subject
+  and receipt instant, so it is still one message and not two.
+- `mail_notification (mailbox, resource_id)` speaks for **one pending look at one
+  message**, and is deliberately re-claimable: a later change to the same message deserves
+  another look. A burst of five notifications is one fetch.
+- `auto_reply_budget (recipient, window)` speaks for **one sender's allowance in one
+  hour**, claimed with a conditional `UPDATE … WHERE count < limit` so two workers racing
+  on the same autoresponder send one reply between them.
+
+### The webhook's signature check is its authorization
+
+`/api/webhooks/msgraph` does two things and no third. It answers Graph's `validationToken`
+handshake verbatim as `text/plain`, before anything else happens; and it checks
+`clientState` — a 32-byte secret we minted when the subscription was created, stored
+**hashed** (`hashToken`, as an API key is) and compared in constant time — per entry.
+
+Nothing in a payload may name the row it acts on. A valid notification causes one
+`mail_notification` row saying "look at this message id in this mailbox"; the worker then
+fetches that message from Graph itself. A forged notification that somehow got past the
+clientState could provoke a lookup and nothing else.
+
+It answers **202 whatever happened**, including a batch where every entry was refused:
+Graph retries a non-2xx for hours and then disables the subscription, and a forged
+delivery must not be able to do that to a real one.
+
+### Threading, strongest signal first
+
+`resolveThread()` tries three, in this order and for these reasons:
+
+1. **`[TKT-00042]` in the subject.** The one signal that survives a reply from a different
+   address, a forward, and a client that drops every threading header. The counter is
+   deliberately **not per year** — a number reused two Januaries apart would join two
+   customers' conversations.
+2. **`In-Reply-To` / `References` against the ids we stored.** Exact and unforgeable in
+   practice. Newest match wins, with the ULID as tiebreaker: two messages easily share a
+   `sentAt`, and an arbitrary winner files the reply onto whichever ticket the index
+   returned first.
+3. **The channel's `conversationId`**, scoped to the mailbox, because Exchange will put two
+   unrelated messages with the same subject into one conversation.
+
+All three follow `merged_into_ticket_id` to the ticket that actually holds the
+conversation. A merged ticket keeps its number and its row for exactly that reason.
+
+**A reply goes to the people the ticket already knows about** — the requester plus the
+senders of inbound messages that matched a contact of *this* ticket's account — and to
+nobody the request names. A ticket number travels on a subject line, so anybody who learns
+one can post into the conversation; a reply that went straight back to them would turn a
+guessable number into a way of reading somebody else's support history. A stray sender is
+filed, flags the ticket (`unknown_sender`) and is shown to staff, who can link the account
+if it really is one.
+
+### A thing that generates its own input will loop
+
+`classifyInbound()` refuses, in this order: our own outbound copy (recognised by the
+Message-ID Exchange gave the draft, which is why the outbound path reads it back **before**
+sending — once sent, the draft moves to Sent Items and its id changes with it); anything
+from one of our own mailboxes, From or envelope sender; a bounce, by null Return-Path, DSN
+content type, `X-Failed-Recipients`, or a postmaster/mailer-daemon/Exchange NDR sender;
+`Auto-Submitted` ≠ `no`; `X-Auto-Response-Suppress`. A bounce is filed nowhere and answered
+never — opening a ticket addressed to an address that has just been proved undeliverable
+is the first step of a loop with the far side's postmaster.
+
+Separately, `isAutomated()` decides whether anything may be sent *in answer*: it also
+catches `Precedence: bulk|list|junk` and `List-Unsubscribe`. An out-of-office is worth
+filing against a ticket and never worth answering.
+
+### Stripping, sanitising, and what actually protects the page
+
+The original arrives, is **sanitised**, and is kept whole (`original_html`). The display
+copy is the sanitised body with the quoted history and the signature cut off
+(`display_html` / `display_text`). Sanitise first, then strip, deliberately: stripping
+looks for markers in the markup, and a message that got to decide what the stripper sees
+could hide its history behind a `<script>` the sanitiser would have removed afterwards.
+
+If stripping would leave nothing, the whole body is kept. A reply that is one line under a
+quote is the common case; an empty message in the queue is how a question gets missed.
+
+**What protects the admin page is not the sanitiser.** The conversation renders a body
+inside `<iframe sandbox srcdoc=…>` with neither `allow-scripts` nor `allow-same-origin` —
+a boundary the *browser* enforces. `sanitizeHtml` is the second layer and is written in the
+knowledge that a hand-rolled sanitiser always has holes. No new dependency (rule 12):
+`sanitize-html` wants `htmlparser2`, most alternatives want a DOM, and the frame is the
+half that cannot be argued with.
+
+### Attachments
+
+Downloaded **before** the transaction that records them — a storage write is not
+transactional and holding a transaction open across a network fetch is how a pass becomes a
+lock queue — under keys minted from the ids the insert will carry. A transaction that rolls
+back, or an insert the unique index turns into a no-op, leaves bytes nothing points at, and
+`removeOrphans()` is the way back. The sender's filename never reaches the storage key: the
+key is a path on the filesystem in the local backend, and `assertStorageKey` would refuse
+most of what arrives. Oversized attachments are recorded as skipped rather than silently
+dropped, and the size is checked again against what actually arrived, because Graph's
+reported size includes MIME overhead.
+
+The one download route serves both sides (`/client/tickets/attachments/[id]`, as the
+invoice PDFs do). Scope is a join — attachment → message → ticket → customer — so a
+customer asking for somebody else's id is refused by the `where` clause; anything hanging
+off an **internal note** is staff-only by the same query.
+
+### Outbound, and the system's own mail
+
+`replyToTicket()` sends through the department's mailbox, replying in place so the provider
+keeps the thread together, with our own `data-virtify-quote` marker on the quoted history
+so a client we have never seen still produces something strippable on the way back. The
+record is written **after** the send: a reply recorded but never sent is a customer waiting
+for an answer that exists only in our database, while a reply sent but not recorded is
+picked up as inbound on the next pass and filed anyway.
+
+`MailTransport` (`src/server/mail/transport.ts`) is the second half of the phase: every
+system notice — the invoice, the Mahnung, the SCA link — went through nodemailer to an SMTP
+relay this installation has never had, so they reached the log and nobody else. There are
+two ways out now, `smtp` and `graph`, chosen by a **setting** rather than an environment
+variable. A `graph` transport with no sender mailbox falls back to SMTP and says so, rather
+than dropping an invoice.
+
+### The queues
+
+- `tickets/sweep`, every five minutes: drain the notifications the webhook wrote, then a
+  delta query per mailbox. `missed: "skip"`, deliberately unlike the billing run's `once` —
+  there is nothing a five-minute-old sweep can do that the one in two minutes' time will
+  not.
+- `tickets/subscriptions`, hourly: create and renew the Graph subscriptions. Graph grants
+  at most 4230 minutes and then stops delivering silently; the renewal happens with a day
+  to spare, and a subscription Graph has forgotten (404) is marked removed so the next pass
+  creates a fresh one instead of patching a corpse.
+- There is deliberately **no** `ticket_run (run_day)` equivalent of `billing_run`. A mail
+  sweep is not a daily event that must happen once; a row saying "the sweep has run today"
+  would be exactly the wrong claim to make.
+- A delta link Graph no longer accepts (410) is cleared, so the mailbox is reconciled
+  again. Keeping it would mean the mailbox is never reconciled again, which is the quiet
+  failure the delta query exists to prevent.
+
+### Surfaces
+
+- Admin: `/admin/tickets` with the queue, the counters and the filters; the detail page
+  with the conversation, internal notes, canned replies, reply with CC, assign, status,
+  priority, linking an account, merge and **unmerge**; `/admin/settings/mail` for the Graph
+  channel, the departments and the state of the notifications, with "jetzt abholen" and
+  "Benachrichtigungen prüfen" calling the same functions the cron does.
+- Client: `/client/tickets`, `/client/tickets/new` and the detail page with reply and
+  close. Honours `customer_contact.can_tickets`.
+- API: `GET`/`POST /api/v1/tickets`, `GET /api/v1/tickets/{id}`,
+  `POST /api/v1/tickets/{id}/messages`, all in the OpenAPI registry under the `Tickets` tag
+  with per-field descriptions, examples and error shapes. New permissions `tickets.write`
+  and `tickets.manage`; `tickets.read`/`reply`/`write` are in `CUSTOMER_SCOPES`, and
+  `tickets.manage` deliberately is not — the mailbox is the operator's.
+
+### Tests (115 new, 823 in all)
+
+- `tests/unit/ticket-threading.test.ts` — the tag parser's generosity and its refusals (a
+  bare `TKT-00042` in prose is not a tag, nor is a ten-digit one), `References` in every
+  separator a client emits, the reply-prefix stripper in four languages.
+- `tests/unit/ticket-sanitize.test.ts` — script removal including an unclosed one, every
+  `on*` attribute in one rule, `javascript:` in seven spellings, `data:image` allowed and
+  `data:text/html` refused, `expression()` and `position:fixed` out of styles.
+- `tests/unit/ticket-quoting.test.ts` — the markers Outlook, Gmail, Apple Mail and
+  Thunderbird actually emit, interleaved quoting kept, and the refusal to return an empty
+  message.
+- `tests/unit/ticket-loop.test.ts` — every ignore reason, their order, and the three
+  independent bounce signals.
+- `tests/unit/graph-channel.test.ts` — the client against a recorded `fetch`: the token
+  cached, the secret never in a thrown message, delta paging, the folder created once, and
+  the draft→read→send order.
+- `tests/integration/tickets-inbound.test.ts` — the pipeline against a real Postgres: all
+  four threading outcomes and their **order** when two disagree, a re-delivery under the id
+  the move minted, a claim reopened mid-flight, the loop refusals and what they record,
+  attachments stored/skipped/orphan-cleaned/deleted, the auto-reply budget in both
+  directions, merge and unmerge, who a reply goes to, and the delta cursor's two failure
+  modes.
+- `tests/integration/tickets-notifications.test.ts` — the clientState check, a mixed batch,
+  a removed subscription, the reopen, the prune, the subscription lifecycle, and the route
+  itself (handshake, 202-on-forgery, 400 on a malformed envelope).
+- `tests/integration/tickets-api.test.ts` — the four endpoints through the real handlers.
+
+**The mutation pass.** Thirty-two claims were broken in the source to check the test fails.
+Two survived and were turned into fixes rather than into tests of the old behaviour:
+
+- the **message-id match had no tiebreaker**, so a `References` chain naming two tickets
+  with the same `sentAt` filed the reply onto whichever the index returned first. The ULID
+  is the tiebreaker now (rule 1's cursor, used as one).
+- the **conversation fallback excluded merged tickets instead of following the merge**, so
+  a reply with nothing but a conversation id opened a *new* ticket beside a conversation
+  that had been merged. It follows the merge now, like the other two branches.
+
+Two defects in the sanitiser were found by the tests as they were written: an unclosed
+`<script>` left its contents standing as text (a raw-text element now swallows the rest of
+the document, which is what a browser does), and `a < b und c > d` was read as a `<b>` tag,
+inventing markup and — worse — not escaping the `<`. A tag name now has to follow `<`
+immediately.
+
+Two **test-helper** collisions were found and fixed, which is the other half of what Phase
+6 warned about: the fake channel minted subscription ids and sent-message ids from
+per-instance counters, so a second channel in the same database collided with the first
+one's unique indexes.
+
+### Decided here, open to being overruled
+
+- **Certificate authentication is documented but not implemented.** `docs/m365-setup.md`
+  says plainly that a certificate is the better way and gives the PowerShell for it; the
+  settings schema already carries `certificatePrivateKey` / `certificateThumbprint`. What
+  the client does today is `client_credentials` with a secret. Signing a JWT assertion is
+  half a day's work and it is the first thing to do before this goes live with real
+  credentials.
+- **A department owns exactly one mailbox, and a mailbox exactly one department.** Two
+  would make "which queue does this belong to" a coin toss whose answer could differ
+  between a notification and the reconciliation pass.
+- **A customer's reply through the portal or the API is not mailed anywhere.** It is
+  recorded as inbound and appears in the queue. Mailing it back to the customer would be a
+  loop; mailing it to staff is Phase 9's notification work.
+- **The acknowledgement is sent outside `processInboundMessage`.** A mail that fails to
+  send must not roll back the ticket it was acknowledging.
+- **`on_hold` is the one status a customer's reply does not move.** Somebody decided to
+  park the ticket, and a reminder mail should not undo that decision.
+- **A ticket number is not per year.** It is a threading key that goes out on a subject
+  line; the invoice series' per-year reset would be a security property, not a cosmetic
+  one.
+- **The ticket API has no `include_notes`, for staff keys either.** A note is written in
+  the knowledge that it stays inside. The admin page is where it is read.
+- **The webhook writes a row rather than enqueuing a pg-boss job.** The web process holds
+  no pg-boss instance (Phase 6's decision, and the reason is unchanged), so the fast path
+  is a `mail_notification` row the sweep drains within the minute. A support mail arriving
+  up to a minute late is a cost worth paying to keep a background library out of a
+  request-scoped server.
+
+### Deliberately left out
+
+- **Inline images are stored but not re-addressed.** `content_id` is kept and the sanitiser
+  allows `cid:` URLs, but nothing rewrites them to point at the attachment route, so an
+  embedded image shows as a broken one in the admin frame. The bytes are there; it is a
+  rendering step.
+- **Attachments on an outbound reply can only be ones already on the ticket.** There is no
+  upload field in the admin reply form. The channel's upload-session path for >3 MB is
+  implemented and covered by nothing but its own code path.
+- **No SLA, no auto-close, no customer satisfaction follow-up.** None of it is in the build
+  plan for this phase.
+- **No ticket search.** The queue filters by department, status, priority, assignee and
+  unknown sender; there is no full-text search over the conversation.
+- **The admin dashboard has no ticket widget.** `/admin/tickets` carries the counters.
+
+### Still open in this phase
+
+- [ ] **Nothing has ever talked to Microsoft.** Every Graph interaction is tested against
+      hand-written payloads. The first real tenant will find things this cannot: the exact
+      shape of `internetMessageHeaders` on a forwarded message, whether `createReply`
+      behaves as documented on a shared mailbox, and how the Application Access Policy's
+      propagation delay feels in practice.
+- [ ] **Certificate authentication** — see above.
+- [ ] **A failed `mail_notification` is retried for ever.** It stays pending with
+      `attempts` counted up, and nothing gives up on it or surfaces it beyond the settings
+      page's counters. A message Graph will never hand over keeps being asked for.
+- [ ] **`ticket.first_response_at` is written but never read.** It is the raw material for
+      a response-time report that does not exist yet.
+- [ ] **Merging does not deduplicate.** Two tickets merged keep both their opening
+      messages; nothing notices that they say the same thing.
+
 ## Phases 5–11
 
 | Phase | State | Notes |
 |---|---|---|
 | 5 Payments | done | See above. |
 | 6 Subscriptions, dunning | done | See above. The older `contract` table still exists beside `subscription` and is created by hand; nothing in the recurring run touches it. |
-| 7 Ticketing (M365 Graph) | not started | Mail goes out over SMTP via nodemailer. |
+| 7 Ticketing (M365 Graph) | done | See above. No tenant credentials exist yet; the channel reports itself unconfigured and every job that would talk to Microsoft does nothing. |
 | 8 Provisioning (Proxmox) | not started | Phase 2 put the registry interface and the `none` module in `src/server/provisioning`; Phase 4 added the `service` table and Phase 6 now moves its `status` — suspended at the dunning rung, terminated when an Abo ends, created and retired by a quantity change — but no module acts on any of it. The lifecycle methods and the Proxmox module are this phase's, and the hooks they attach to already exist. |
 | 9 Client portal polish, i18n | not started | German only, no i18n layer, no `email_templates`. |
 | 10 Reports, webhooks, API | not started | |

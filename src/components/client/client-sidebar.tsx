@@ -6,6 +6,7 @@ import {
     FileText,
     KeyRound,
     LayoutDashboard,
+    LifeBuoy,
     LogOut,
     Receipt,
     Repeat,
@@ -58,6 +59,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     "shopping-cart": ShoppingCart,
     repeat: Repeat,
     wallet: Wallet,
+    "life-buoy": LifeBuoy,
 };
 
 function NavGroup({

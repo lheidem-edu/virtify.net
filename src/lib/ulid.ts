@@ -113,6 +113,15 @@ export const ID_PREFIX = {
     billingRun: "billingrun",
     invoiceCollection: "invoicecollection",
     dunningAction: "dunningaction",
+    ticketDepartment: "ticketdepartment",
+    ticket: "ticket",
+    ticketMessage: "ticketmessage",
+    ticketAttachment: "ticketattachment",
+    ticketCannedReply: "ticketcannedreply",
+    mailSubscription: "mailsubscription",
+    mailNotification: "mailnotification",
+    inboundMail: "inboundmail",
+    autoReplyBudget: "autoreplybudget",
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIX)[keyof typeof ID_PREFIX];

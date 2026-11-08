@@ -6,9 +6,9 @@ import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { getCurrentCustomer } from "@/server/customers/current";
 import {
-    createTransport,
     logMailError,
     mailFrom,
+    mailTransport,
     renderEmail,
 } from "@/server/mail";
 import { gateway } from "@/server/payments/gateways";
@@ -259,7 +259,7 @@ async function notifyDetachFailed(input: {
     token: string;
 }) {
     const { operator } = await loadSettings();
-    const transport = createTransport();
+    const transport = await mailTransport();
 
     if (!transport) {
         console.error("[payment] detach failed and no transport:", input);

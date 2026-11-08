@@ -74,6 +74,15 @@ export const CUSTOMER_SCOPES = [
     // belongs to.
     "subscriptions.read",
     "subscriptions.write",
+    // A ticket is the customer's own correspondence. Reading it, opening one
+    // and answering one are all things the client area already lets them do
+    // with a session — and every ticket endpoint resolves the row through the
+    // key's own customer id, so a key carries these for exactly the account
+    // it belongs to. `tickets.manage` is deliberately absent: the mailbox and
+    // the departments are the operator's, not a customer's.
+    "tickets.read",
+    "tickets.reply",
+    "tickets.write",
 ] as const satisfies readonly Permission[];
 
 export type CustomerScope = (typeof CUSTOMER_SCOPES)[number];

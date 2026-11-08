@@ -93,6 +93,14 @@ export function buildSpec() {
                     "ein Zahlungsdienstleister holt nur das Geld.",
             },
             {
+                name: "Tickets",
+                description:
+                    "Support-Tickets und ihre Unterhaltung. Ein Ticket " +
+                    "entsteht aus einer Mail an ein Abteilungspostfach oder " +
+                    "aus dem Kundenbereich; die Nummer im Betreff hält die " +
+                    "Unterhaltung zusammen.",
+            },
+            {
                 name: "Kunden",
                 description:
                     "Kundenkonten: Stammdaten, Status und Kundennummer. " +

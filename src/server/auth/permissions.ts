@@ -33,6 +33,9 @@ export const PERMISSIONS = {
     "payments.write": "Zahlungen erfassen und erstatten",
     "tickets.read": "Tickets ansehen",
     "tickets.reply": "Auf Tickets antworten",
+    "tickets.write": "Tickets anlegen, zuweisen, zusammenführen und schließen",
+    "tickets.manage":
+        "Abteilungen, Postfach-Anbindung und Textbausteine verwalten",
     "legal.write": "Rechtstexte bearbeiten und veröffentlichen",
     "settings.write": "Einstellungen des Portals ändern",
     "staff.manage": "Mitarbeiter einladen und entfernen",

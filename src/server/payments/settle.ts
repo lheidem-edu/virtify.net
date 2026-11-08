@@ -7,9 +7,9 @@ import { formatPrice } from "@/lib/format";
 import { createId } from "@/lib/ulid";
 import { notifyThresholds } from "@/server/billing/revenue-notify";
 import {
-    createTransport,
     logMailError,
     mailFrom,
+    mailTransport,
     renderEmail,
 } from "@/server/mail";
 import { loadSettings } from "@/server/settings";
@@ -251,7 +251,7 @@ async function operatorMail(
     },
 ) {
     const { operator } = await loadSettings();
-    const transport = createTransport();
+    const transport = await mailTransport();
 
     if (!transport) {
         console.error(`[payments] ${subject} — no mail transport:`, lines);

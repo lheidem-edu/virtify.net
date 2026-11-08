@@ -255,3 +255,63 @@ export const PAYMENT_OPTION_LABEL = {
     stripe: "Karte (Stripe)",
     paypal: "PayPal",
 } as const;
+
+const dateTime = new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Berlin",
+});
+
+/** Rule 9: stored in UTC, shown in Europe/Berlin. */
+export function formatDateTime(value: Date | null | undefined) {
+    return value ? dateTime.format(value) : "—";
+}
+
+export const TICKET_STATUS_LABEL = {
+    open: "Offen",
+    waiting: "Wartet auf Kunden",
+    on_hold: "Zurückgestellt",
+    closed: "Geschlossen",
+} as const;
+
+export const TICKET_STATUS_TONE = {
+    open: "warning",
+    waiting: "neutral",
+    on_hold: "muted",
+    closed: "muted",
+} as const;
+
+export const TICKET_PRIORITY_LABEL = {
+    low: "Niedrig",
+    normal: "Normal",
+    high: "Hoch",
+    urgent: "Dringend",
+} as const;
+
+export const TICKET_PRIORITY_TONE = {
+    low: "muted",
+    normal: "neutral",
+    high: "warning",
+    urgent: "warning",
+} as const;
+
+/** Byte sizes for an attachment list. Decimal, which is what a mail client shows. */
+export function formatBytes(bytes: number) {
+    if (bytes < 1000) {
+        return `${bytes} B`;
+    }
+
+    const units = ["kB", "MB", "GB"];
+    let value = bytes / 1000;
+    let unit = 0;
+
+    while (value >= 1000 && unit < units.length - 1) {
+        value /= 1000;
+        unit += 1;
+    }
+
+    return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
+}

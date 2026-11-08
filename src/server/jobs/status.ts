@@ -2,7 +2,15 @@ import "server-only";
 import { desc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { BillingRunReport } from "@/server/billing/run";
-import { BILLING_RUN_CRON, BILLING_RUN_QUEUE, BILLING_RUN_TZ } from "./queues";
+import {
+    BILLING_RUN_CRON,
+    BILLING_RUN_QUEUE,
+    BILLING_RUN_TZ,
+    TICKET_SUBSCRIPTION_CRON,
+    TICKET_SUBSCRIPTION_QUEUE,
+    TICKET_SWEEP_CRON,
+    TICKET_SWEEP_QUEUE,
+} from "./queues";
 
 /**
  * What the admin Jobs page reads.
@@ -48,8 +56,8 @@ export type JobsOverview = {
     queues: QueueState[];
     failures: FailedJob[];
     schedules: ScheduleState[];
-    /** What the schedule *should* be, whether or not it is installed. */
-    expected: ScheduleState;
+    /** What the schedules *should* be, whether or not they are installed. */
+    expected: ScheduleState[];
 };
 
 async function pgbossExists(): Promise<boolean> {
@@ -69,11 +77,23 @@ async function pgbossExists(): Promise<boolean> {
 }
 
 export async function jobsOverview(): Promise<JobsOverview> {
-    const expected: ScheduleState = {
-        name: BILLING_RUN_QUEUE,
-        cron: BILLING_RUN_CRON,
-        timezone: BILLING_RUN_TZ,
-    };
+    const expected: ScheduleState[] = [
+        {
+            name: BILLING_RUN_QUEUE,
+            cron: BILLING_RUN_CRON,
+            timezone: BILLING_RUN_TZ,
+        },
+        {
+            name: TICKET_SWEEP_QUEUE,
+            cron: TICKET_SWEEP_CRON,
+            timezone: "UTC",
+        },
+        {
+            name: TICKET_SUBSCRIPTION_QUEUE,
+            cron: TICKET_SUBSCRIPTION_CRON,
+            timezone: "UTC",
+        },
+    ];
 
     if (!(await pgbossExists())) {
         return {

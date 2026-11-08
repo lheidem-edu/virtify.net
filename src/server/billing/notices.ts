@@ -2,9 +2,9 @@ import "server-only";
 import type { DunningLevel } from "@/db/schema";
 import { formatPrice } from "@/lib/format";
 import {
-    createTransport,
     logMailError,
     mailFrom,
+    mailTransport,
     renderEmail,
 } from "@/server/mail";
 import { loadSettings } from "@/server/settings";
@@ -34,7 +34,7 @@ async function send(input: {
     action?: { label: string; url: string };
     rows: { label: string; value: string }[];
 }): Promise<boolean> {
-    const transport = createTransport();
+    const transport = await mailTransport();
 
     if (!transport) {
         console.error(`[billing] ${input.subject} — no mail transport`);

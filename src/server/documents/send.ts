@@ -20,15 +20,15 @@ import {
 } from "@/server/documents/repository";
 import { renderXRechnung } from "@/server/documents/xrechnung";
 import {
-    createTransport,
     logMailError,
     mailFrom,
+    mailTransport,
     renderEmail,
 } from "@/server/mail";
 import { loadSettings } from "@/server/settings";
 
-function transportOrThrow() {
-    const transport = createTransport();
+async function transportOrThrow() {
+    const transport = await mailTransport();
 
     if (!transport) {
         throw new Error("VIRTIFY_SMTP_HOST is not set; cannot send document");
@@ -72,7 +72,7 @@ export async function sendOfferMail(
         taxNotes,
     });
 
-    const transport = transportOrThrow();
+    const transport = await transportOrThrow();
 
     try {
         await transport.sendMail({
@@ -188,7 +188,7 @@ export async function sendInvoiceMail(
         totals,
     });
 
-    const transport = transportOrThrow();
+    const transport = await transportOrThrow();
     const { operator } = await loadSettings();
 
     try {
@@ -309,7 +309,7 @@ export async function sendCreditNoteMail(
         totals,
     });
 
-    const transport = transportOrThrow();
+    const transport = await transportOrThrow();
 
     try {
         await transport.sendMail({
@@ -378,7 +378,7 @@ export async function sendOfferWithdrawnMail(offerId: string, to: string) {
     }
 
     const { offer } = loaded;
-    const transport = transportOrThrow();
+    const transport = await transportOrThrow();
 
     try {
         await transport.sendMail({
@@ -435,7 +435,7 @@ export async function sendOfferAcceptedMail(offerId: string, to: string) {
     }
 
     const { offer, totals } = loaded;
-    const transport = transportOrThrow();
+    const transport = await transportOrThrow();
 
     try {
         await transport.sendMail({
@@ -511,7 +511,7 @@ export async function sendContractTerminationMail(
 
     const { contract } = loaded;
     const endsOn = formatDate(contract.terminatedTo);
-    const transport = transportOrThrow();
+    const transport = await transportOrThrow();
 
     try {
         await transport.sendMail({
@@ -579,7 +579,7 @@ export async function sendPaymentReceivedMail(input: {
     }
 
     const number = loaded.invoice.number;
-    const transport = transportOrThrow();
+    const transport = await transportOrThrow();
 
     // A part payment must not be confirmed as "ausgeglichen". The customer
     // would reasonably stop there, and the invoice would quietly go overdue.
@@ -652,7 +652,7 @@ export async function sendLegalChangeMail(input: {
     effectiveFrom: Date;
 }) {
     const { operator, site } = await loadSettings();
-    const transport = transportOrThrow();
+    const transport = await transportOrThrow();
     const effective = formatDate(input.effectiveFrom);
 
     try {

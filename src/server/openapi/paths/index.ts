@@ -10,4 +10,5 @@ import "./invoices";
 import "./orders";
 import "./products";
 import "./subscriptions";
+import "./tickets";
 import "./transactions";

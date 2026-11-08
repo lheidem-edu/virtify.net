@@ -19,3 +19,4 @@ export * from "./settings";
 export * from "./staff";
 export * from "./subscriptions";
 export * from "./tax";
+export * from "./tickets";

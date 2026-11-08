@@ -37,6 +37,10 @@
             "description": "Was tatsächlich geflossen ist: Zahlungen, Erstattungen und Guthaben. Die Rechnung sagt, was geschuldet wird — ein Zahlungsdienstleister holt nur das Geld."
         },
         {
+            "name": "Tickets",
+            "description": "Support-Tickets und ihre Unterhaltung. Ein Ticket entsteht aus einer Mail an ein Abteilungspostfach oder aus dem Kundenbereich; die Nummer im Betreff hält die Unterhaltung zusammen."
+        },
+        {
             "name": "Kunden",
             "description": "Kundenkonten: Stammdaten, Status und Kundennummer. Ein Kundenschlüssel sieht hier ausschließlich das eigene Konto."
         }
@@ -3798,6 +3802,595 @@
                 ],
                 "description": "Die Vorschau samt fertigem Satz dazu."
             },
+            "TicketAttachment": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Anhangs.",
+                        "example": "ticketattachment_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "Der Dateiname, wie er in der Mail stand.",
+                        "example": "screenshot.png"
+                    },
+                    "content_type": {
+                        "type": "string",
+                        "description": "MIME-Typ, wie der Absender ihn angegeben hat.",
+                        "example": "image/png"
+                    },
+                    "size_bytes": {
+                        "type": "integer",
+                        "description": "Größe der gespeicherten Datei in Byte.",
+                        "example": 48210
+                    },
+                    "inline": {
+                        "type": "boolean",
+                        "description": "Ob der Anhang im Text eingebettet war (`cid:`) statt angehängt.",
+                        "example": false
+                    }
+                },
+                "required": [
+                    "id",
+                    "filename",
+                    "content_type",
+                    "size_bytes",
+                    "inline"
+                ]
+            },
+            "TicketMessage": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Nachricht.",
+                        "example": "ticketmessage_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": [
+                            "inbound",
+                            "outbound"
+                        ],
+                        "description": "`inbound` kam vom Kunden, `outbound` ging von uns hinaus. Interne Notizen stehen nie in dieser Liste.",
+                        "example": "inbound"
+                    },
+                    "author_type": {
+                        "type": "string",
+                        "enum": [
+                            "customer",
+                            "staff",
+                            "system"
+                        ],
+                        "description": "Wer geschrieben hat. `system` sind automatische Nachrichten, etwa die Eingangsbestätigung.",
+                        "example": "customer"
+                    },
+                    "author_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Angezeigter Name des Absenders, falls bekannt.",
+                        "example": "Maria Musterfrau"
+                    },
+                    "author_email": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Absenderadresse der Nachricht.",
+                        "example": "maria@example.net"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Der Text der Nachricht ohne zitierte Vorgeschichte und ohne Signatur. Das Original bleibt gespeichert und ist in der Verwaltung einsehbar; über die Schnittstelle wird es nicht ausgeliefert.",
+                        "example": "Mein Server ist seit heute Morgen nicht erreichbar."
+                    },
+                    "automated": {
+                        "type": "boolean",
+                        "description": "Ob die Nachricht maschinell erzeugt wirkte (Auto-Submitted, Abwesenheitsnotiz). Auf solche Nachrichten wird nie automatisch geantwortet.",
+                        "example": false
+                    },
+                    "sent_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Zeitpunkt der Nachricht, UTC.",
+                        "example": "2026-11-08T09:14:00.000Z"
+                    },
+                    "attachments": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TicketAttachment"
+                        },
+                        "description": "Die gespeicherten Anhänge dieser Nachricht."
+                    }
+                },
+                "required": [
+                    "id",
+                    "direction",
+                    "author_type",
+                    "author_name",
+                    "author_email",
+                    "body",
+                    "automated",
+                    "sent_at",
+                    "attachments"
+                ]
+            },
+            "TicketSummary": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Tickets.",
+                        "example": "ticket_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "number": {
+                        "type": "integer",
+                        "description": "Die fortlaufende Ticketnummer.",
+                        "example": 42
+                    },
+                    "reference": {
+                        "type": "string",
+                        "description": "Die Nummer, wie sie im Betreff steht. Bleibt sie beim Antworten erhalten, landet die Antwort wieder im selben Ticket.",
+                        "example": "TKT-00042"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Der Betreff des Tickets.",
+                        "example": "Server nicht erreichbar"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "open",
+                            "waiting",
+                            "on_hold",
+                            "closed"
+                        ],
+                        "description": "`open` wartet auf uns, `waiting` auf den Kunden, `on_hold` ist bewusst geparkt — eine Kundenantwort holt ein `on_hold`-Ticket absichtlich nicht zurück —, `closed` ist erledigt.",
+                        "example": "open"
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": [
+                            "low",
+                            "normal",
+                            "high",
+                            "urgent"
+                        ],
+                        "description": "Dringlichkeit, von der Verwaltung gesetzt.",
+                        "example": "normal"
+                    },
+                    "department": {
+                        "type": "string",
+                        "description": "Die Abteilung, in deren Postfach das Ticket liegt.",
+                        "example": "Support"
+                    },
+                    "customer_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Das zugeordnete Kundenkonto, oder `null`, wenn der Absender keinem Kontakt zugeordnet werden konnte.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "customer_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Name des Kundenkontos.",
+                        "example": "Beispiel GmbH"
+                    },
+                    "assignee": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die zuständige Mitarbeiterin, falls zugewiesen.",
+                        "example": "Luca"
+                    },
+                    "unknown_sender": {
+                        "type": "boolean",
+                        "description": "Ob der Absender keinem Kontakt zugeordnet werden konnte. Solche Tickets sind ausschließlich für die Verwaltung sichtbar.",
+                        "example": false
+                    },
+                    "requester_email": {
+                        "type": "string",
+                        "description": "Die Adresse, von der die erste Nachricht kam.",
+                        "example": "maria@example.net"
+                    },
+                    "message_count": {
+                        "type": "integer",
+                        "description": "Anzahl der Nachrichten einschließlich interner Notizen.",
+                        "example": 3
+                    },
+                    "last_message_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Zeitpunkt der letzten Nachricht, UTC.",
+                        "example": "2026-11-08T09:14:00.000Z"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Wann das Ticket eröffnet wurde, UTC.",
+                        "example": "2026-11-08T08:02:00.000Z"
+                    },
+                    "merged_into": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Gesetzt, wenn dieses Ticket in ein anderes zusammengeführt wurde. Die Nummer bleibt gültig und führt zum Ziel-Ticket.",
+                        "example": "ticket_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    }
+                },
+                "required": [
+                    "id",
+                    "number",
+                    "reference",
+                    "subject",
+                    "status",
+                    "priority",
+                    "department",
+                    "customer_id",
+                    "customer_name",
+                    "assignee",
+                    "unknown_sender",
+                    "requester_email",
+                    "message_count",
+                    "last_message_at",
+                    "created_at",
+                    "merged_into"
+                ]
+            },
+            "Ticket": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Tickets.",
+                        "example": "ticket_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "number": {
+                        "type": "integer",
+                        "description": "Die fortlaufende Ticketnummer.",
+                        "example": 42
+                    },
+                    "reference": {
+                        "type": "string",
+                        "description": "Die Nummer, wie sie im Betreff steht. Bleibt sie beim Antworten erhalten, landet die Antwort wieder im selben Ticket.",
+                        "example": "TKT-00042"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Der Betreff des Tickets.",
+                        "example": "Server nicht erreichbar"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "open",
+                            "waiting",
+                            "on_hold",
+                            "closed"
+                        ],
+                        "description": "`open` wartet auf uns, `waiting` auf den Kunden, `on_hold` ist bewusst geparkt — eine Kundenantwort holt ein `on_hold`-Ticket absichtlich nicht zurück —, `closed` ist erledigt.",
+                        "example": "open"
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": [
+                            "low",
+                            "normal",
+                            "high",
+                            "urgent"
+                        ],
+                        "description": "Dringlichkeit, von der Verwaltung gesetzt.",
+                        "example": "normal"
+                    },
+                    "department": {
+                        "type": "string",
+                        "description": "Die Abteilung, in deren Postfach das Ticket liegt.",
+                        "example": "Support"
+                    },
+                    "customer_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Das zugeordnete Kundenkonto, oder `null`, wenn der Absender keinem Kontakt zugeordnet werden konnte.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "customer_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Name des Kundenkontos.",
+                        "example": "Beispiel GmbH"
+                    },
+                    "assignee": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die zuständige Mitarbeiterin, falls zugewiesen.",
+                        "example": "Luca"
+                    },
+                    "unknown_sender": {
+                        "type": "boolean",
+                        "description": "Ob der Absender keinem Kontakt zugeordnet werden konnte. Solche Tickets sind ausschließlich für die Verwaltung sichtbar.",
+                        "example": false
+                    },
+                    "requester_email": {
+                        "type": "string",
+                        "description": "Die Adresse, von der die erste Nachricht kam.",
+                        "example": "maria@example.net"
+                    },
+                    "last_message_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Zeitpunkt der letzten Nachricht, UTC.",
+                        "example": "2026-11-08T09:14:00.000Z"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Wann das Ticket eröffnet wurde, UTC.",
+                        "example": "2026-11-08T08:02:00.000Z"
+                    },
+                    "merged_into": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Gesetzt, wenn dieses Ticket in ein anderes zusammengeführt wurde. Die Nummer bleibt gültig und führt zum Ziel-Ticket.",
+                        "example": "ticket_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "requester_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Name des Absenders, falls die Mail einen trug.",
+                        "example": "Maria Musterfrau"
+                    },
+                    "service_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Leistung, um die es geht, falls verknüpft.",
+                        "example": "service_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "invoice_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Rechnung, um die es geht, falls verknüpft.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "merged_in": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "Das zusammengeführte Ticket.",
+                                    "example": "ticket_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                                },
+                                "number": {
+                                    "type": "integer",
+                                    "description": "Dessen Nummer.",
+                                    "example": 41
+                                },
+                                "reference": {
+                                    "type": "string",
+                                    "description": "Dessen Nummer im Betreffformat.",
+                                    "example": "TKT-00041"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "number",
+                                "reference"
+                            ]
+                        },
+                        "description": "Tickets, die in dieses zusammengeführt wurden."
+                    },
+                    "first_response_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann zum ersten Mal geantwortet wurde, UTC.",
+                        "example": "2026-11-08T09:40:00.000Z"
+                    },
+                    "closed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann das Ticket geschlossen wurde, UTC.",
+                        "example": "2026-11-09T11:00:00.000Z"
+                    },
+                    "messages": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TicketMessage"
+                        },
+                        "description": "Die Unterhaltung, älteste zuerst. Interne Notizen sind nie enthalten — auch nicht für einen Verwaltungsschlüssel."
+                    }
+                },
+                "required": [
+                    "id",
+                    "number",
+                    "reference",
+                    "subject",
+                    "status",
+                    "priority",
+                    "department",
+                    "customer_id",
+                    "customer_name",
+                    "assignee",
+                    "unknown_sender",
+                    "requester_email",
+                    "last_message_at",
+                    "created_at",
+                    "merged_into",
+                    "requester_name",
+                    "service_id",
+                    "invoice_id",
+                    "merged_in",
+                    "first_response_at",
+                    "closed_at",
+                    "messages"
+                ]
+            },
+            "TicketPage": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TicketSummary"
+                        },
+                        "description": "Die Zeilen dieser Seite, in ID-Reihenfolge."
+                    },
+                    "next_cursor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "An die nächste Anfrage als `cursor` weitergeben; `null` auf der letzten Seite.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "has_more": {
+                        "type": "boolean",
+                        "description": "Ob nach dieser Seite noch Zeilen folgen.",
+                        "example": false
+                    }
+                },
+                "required": [
+                    "data",
+                    "next_cursor",
+                    "has_more"
+                ]
+            },
+            "TicketCreate": {
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Für welches Konto das Ticket eröffnet wird. Bei einem Kundenschlüssel wird das Feld ignoriert und das eigene Konto verwendet.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "department_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Abteilung. Ohne Angabe die als Standard markierte.",
+                        "example": "ticketdepartment_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Der Betreff.",
+                        "example": "Server nicht erreichbar"
+                    },
+                    "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 20000,
+                        "description": "Die erste Nachricht.",
+                        "example": "Seit heute Morgen antwortet der Server nicht mehr."
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": [
+                            "low",
+                            "normal",
+                            "high",
+                            "urgent"
+                        ],
+                        "default": "normal",
+                        "description": "Dringlichkeit, von der Verwaltung gesetzt.",
+                        "example": "normal"
+                    },
+                    "requester_email": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "email",
+                        "description": "Die Absenderadresse. Nur für einen Verwaltungsschlüssel; bei einem Kundenschlüssel wird sie aus den Kontakten des Kontos genommen, damit kein Ticket in fremdem Namen eröffnet werden kann.",
+                        "example": "maria@example.net"
+                    },
+                    "requester_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 120,
+                        "description": "Name des Absenders.",
+                        "example": "Maria Musterfrau"
+                    },
+                    "service_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Verknüpfte Leistung. Nur für einen Verwaltungsschlüssel.",
+                        "example": "service_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "invoice_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Verknüpfte Rechnung. Nur für einen Verwaltungsschlüssel.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    }
+                },
+                "required": [
+                    "subject",
+                    "message"
+                ]
+            },
+            "TicketMessageCreate": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 20000,
+                        "description": "Der Text der Nachricht.",
+                        "example": "Danke, der Server läuft wieder."
+                    },
+                    "close": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Ob das Ticket mit dieser Nachricht geschlossen wird.",
+                        "example": false
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            },
             "Transaction": {
                 "type": "object",
                 "properties": {
@@ -6702,6 +7295,439 @@
                             "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/tickets": {
+            "get": {
+                "tags": [
+                    "Tickets"
+                ],
+                "summary": "Tickets auflisten",
+                "description": "Gibt die Tickets seitenweise zurück, neueste zuerst. Ein Kundenschlüssel sieht ausschließlich die Tickets des eigenen Kontos; `customer_id` wird für ihn ignoriert statt beachtet. Tickets ohne zugeordnetes Konto — unbekannter Absender — sind nur für einen Verwaltungsschlüssel sichtbar. Benötigt `tickets.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                            "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": false,
+                        "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25,
+                            "description": "Zeilen pro Seite, höchstens 100.",
+                            "example": 25
+                        },
+                        "required": false,
+                        "description": "Zeilen pro Seite, höchstens 100.",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "open",
+                                "waiting",
+                                "on_hold",
+                                "closed",
+                                "open-ish"
+                            ],
+                            "description": "Auf einen Status einschränken. `open-ish` fasst alles zusammen, was nicht geschlossen ist.",
+                            "example": "open"
+                        },
+                        "required": false,
+                        "description": "Auf einen Status einschränken. `open-ish` fasst alles zusammen, was nicht geschlossen ist.",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "low",
+                                "normal",
+                                "high",
+                                "urgent"
+                            ],
+                            "description": "Auf eine Dringlichkeit einschränken.",
+                            "example": "high"
+                        },
+                        "required": false,
+                        "description": "Auf eine Dringlichkeit einschränken.",
+                        "name": "priority",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Nur für einen Verwaltungsschlüssel: auf ein Konto einschränken.",
+                            "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": false,
+                        "description": "Nur für einen Verwaltungsschlüssel: auf ein Konto einschränken.",
+                        "name": "customer_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Eine Seite Tickets.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TicketPage"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Tickets"
+                ],
+                "summary": "Ticket eröffnen",
+                "description": "Eröffnet ein Ticket mit einer ersten Nachricht. Es wird dabei nichts versendet — die Nachricht steht in der Warteschlange der Abteilung. Benötigt `tickets.write`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TicketCreate"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Das eröffnete Ticket.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Ticket"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/tickets/{id}": {
+            "get": {
+                "tags": [
+                    "Tickets"
+                ],
+                "summary": "Ticket ansehen",
+                "description": "Ein Ticket mit seiner vollständigen Unterhaltung, interne Notizen ausgenommen. Ein Ticket, das dieser Schlüssel nicht sehen darf, beantwortet sich mit 404 und nicht mit 403 — eine Ticketnummer ist kurz und ratbar, und 403 würde bestätigen, dass es sie gibt. Benötigt `tickets.read`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Tickets.",
+                            "example": "ticket_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Tickets.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Das Ticket.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Ticket"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/tickets/{id}/messages": {
+            "post": {
+                "tags": [
+                    "Tickets"
+                ],
+                "summary": "Auf ein Ticket antworten",
+                "description": "Fügt dem Ticket eine Nachricht hinzu. Mit einem Kundenschlüssel ist das die Antwort des Kunden; sie wird nicht versendet, sondern der Verwaltung vorgelegt. Mit einem Verwaltungsschlüssel geht die Antwort über das Postfach der Abteilung hinaus — an die Empfänger, die das Ticket bereits kennt, und an niemanden, den die Anfrage benennt. Ohne angebundenes Postfach wird sie mit 503 abgelehnt statt als versendet verbucht. Benötigt `tickets.reply`.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die technische ID des Tickets.",
+                            "example": "ticket_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die technische ID des Tickets.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TicketMessageCreate"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Das Ticket mit der neuen Nachricht.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Ticket"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Es ist kein Mail-Kanal eingerichtet, über den die Antwort hinausgehen könnte.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {},
+                                    "description": "RFC-9457-Problem."
                                 }
                             }
                         }

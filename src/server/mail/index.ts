@@ -1,78 +1,28 @@
 import "server-only";
-import nodemailer from "nodemailer";
 import { loadSettings } from "@/server/settings";
 
 /**
- * `family` is forwarded to net.connect at runtime but is absent from
- * @types/nodemailer, so it is declared here rather than casting the whole
- * options object and losing checking on the rest.
+ * The transactional mail layout, and the helpers around it.
+ *
+ * How a mail actually leaves the building moved to `./transport.ts` in
+ * Phase 7: there are two ways out now (an SMTP relay and Microsoft Graph)
+ * and every call site asks for "the transport" rather than for nodemailer.
+ * The two names are re-exported here so `@/server/mail` stays the one
+ * import a mail-sending module needs.
  */
-type SmtpOptions = Parameters<typeof nodemailer.createTransport>[0] & {
-    family?: 4 | 6;
-};
 
-/**
- * The name this server gives in EHLO. Nodemailer sends the machine's own
- * hostname and falls back to 127.0.0.1 when that is not a name anyone outside
- * knows — which is what Microsoft 365 saw in the header of the messages it
- * sorted as spam. An address rather than a name is fine there, but only as an
- * address literal (RFC 5321 §4.1.3): a bare 118.91.184.85 is neither a domain
- * nor a literal, and a receiving MTA is entitled to score it as a malformed
- * greeting. The brackets are added here so the variable can hold the plain
- * address, which is what anyone setting it would write.
- */
-export function ehloName() {
-    const value = process.env.VIRTIFY_SMTP_EHLO?.trim();
+export {
+    addressList,
+    ehloName,
+    type MailAttachment,
+    type MailMessage,
+    type MailTransport,
+    mailTransport,
+    type SentMail,
+    smtpTransport,
+} from "./transport";
 
-    if (!value || value.startsWith("[")) {
-        return value || undefined;
-    }
-
-    if (value.includes(":")) {
-        return `[IPv6:${value}]`;
-    }
-
-    return /^\d{1,3}(\.\d{1,3}){3}$/.test(value) ? `[${value}]` : value;
-}
-
-/**
- * Mail relay used for outbound notifications. The relay is reached on port 25
- * without authentication, so it is expected to be an internal host that
- * accepts mail from this server by address. Certificate validation is relaxed
- * because such relays commonly present an internal or self-signed
- * certificate — set this back to strict once the relay has a trusted one.
- */
-export function createTransport() {
-    const host = process.env.VIRTIFY_SMTP_HOST;
-
-    if (!host) {
-        return null;
-    }
-
-    const options: SmtpOptions = {
-        host,
-        port: 25,
-        name: ehloName(),
-        secure: false,
-        auth: undefined,
-        tls: { rejectUnauthorized: false },
-        // TEMPORARY: force IPv4. Recipients such as Microsoft 365 reject mail
-        // from an IPv6 address without a PTR record ("450 4.7.25 ... must have
-        // reverse DNS record"), and nodemailer offers IPv4 and IPv6 addresses
-        // together. Remove this once the sending host's IPv6 address has
-        // reverse DNS — dual-stack delivery is the better end state.
-        family: 4,
-        // Without these a relay that swallows connections would hang the
-        // request for roughly two minutes before nodemailer gives up.
-        connectionTimeout: 10_000,
-        greetingTimeout: 10_000,
-        socketTimeout: 20_000,
-    };
-
-    return nodemailer.createTransport(options);
-}
-
-/** Logs an SMTP failure with the relay's own response, which names the cause. */
+/** Logs a send failure with the relay's own response, which names the cause. */
 export function logMailError(context: string, error: unknown) {
     const detail = error as {
         message?: string;

@@ -238,3 +238,40 @@ export async function warmPool(db: TestDb, count: number) {
         client.release();
     }
 }
+
+/**
+ * Phase 7. A department with a mailbox behind it, and a contact address that
+ * the inbound pipeline can match a sender against.
+ */
+export async function makeDepartment(
+    db: TestDb,
+    over: Partial<typeof schema.ticketDepartment.$inferInsert> = {},
+): Promise<string> {
+    const [row] = await db
+        .insert(schema.ticketDepartment)
+        .values({
+            name: "Support",
+            slug: `support-${Math.random().toString(36).slice(2, 8)}`,
+            mailbox: "support@example.test",
+            isDefault: true,
+            active: true,
+            ...over,
+        })
+        .returning();
+
+    return row.id;
+}
+
+/** The address a customer's contact is reached at, for sender matching. */
+export async function contactEmail(
+    db: TestDb,
+    customerId: string,
+): Promise<string> {
+    const [row] = await db
+        .select({ email: schema.customerContact.email })
+        .from(schema.customerContact)
+        .where(eq(schema.customerContact.customerId, customerId))
+        .limit(1);
+
+    return row.email;
+}

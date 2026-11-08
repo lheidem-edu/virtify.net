@@ -52,6 +52,24 @@ export default async function Page() {
                 </Link>
             </div>
 
+            <div className="border-b px-6 py-10 md:px-10 md:py-12">
+                <h2 className="mb-2 font-medium text-sm tracking-tight">
+                    Postfach
+                </h2>
+                <p className="max-w-2xl text-muted-foreground text-sm leading-7">
+                    Die Anbindung an Microsoft 365: aus welchem Postfach Tickets
+                    entstehen, in welchen Ordner Erledigtes wandert und worüber
+                    Systemmails hinausgehen. Die Zugangsdaten liegen
+                    verschlüsselt und werden nie wieder angezeigt.
+                </p>
+                <Link
+                    href="/admin/settings/mail"
+                    className="mt-4 inline-block text-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                >
+                    Postfach verwalten
+                </Link>
+            </div>
+
             <div className="px-6 py-10 md:px-10 md:py-12">
                 <SettingsForm
                     values={{

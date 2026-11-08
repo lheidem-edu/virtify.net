@@ -1,10 +1,10 @@
 "use server";
 
 import {
-    createTransport,
     type EmailRow,
     logMailError,
     mailFrom,
+    mailTransport,
     renderEmail,
 } from "@/server/mail";
 import { loadSettings } from "@/server/settings";
@@ -95,7 +95,7 @@ export async function submitCancellation(
     const declaration = buildText(rows, stamp, site.name);
     const subject = read(data, "contract") || read(data, "number") || name;
 
-    const transport = createTransport();
+    const transport = await mailTransport();
 
     const failure = {
         status: "error" as const,

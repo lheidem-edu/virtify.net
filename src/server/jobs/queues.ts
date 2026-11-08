@@ -12,6 +12,21 @@
  */
 export const BILLING_RUN_QUEUE = "billing/run";
 
+/**
+ * Phase 7. Two queues rather than one, because they answer two different
+ * questions and want two different cadences:
+ *
+ *  - `tickets/sweep` drains the notifications the webhook wrote and runs the
+ *    delta reconciliation. Every five minutes, which is what the build plan
+ *    asks for and what makes a missed notification cost latency rather than
+ *    a message.
+ *  - `tickets/subscriptions` keeps the Graph change-notification
+ *    subscriptions alive. Graph grants at most 4230 minutes and then stops
+ *    delivering without saying so; this renews with a day to spare.
+ */
+export const TICKET_SWEEP_QUEUE = "tickets/sweep";
+export const TICKET_SUBSCRIPTION_QUEUE = "tickets/subscriptions";
+
 /** Every queue the worker creates at boot. pg-boss 12 requires it up front. */
 export const QUEUES = [
     {
@@ -42,6 +57,32 @@ export const QUEUES = [
         expireInSeconds: 3_600,
         deleteAfterSeconds: 30 * 86_400,
     },
+    {
+        name: TICKET_SWEEP_QUEUE,
+        /**
+         * One sweep at a time. Two would not corrupt anything — every
+         * message is claimed before it is touched — but they would spend
+         * their Graph quota racing each other to be told "already handled".
+         */
+        policy: "singleton" as const,
+        /**
+         * One retry, five minutes out. A sweep that failed is picked up by
+         * the next scheduled one anyway, and a long retry ladder would have
+         * two sweeps in flight at the cadence this runs at.
+         */
+        retryLimit: 1,
+        retryDelay: 300,
+        expireInSeconds: 600,
+        deleteAfterSeconds: 7 * 86_400,
+    },
+    {
+        name: TICKET_SUBSCRIPTION_QUEUE,
+        policy: "singleton" as const,
+        retryLimit: 2,
+        retryDelay: 600,
+        expireInSeconds: 300,
+        deleteAfterSeconds: 7 * 86_400,
+    },
 ];
 
 /**
@@ -64,3 +105,29 @@ export const BILLING_RUN_TZ = "Europe/Berlin";
  * works from dates rather than from "what happened since yesterday".
  */
 export const BILLING_RUN_MISSED = "once" as const;
+
+/**
+ * The mail sweep, every five minutes. UTC rather than Berlin on purpose:
+ * unlike the billing day, "every five minutes" means the same thing in
+ * every zone, and naming one would only make the schedule skip or repeat an
+ * interval twice a year.
+ */
+export const TICKET_SWEEP_CRON = "*/5 * * * *";
+
+/**
+ * The subscription renewal, hourly. The grant is nearly three days and the
+ * renewal happens with a day left, so hourly is twenty-four chances to get
+ * it done — which is the right ratio for something whose silent failure
+ * stops inbound mail.
+ */
+export const TICKET_SUBSCRIPTION_CRON = "0 * * * *";
+
+/**
+ * A missed sweep is **not** made up. `once` would send a job for an
+ * occurrence the next scheduled pass is about to overtake anyway; there is
+ * nothing a five-minute-old sweep can do that the one in two minutes' time
+ * will not. `skip` is pg-boss's own default and is named here so the
+ * difference from the billing run's `once` is on purpose rather than by
+ * omission.
+ */
+export const TICKET_MISSED = "skip" as const;

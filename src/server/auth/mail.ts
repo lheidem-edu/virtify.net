@@ -1,8 +1,8 @@
 import "server-only";
 import {
-    createTransport,
     logMailError,
     mailFrom,
+    mailTransport,
     renderEmail,
 } from "@/server/mail";
 import { loadSettings } from "@/server/settings";
@@ -20,7 +20,7 @@ async function send(options: {
     outro: string[];
     context: string;
 }) {
-    const transport = createTransport();
+    const transport = await mailTransport();
 
     if (!transport) {
         // Throwing keeps Better Auth from reporting success for a mail that

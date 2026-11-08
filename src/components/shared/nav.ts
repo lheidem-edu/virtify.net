@@ -18,6 +18,7 @@ export const ACCOUNT_NAV = [
         icon: "credit-card",
     },
     { href: "/client/credit", label: "Guthaben", icon: "wallet" },
+    { href: "/client/tickets", label: "Tickets", icon: "life-buoy" },
 ] as const;
 
 export const ACCOUNT_SETTINGS_NAV = [
@@ -41,6 +42,7 @@ export const ADMIN_NAV = [
         icon: "receipt-text",
     },
     { href: "/admin/payments", label: "Zahlungen", icon: "credit-card" },
+    { href: "/admin/tickets", label: "Tickets", icon: "life-buoy" },
     { href: "/admin/jobs", label: "Aufträge", icon: "timer" },
     { href: "/admin/legal", label: "Rechtstexte", icon: "scale" },
     { href: "/admin/api-keys", label: "API-Schlüssel", icon: "key" },

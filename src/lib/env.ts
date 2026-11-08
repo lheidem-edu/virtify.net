@@ -84,6 +84,11 @@ const schema = z.object({
     PAYPAL_CLIENT_SECRET: z.string().optional().default(""),
     PAYPAL_WEBHOOK_ID: z.string().optional().default(""),
     PAYPAL_VAULTING_ENABLED: boolish,
+
+    // --- Ticketing: Microsoft 365 (optional; the database row wins) ------
+    MSGRAPH_TENANT_ID: z.string().optional().default(""),
+    MSGRAPH_CLIENT_ID: z.string().optional().default(""),
+    MSGRAPH_CLIENT_SECRET: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof schema>;

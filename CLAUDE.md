@@ -30,8 +30,14 @@ The build is planned in phases: see `docs/BUILD_PLAN.md`, state in `docs/PROGRES
   in `src/server/payments/gateways`; credentials encrypted in `payment_gateway_setting`, with
   the environment as the fallback · PDF: `@react-pdf/renderer` · GiroCode: `qrcode-generator`
   (zero dependencies; writing a QR encoder by hand means Reed-Solomon and mask selection with
-  nothing to validate against, on a code that asks for money) · Mail: nodemailer/SMTP today,
-  Microsoft Graph from Phase 7
+  nothing to validate against, on a code that asks for money)
+- Mail and ticketing: one `MailTransport` interface (`src/server/mail/transport.ts`) over
+  nodemailer/SMTP and **Microsoft Graph**, picked by a setting rather than an environment
+  variable; `src/server/tickets` with a pluggable `MailChannel`, first channel Graph, over
+  `fetch` and no SDK. Graph credentials are encrypted in `mail_channel_setting`, with the
+  environment as the fallback. **There are no tenant credentials for this installation and
+  none are to be gone looking for** — see `docs/m365-setup.md` for what an administrator
+  has to do in Entra and Exchange, including restricting the app to the support mailbox
 - **Vitest** for unit/integration tests; Playwright for e2e from Phase 11
 - Formatter/linter: **Biome** (4 spaces, double quotes, trailing commas)
 - Package manager: **npm** · Local DB via `npm run db:up` (Docker) · Deploy target: Dokploy
@@ -63,7 +69,9 @@ src/
     schema/_columns.ts   # shared helpers: ulidPk(), ulidFk(), timestamps(), money()
   server/                # domain logic, NO React here
     customers/  auth/  api/  api-keys/  audit/  documents/  payments/
-    catalog/  billing/  tax/  storage/  provisioning/  tickets/  jobs/  openapi/
+    catalog/  billing/  tax/  storage/  provisioning/  jobs/  openapi/
+    mail/                # the transactional layout + MailTransport (smtp | graph)
+    tickets/             # the domain, and channels/ with the Graph implementation
   subscriptions/       # the state machine, plan changes, the guards around both
     payments/gateways/   # stripe, paypal, banktransfer — one interface, three bodies
   cart/  orders/           # the cart, and the one transaction that makes it an order
@@ -138,6 +146,35 @@ promised. A **cancellation goes through that same function**: a renewal is invoi
 its period, and that invoice is what reminds people to cancel, so a period that will not be
 delivered is taken back in the cancellation's own transaction — only the cancelled Abo's
 positions when the document groups several, and never a period that has already begun.
+
+One message, one path: `processInboundMessage()` in `src/server/tickets/inbound.ts` is the
+only way an email becomes a ticket message. The Graph notification, the five-minute delta
+reconciliation and the operator's "jetzt abholen" all end there — a second path would be a
+second answer to "has this already been filed", and the one that was wrong would be the one
+that filed it twice. It fetches the message **from the provider** first (nothing in a
+notification is trusted to say what arrived), claims it under
+`inbound_mail (mailbox, internet_message_id)`, decides whether it may become a ticket
+message at all, writes ticket and message in one transaction under the unique index on
+`ticket_message.internet_message_id`, moves it to `Processed`, and *only then* marks the
+claim handled. The key is the RFC 5322 Message-ID and not the provider's id, because the
+provider's id changes the moment the message is moved — which is the last thing we do to it.
+
+A ticket system mails back what it is mailed, into a mailbox that receives its own outbound
+copies, so **loop protection is not a nicety**: `src/server/tickets/loop.ts` refuses our own
+outbound (by the Message-ID Exchange gave the draft, read back *before* the send), anything
+from our own mailboxes, bounces, `Auto-Submitted` ≠ `no` and `X-Auto-Response-Suppress`, and
+`auto_reply_budget (recipient, window)` caps acknowledgements per sender per hour with a
+conditional update — claimed before the send and **given back** when it fails.
+
+A reply goes to the people the ticket already knows about — the requester and the contacts
+of its account — and never to whoever sent the last message. A ticket number travels on a
+subject line, so anybody who learns one can post into the conversation; replying to them
+would turn a guessable number into a way of reading somebody else's support history.
+
+A ticket's HTML is sanitised *and* rendered in `<iframe sandbox srcdoc=…>` with neither
+`allow-scripts` nor `allow-same-origin`. The frame is what actually protects the page;
+`sanitizeHtml` is the second layer, written in the knowledge that a hand-rolled sanitiser
+always has holes.
 
 A renewal is priced by `calculateQuote()` like everything else, fed the subscription item's own
 **snapshot** — a running Abo is not repriced by a catalog that has moved on. A price reaches a
@@ -259,7 +296,9 @@ npm run dev                             # web app
 npm run db:up | db:generate | db:migrate | db:reset
 npm run test | test:watch               # Vitest
 npm run lint | format | typecheck
-npm run worker                          # pg-boss + the daily billing:run; its own process
+npm run worker                          # pg-boss: the daily billing run, the five-minute
+                                        # mail sweep and the hourly Graph subscription
+                                        # renewal; its own process
 npm run openapi:generate                # writes public/openapi.json (also served live)
 npm run seed -- "Name" mail@example.net # Super Admin role + employee + 3 demo customers
 npm run staff:add -- "Name" mail@…      # the first employee, when there is none to invite from

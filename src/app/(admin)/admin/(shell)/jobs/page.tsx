@@ -98,14 +98,21 @@ export default async function Page() {
 
                     {overview.workerInstalled ? (
                         <>
-                            <p className="text-sm text-muted-foreground">
-                                Geplant: <code>{overview.expected.name}</code>{" "}
-                                um <code>{overview.expected.cron}</code> (
-                                {overview.expected.timezone}).
-                                {overview.schedules.length === 0
-                                    ? " Im Moment ist kein Zeitplan eingetragen — läuft der Worker?"
-                                    : ""}
-                            </p>
+                            <div className="space-y-1 text-sm text-muted-foreground">
+                                {overview.expected.map((entry) => (
+                                    <p key={entry.name}>
+                                        Geplant: <code>{entry.name}</code> um{" "}
+                                        <code>{entry.cron}</code> (
+                                        {entry.timezone}).
+                                    </p>
+                                ))}
+                                {overview.schedules.length === 0 ? (
+                                    <p>
+                                        Im Moment ist kein Zeitplan eingetragen
+                                        — läuft der Worker?
+                                    </p>
+                                ) : null}
+                            </div>
 
                             {overview.queues.length > 0 ? (
                                 <ul className="space-y-2 text-sm">

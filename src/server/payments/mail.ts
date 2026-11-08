@@ -1,9 +1,9 @@
 import "server-only";
 import { formatPrice } from "@/lib/format";
 import {
-    createTransport,
     logMailError,
     mailFrom,
+    mailTransport,
     renderEmail,
 } from "@/server/mail";
 import { loadSettings } from "@/server/settings";
@@ -24,7 +24,7 @@ export async function sendPaymentActionRequiredMail(input: {
     url: string;
 }): Promise<void> {
     const { operator, site } = await loadSettings();
-    const transport = createTransport();
+    const transport = await mailTransport();
 
     if (!transport) {
         console.error(

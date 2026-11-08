@@ -2,12 +2,18 @@ import "server-only";
 import { PgBoss } from "pg-boss";
 import { db } from "@/db";
 import { runBilling } from "@/server/billing/run";
+import { runSubscriptionSync, runTicketSweep } from "@/server/tickets/run";
 import {
     BILLING_RUN_CRON,
     BILLING_RUN_MISSED,
     BILLING_RUN_QUEUE,
     BILLING_RUN_TZ,
     QUEUES,
+    TICKET_MISSED,
+    TICKET_SUBSCRIPTION_CRON,
+    TICKET_SUBSCRIPTION_QUEUE,
+    TICKET_SWEEP_CRON,
+    TICKET_SWEEP_QUEUE,
 } from "./queues";
 
 /**
@@ -119,13 +125,61 @@ export async function startWorker(): Promise<Worker> {
         },
     );
 
+    /**
+     * Phase 7. Both of these do nothing at all when the mail channel is not
+     * configured — which is this installation's normal state, since there
+     * are no tenant credentials — so the worker is unchanged for anybody
+     * who never sets one up.
+     */
+    await boss.work<{ reconcile?: boolean }>(
+        TICKET_SWEEP_QUEUE,
+        { batchSize: 1 },
+        async ([job]) => {
+            const result = await runTicketSweep(db, {
+                reconcile: job.data?.reconcile,
+            });
+
+            if (!result.ran) {
+                return;
+            }
+
+            console.log(
+                `[worker] ${TICKET_SWEEP_QUEUE} ${job.id}`,
+                result.report,
+            );
+        },
+    );
+
+    await boss.work(TICKET_SUBSCRIPTION_QUEUE, { batchSize: 1 }, async () => {
+        const result = await runSubscriptionSync(db);
+
+        if (!result.ran) {
+            return;
+        }
+
+        console.log(`[worker] ${TICKET_SUBSCRIPTION_QUEUE}`, result.report);
+    });
+
     await boss.schedule(BILLING_RUN_QUEUE, BILLING_RUN_CRON, null, {
         tz: BILLING_RUN_TZ,
         missed: BILLING_RUN_MISSED,
     });
 
+    await boss.schedule(TICKET_SWEEP_QUEUE, TICKET_SWEEP_CRON, null, {
+        missed: TICKET_MISSED,
+    });
+
+    await boss.schedule(
+        TICKET_SUBSCRIPTION_QUEUE,
+        TICKET_SUBSCRIPTION_CRON,
+        null,
+        { missed: TICKET_MISSED },
+    );
+
     console.log(
-        `[worker] ready — ${BILLING_RUN_QUEUE} at "${BILLING_RUN_CRON}" ${BILLING_RUN_TZ}`,
+        `[worker] ready — ${BILLING_RUN_QUEUE} at "${BILLING_RUN_CRON}" ${BILLING_RUN_TZ}, ` +
+            `${TICKET_SWEEP_QUEUE} at "${TICKET_SWEEP_CRON}", ` +
+            `${TICKET_SUBSCRIPTION_QUEUE} at "${TICKET_SUBSCRIPTION_CRON}"`,
     );
 
     return {

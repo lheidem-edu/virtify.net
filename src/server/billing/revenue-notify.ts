@@ -3,9 +3,9 @@ import { eq, sql } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
 import { formatPrice } from "@/lib/format";
 import {
-    createTransport,
     logMailError,
     mailFrom,
+    mailTransport,
     renderEmail,
 } from "@/server/mail";
 import { loadSettings, type Settings } from "@/server/settings";
@@ -56,7 +56,7 @@ async function sendThresholdMail(
     to: string[],
     entry: ThresholdMetric & { level: 80 | 100 },
 ) {
-    const transport = createTransport();
+    const transport = await mailTransport();
 
     if (!transport || to.length === 0) {
         // No relay configured, or nobody to tell. The notice row stays
