@@ -1,6 +1,11 @@
 import { zId } from "@/lib/ulid";
 import { apiKeyAuth, registry, z } from "../registry";
-import { CursorQuerySchema, cursorPage, PROBLEM_RESPONSES } from "../schemas";
+import {
+    CursorQuerySchema,
+    cursorPage,
+    PROBLEM_RESPONSES,
+    ProblemSchema,
+} from "../schemas";
 
 /**
  * `/api/v1/tickets`. Rule 11: an endpoint that is not described here is not
@@ -427,12 +432,10 @@ registry.registerPath({
             description:
                 "Es ist kein Mail-Kanal eingerichtet, über den die Antwort " +
                 "hinausgehen könnte.",
+            // The same shape as every other error here — an empty object
+            // documented a body the route does not return.
             content: {
-                "application/problem+json": {
-                    schema: z.object({}).openapi({
-                        description: "RFC-9457-Problem.",
-                    }),
-                },
+                "application/problem+json": { schema: ProblemSchema },
             },
         },
         ...PROBLEM_RESPONSES,

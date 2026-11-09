@@ -79,6 +79,60 @@ describe("sanitizeHtml", () => {
         expect(out).toContain('target="_blank"');
     });
 
+    it("stays linear on a mail built to make it quadratic", () => {
+        /**
+         * `<a ` with no `>` after it used to make the attribute run consume
+         * to the end of the document and give it back one character at a
+         * time, once per opening. Eight hundred such openings in 800 KB took
+         * half a second, and doubling the input quadrupled it — so a few
+         * megabytes was a worker held for a minute, re-sanitising the same
+         * message every five minutes because the delta cursor now waits.
+         *
+         * The budget is deliberately loose: this passed at ~65 ms and would
+         * have taken about eight seconds before, so it is not a benchmark,
+         * it is a tripwire for the exponent coming back.
+         */
+        const payload = `<a ${"x".repeat(1000)}`.repeat(3_200);
+
+        expect(payload.length).toBeGreaterThan(3_000_000);
+
+        const started = Date.now();
+
+        sanitizeHtml(payload);
+
+        expect(Date.now() - started).toBeLessThan(2_000);
+    });
+
+    it("treats a tag with an absurd attribute run as text, not markup", () => {
+        // Past the bound it does not match, so the `<` is escaped — which is
+        // the safe direction: visible nonsense rather than invented markup.
+        const out = sanitizeHtml(`<a ${"x".repeat(9_000)}>Link</a>`);
+
+        expect(out).not.toContain("<a");
+        expect(out).toContain("&lt;a");
+    });
+
+    it("does not let a sender's own rel beat the one we append", () => {
+        /**
+         * A duplicate attribute in HTML is won by the **first** one, and the
+         * sanitiser appends its pair at the end — so a mail carrying
+         * `rel="opener"` kept it and `noopener` was the one the browser
+         * ignored. Neither arrives from the sender any more.
+         */
+        const out = sanitizeHtml(
+            '<a href="https://example.net/" rel="opener" target="_self">Link</a>',
+        );
+
+        expect(out).not.toContain('opener"');
+        expect(out).not.toContain("_self");
+
+        // Exactly one of each, and ours.
+        expect(out.match(/rel=/g)).toHaveLength(1);
+        expect(out.match(/target=/g)).toHaveLength(1);
+        expect(out).toContain('rel="noopener noreferrer nofollow"');
+        expect(out).toContain('target="_blank"');
+    });
+
     it("keeps mailto, tel and cid, which an email needs", () => {
         expect(sanitizeHtml('<a href="mailto:a@x.net">m</a>')).toContain(
             "mailto:a@x.net",

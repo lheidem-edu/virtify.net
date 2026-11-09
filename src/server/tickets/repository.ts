@@ -259,10 +259,22 @@ export async function loadTicket(
                   )
             : [];
 
+    /**
+     * Scoped like everything else. `mergeTickets` now refuses to put one
+     * customer's ticket into another's, so this should never have anything
+     * to exclude — which is exactly why it is written: the scope is what
+     * makes that a guarantee of the query rather than a fact about the only
+     * code that currently writes the column.
+     */
     const mergedIn = await db
         .select()
         .from(schema.ticket)
-        .where(eq(schema.ticket.mergedIntoTicketId, row.ticket.id))
+        .where(
+            and(
+                eq(schema.ticket.mergedIntoTicketId, row.ticket.id),
+                scopeCondition(scope),
+            ),
+        )
         .orderBy(asc(schema.ticket.number));
 
     return {

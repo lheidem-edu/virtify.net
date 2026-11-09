@@ -85,103 +85,131 @@ export async function downloadAttachments(
     const results: (DownloadedAttachment | SkippedAttachment)[] = [];
     const store = documentStorage();
 
-    for (const attachment of attachments) {
-        if (attachment.sizeBytes > options.maxBytes) {
-            results.push({
-                skipped: true,
-                filename: safeFilename(attachment.filename),
-                sizeBytes: attachment.sizeBytes,
-                reason: "too-large",
-            });
-
-            continue;
-        }
-
-        let bytes: Buffer | null;
-
-        /**
-         * **One attachment may not take the message down with it.**
-         *
-         * Graph answers `$value` with a 405 for an item attachment and for
-         * a OneDrive reference — neither of which is `gone`, so it used to
-         * come out of here as a throw, the message never became a ticket,
-         * and (since the delta cursor now waits for a message that failed)
-         * the whole mailbox would stop behind it. The message is what the
-         * customer wrote; the attachment is skipped, named and shown.
-         */
-        try {
-            bytes = await channel.downloadAttachment(
-                mailbox,
-                channelMessageId,
-                attachment.id,
-            );
-        } catch (error) {
-            console.error(
-                "[tickets] could not fetch the attachment",
-                attachment.filename,
-                "of",
-                channelMessageId,
-                error,
-            );
-
-            results.push({
-                skipped: true,
-                filename: safeFilename(attachment.filename),
-                sizeBytes: attachment.sizeBytes,
-                reason: "unreadable",
-            });
-
-            continue;
-        }
-
-        if (!bytes) {
-            results.push({
-                skipped: true,
-                filename: safeFilename(attachment.filename),
-                sizeBytes: attachment.sizeBytes,
-                reason: "gone",
-            });
-
-            continue;
-        }
-
-        // The size Graph reports includes the MIME encoding overhead, so it
-        // is checked again against what actually arrived.
-        if (bytes.byteLength > options.maxBytes) {
-            results.push({
-                skipped: true,
-                filename: safeFilename(attachment.filename),
-                sizeBytes: bytes.byteLength,
-                reason: "too-large",
-            });
-
-            continue;
-        }
-
-        const id = options.createId();
-        const filename = safeFilename(attachment.filename);
-        const key = attachmentKey(ticketId, id, filename);
-        const stored = await store.put(
-            key,
-            bytes,
-            attachment.contentType || "application/octet-stream",
+    /**
+     * Its own way back.
+     *
+     * The caller removes these bytes when the *transaction* does not commit,
+     * but a throw in here never reaches a transaction: the third attachment
+     * of five failing to store left the first two written, pointed at by
+     * nothing, and the exception went straight past the only code that knows
+     * how to clean up. So this cleans up after itself, and the caller's
+     * `removeOrphans` stays what it is — the way back from a write that was
+     * never recorded.
+     */
+    try {
+        return await collect();
+    } catch (error) {
+        await removeOrphans(
+            results
+                .filter(
+                    (entry): entry is DownloadedAttachment => !entry.skipped,
+                )
+                .map((entry) => entry.storageKey),
         );
 
-        results.push({
-            skipped: false,
-            id,
-            messageId,
-            filename,
-            contentType: attachment.contentType || "application/octet-stream",
-            sizeBytes: stored.bytes,
-            storageKey: stored.key,
-            sha256: stored.sha256,
-            contentId: attachment.contentId,
-            isInline: attachment.isInline,
-        });
+        throw error;
     }
 
-    return results;
+    async function collect() {
+        for (const attachment of attachments) {
+            if (attachment.sizeBytes > options.maxBytes) {
+                results.push({
+                    skipped: true,
+                    filename: safeFilename(attachment.filename),
+                    sizeBytes: attachment.sizeBytes,
+                    reason: "too-large",
+                });
+
+                continue;
+            }
+
+            let bytes: Buffer | null;
+
+            /**
+             * **One attachment may not take the message down with it.**
+             *
+             * Graph answers `$value` with a 405 for an item attachment and for
+             * a OneDrive reference — neither of which is `gone`, so it used to
+             * come out of here as a throw, the message never became a ticket,
+             * and (since the delta cursor now waits for a message that failed)
+             * the whole mailbox would stop behind it. The message is what the
+             * customer wrote; the attachment is skipped, named and shown.
+             */
+            try {
+                bytes = await channel.downloadAttachment(
+                    mailbox,
+                    channelMessageId,
+                    attachment.id,
+                );
+            } catch (error) {
+                console.error(
+                    "[tickets] could not fetch the attachment",
+                    attachment.filename,
+                    "of",
+                    channelMessageId,
+                    error,
+                );
+
+                results.push({
+                    skipped: true,
+                    filename: safeFilename(attachment.filename),
+                    sizeBytes: attachment.sizeBytes,
+                    reason: "unreadable",
+                });
+
+                continue;
+            }
+
+            if (!bytes) {
+                results.push({
+                    skipped: true,
+                    filename: safeFilename(attachment.filename),
+                    sizeBytes: attachment.sizeBytes,
+                    reason: "gone",
+                });
+
+                continue;
+            }
+
+            // The size Graph reports includes the MIME encoding overhead, so it
+            // is checked again against what actually arrived.
+            if (bytes.byteLength > options.maxBytes) {
+                results.push({
+                    skipped: true,
+                    filename: safeFilename(attachment.filename),
+                    sizeBytes: bytes.byteLength,
+                    reason: "too-large",
+                });
+
+                continue;
+            }
+
+            const id = options.createId();
+            const filename = safeFilename(attachment.filename);
+            const key = attachmentKey(ticketId, id, filename);
+            const stored = await store.put(
+                key,
+                bytes,
+                attachment.contentType || "application/octet-stream",
+            );
+
+            results.push({
+                skipped: false,
+                id,
+                messageId,
+                filename,
+                contentType:
+                    attachment.contentType || "application/octet-stream",
+                sizeBytes: stored.bytes,
+                storageKey: stored.key,
+                sha256: stored.sha256,
+                contentId: attachment.contentId,
+                isInline: attachment.isInline,
+            });
+        }
+
+        return results;
+    }
 }
 
 /** The way back from a write that was never recorded. */

@@ -12,11 +12,7 @@ import { mailChannel } from "@/server/tickets/channels";
 import { contactEmailFor } from "@/server/tickets/contacts";
 import { replyToTicket } from "@/server/tickets/outbound";
 import { ANY_CUSTOMER, loadTicket } from "@/server/tickets/repository";
-import {
-    addCustomerMessage,
-    TicketError,
-    updateTicket,
-} from "@/server/tickets/service";
+import { addCustomerMessage, TicketError } from "@/server/tickets/service";
 
 export const dynamic = "force-dynamic";
 
@@ -81,18 +77,12 @@ export async function POST(
                     authorEmail:
                         (await contactEmailFor(db, own)) ??
                         loaded.ticket.requesterEmail,
+                    // One transaction, so the close cannot be the half that
+                    // did not happen.
+                    closeTicket: parsed.data.close,
                 },
                 actor,
             );
-
-            if (parsed.data.close) {
-                await updateTicket(
-                    db,
-                    loaded.ticket.id,
-                    { status: "closed" },
-                    actor,
-                );
-            }
         } else {
             const channel = await mailChannel();
 

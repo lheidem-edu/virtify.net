@@ -1737,7 +1737,7 @@ one's unique indexes.
 
 Ten lenses over the phase, three independent skeptics per candidate, and every fix below
 mutation-checked by hand afterwards — a change was reverted and the suite had to go red, or
-the test was not holding anything. 823 tests became 857.
+the test was not holding anything. 823 tests became 865.
 
 **The one that would have stopped the phase working at all.** `POST …/messages/{id}/send`
 answers **202 Accepted with an empty body** — Microsoft's words — and `call()` short-circuited
@@ -1846,6 +1846,50 @@ of a freshly minted token is real.
 - The Graph subscription asked for exactly the documented ceiling of 4230 minutes, measured
   against our clock and refused against Microsoft's. Ten minutes of margin.
 
+**A second pass, after the first set of fixes was in.** The adversarial review finished with
+**54 confirmed findings over 68 candidates**, which dedupe to about two dozen distinct defects;
+the fixes above covered most of them, and these were what was left. One skeptic reproduced the
+ghost-ticket defect against a real Postgres rather than arguing about it, and found the variant
+that matters most: the cron sweep and the operator's "jetzt abholen" running at the same moment
+both get a claim, both see no existing thread, and both mint a ticket. The rollback above
+already covers it.
+
+- **A message with no Message-ID could be another one's twin.** `syntheticMessageId` hashed the
+  mailbox, the sender, the subject and the second — and the things that send mail without a
+  Message-ID are exactly the things that send the same subject from the same address twice in a
+  row: a web form submitted twice, a script firing on two checks. Those two collided, and the
+  loser was filed nowhere, moved out of the inbox and never seen. The body is in the hash now,
+  which is the one thing that tells them apart and survives the move that changes the
+  provider's id.
+- **Attachment bytes left behind by a throw that never reached a transaction.** The caller's
+  `removeOrphans` only runs when the *transaction* does not commit; the third attachment of five
+  failing to store left the first two written, pointed at by nothing. `downloadAttachments`
+  cleans up after itself now.
+- **The webhook's fast path was covered at both ends and not in the middle.** The route's
+  `clientState` check had tests and `processInboundMessage` had tests; `drainNotifications` —
+  the join between them, and the path that runs almost every time in production — was referenced
+  by no test at all. It is, in both directions: a notification carried all the way to a ticket
+  and closed, and one left pending with its error when the fetch fails.
+- **The sanitiser was quadratic**, which stopped being theoretical the moment the delta cursor
+  started waiting: `<a ` with no `>` after it made the attribute run consume to the end of the
+  document and give it back one character at a time, once per opening. Measured at 800 KB it
+  took half a second and doubling the input quadrupled it, so a few megabytes was a worker held
+  for a minute — every five minutes, for ever, on the same message. The run is bounded now and
+  3.2 MB takes 65 ms; the regression test is a tripwire for the exponent coming back and fails
+  in about eight seconds without the bound.
+- **A sender's own `rel` beat the one the sanitiser appends.** A duplicate attribute in HTML is
+  won by the *first*, and ours goes on at the end — so `rel="opener"` survived and `noopener`
+  was the one the browser ignored. Neither `rel` nor `target` arrives from the sender any more.
+- **`POST /api/v1/tickets/{id}/messages` with `close: true` was two transactions**, so the close
+  could be the half that did not happen: the caller told the ticket was closed, looking at one
+  that is not. `addCustomerMessage` takes the close and writes both together.
+- **`loadTicket`'s `mergedIn` query carried no customer scope.** With the merge guard in place
+  there is nothing for it to exclude, which is exactly why it was written — the scope is what
+  makes that a guarantee of the query rather than a fact about the only code that currently
+  writes the column.
+- The documented `503` body for that endpoint was an empty object, not the problem shape the
+  route returns (rule 11).
+
 **A test that was holding nothing.** No test asserted that `loadTicket` withholds an internal
 note from the customer — the two that mention notes both cover the *serializer*, and the portal
 page has no serializer in front of it. Removing the filter broke nothing. Two more guards had a
@@ -1878,6 +1922,15 @@ page has no serializer in front of it. Removing the filter broke nothing. Two mo
       Every ticket detail view and every unmerge filters on one of them.
 - [ ] **`skippedAttachments` is counted in the sweep report and nowhere else.** The customer
       who sent a 60 MB logfile is not told it did not arrive, and neither is the ticket.
+- [ ] **The auto-reply budget is a fixed calendar hour**, so a sender who straddles the
+      boundary gets two full allowances a minute apart. A sliding window would want a second
+      column; the cap is a backstop behind the loop checks, not the loop protection itself.
+- [ ] **Remote images in a ticket body are loaded.** Opening a ticket therefore tells the
+      sender it was opened, and from where. The frame contains the script but not the request;
+      blocking them wants a proxy or a click-to-load, which is a Phase 9 decision.
+- [ ] **The Jobs page cannot show a partially installed schedule set.** `jobsOverview()`
+      compares against an array now, but a worker that registered the billing cron and not the
+      ticket ones still reads as healthy.
 
 ## Phases 5–11
 

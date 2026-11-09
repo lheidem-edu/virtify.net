@@ -13,6 +13,8 @@ import {
     idFromResource,
     notificationSchema,
 } from "@/server/tickets/notifications";
+import { drainNotifications } from "@/server/tickets/reconcile";
+import { DEFAULT_MAIL_CHANNEL } from "@/server/tickets/settings";
 import { syncSubscriptions } from "@/server/tickets/subscriptions";
 import {
     createTestDatabase,
@@ -21,7 +23,7 @@ import {
     type TestDb,
 } from "../helpers/database";
 import { makeDepartment } from "../helpers/fixtures";
-import { fakeChannel } from "../helpers/graph";
+import { fakeChannel, inboundMessage } from "../helpers/graph";
 
 /**
  * The webhook's side of things.
@@ -326,6 +328,117 @@ describe.skipIf(!available)("graph change notifications", () => {
         );
         expect(idFromResource(null)).toBeNull();
         expect(idFromResource("Users/abc")).toBeNull();
+    });
+    it("carries a notification all the way to a ticket", async () => {
+        /**
+         * The fast path, end to end, which nothing covered: the route writes
+         * one row saying "look at this message id in this mailbox", and the
+         * worker fetches the message **from Graph itself** and files it.
+         * Both halves were tested and the join between them was not — and in
+         * production this is the path that runs almost every time.
+         */
+        const message = inboundMessage({
+            channelMessageId: "AAMk-notified",
+            from: { email: "maria@example.org", name: "Maria" },
+            subject: "Über den Webhook gekommen",
+        });
+        const channel = fakeChannel({ messages: [message] });
+
+        expect(
+            await acceptNotifications(
+                db,
+                envelope({ resourceId: message.channelMessageId }),
+            ),
+        ).toEqual({ accepted: 1, rejected: 0 });
+
+        const report = await drainNotifications(db, {
+            channel,
+            config: {
+                ...DEFAULT_MAIL_CHANNEL,
+                id: "msgraph" as const,
+                label: "Graph",
+                enabled: true,
+            },
+        });
+
+        // Other cases in this file leave rows pending, so the drain picks
+        // those up too; what is asserted is what happened to this one.
+        expect(report.notifications.failed).toBe(0);
+        expect(report.results["filed:new"]).toBe(1);
+
+        // The ticket is really there, with the message in it.
+        const [row] = await db
+            .select()
+            .from(schema.ticketMessage)
+            .where(
+                eq(
+                    schema.ticketMessage.internetMessageId,
+                    message.internetMessageId ?? "",
+                ),
+            );
+
+        expect(row).toBeDefined();
+        expect(row.subject).toBe("Über den Webhook gekommen");
+
+        // The notification is closed, and only by a drain that got that far.
+        const [notification] = await db
+            .select()
+            .from(schema.mailNotification)
+            .where(
+                eq(
+                    schema.mailNotification.resourceId,
+                    message.channelMessageId,
+                ),
+            );
+
+        expect(notification.handledAt).not.toBeNull();
+
+        // And a second drain finds nothing left to do.
+        const again = await drainNotifications(db, {
+            channel,
+            config: {
+                ...DEFAULT_MAIL_CHANNEL,
+                id: "msgraph" as const,
+                label: "Graph",
+                enabled: true,
+            },
+        });
+
+        expect(again.results["filed:new"]).toBeUndefined();
+    });
+
+    it("leaves a notification pending when the fetch fails", async () => {
+        /**
+         * The row stays pending on purpose: a notification that failed is
+         * work that has not happened, and marking it handled would be a
+         * failure that reads as a success.
+         */
+        const channel = fakeChannel({
+            failOn: { "AAMk-broken": new Error("Graph said 500") },
+        });
+
+        await acceptNotifications(db, envelope({ resourceId: "AAMk-broken" }));
+
+        const report = await drainNotifications(db, {
+            channel,
+            config: {
+                ...DEFAULT_MAIL_CHANNEL,
+                id: "msgraph" as const,
+                label: "Graph",
+                enabled: true,
+            },
+        });
+
+        expect(report.notifications.failed).toBeGreaterThanOrEqual(1);
+
+        const [row] = await db
+            .select()
+            .from(schema.mailNotification)
+            .where(eq(schema.mailNotification.resourceId, "AAMk-broken"));
+
+        expect(row.handledAt).toBeNull();
+        expect(row.attempts).toBeGreaterThan(0);
+        expect(row.lastError).toContain("Graph said 500");
     });
 });
 

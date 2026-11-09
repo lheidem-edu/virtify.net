@@ -156,6 +156,14 @@ export async function addCustomerMessage(
         authorEmail: string;
         authorName?: string | null;
         contactId?: string | null;
+        /**
+         * Closes the ticket as the message is written, in the *same*
+         * transaction. `POST /api/v1/tickets/{id}/messages` with
+         * `close: true` used to be two of them, so a failure between the two
+         * left the message written and the ticket open — a customer told
+         * their ticket was closed, looking at one that is not.
+         */
+        closeTicket?: boolean;
     },
     actor: Actor,
 ): Promise<string> {
@@ -202,8 +210,12 @@ export async function addCustomerMessage(
         await tx
             .update(schema.ticket)
             .set({
-                status: ticket.status === "on_hold" ? ticket.status : "open",
-                closedAt: null,
+                status: input.closeTicket
+                    ? "closed"
+                    : ticket.status === "on_hold"
+                      ? ticket.status
+                      : "open",
+                closedAt: input.closeTicket ? new Date() : null,
                 lastMessageAt: new Date(),
                 updatedAt: new Date(),
             })
@@ -214,7 +226,11 @@ export async function addCustomerMessage(
             action: "ticket.message",
             entityType: "ticket",
             entityId: ticket.id,
-            after: { source: "portal", direction: "inbound" },
+            after: {
+                source: "portal",
+                direction: "inbound",
+                closed: Boolean(input.closeTicket),
+            },
         });
 
         return message.id;

@@ -115,6 +115,9 @@ export async function processInboundMessage(
             from: message.from?.email ?? null,
             subject: message.subject,
             receivedAt: message.receivedAt,
+            // Stable across the move that changes the provider's id, and the
+            // only thing that tells two same-second submissions apart.
+            body: message.bodyHtml ?? message.bodyText,
         });
 
     const claim = await claimInboundMail(db, {

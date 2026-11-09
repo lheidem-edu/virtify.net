@@ -415,9 +415,20 @@ export function sanitizeHtml(input: string | null | undefined): string {
      * there is not generosity, it is a bug: a browser reads `a < b und c > d`
      * as text, and a sanitiser that reads it as `<b>` has invented markup
      * the sender never wrote — and worse, has stopped escaping the `<`.
+     *
+     * The attribute run is **bounded**, and that is not cosmetic. Unbounded,
+     * every `<a ` with no `>` after it makes the star consume to the end of
+     * the document and give it all back one character at a time, once per
+     * opening — which is quadratic, and measurably so: eight hundred such
+     * openings in 800 KB took half a second, and doubling the input
+     * quadrupled it. A few megabytes of that is a worker held for a minute,
+     * and since the delta cursor now waits for a message that failed, it is
+     * a worker held for a minute every five minutes for ever. No real tag
+     * carries eight thousand characters of attributes; one that does fails
+     * to match and its `<` is escaped as text, which is the safe direction.
      */
     const pattern =
-        /<(\/?)([a-zA-Z][a-zA-Z0-9]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+        /<(\/?)([a-zA-Z][a-zA-Z0-9]*)((?:[^>"']|"[^"]*"|'[^']*'){0,8192})>/g;
     let cursor = 0;
 
     for (const match of html.matchAll(pattern)) {

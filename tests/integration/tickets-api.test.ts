@@ -539,6 +539,48 @@ describe.skipIf(!available)("/api/v1/tickets", () => {
         expect(added?.internetMessageId).toBeNull();
     });
 
+    it("closes the ticket in the same breath as the message", async () => {
+        /**
+         * `close: true` used to be a second transaction after the message,
+         * so a failure between the two left the message written and the
+         * ticket open — the caller told it was closed, looking at one that
+         * is not. One transaction now, and the audit row says so.
+         */
+        const response = await reply(
+            bearer(customerToken, "https://virtify.test/api/v1/tickets/x", {
+                message: "Hat sich erledigt, danke!",
+                close: true,
+            }),
+            params(ticketId),
+        );
+
+        expect(response.status).toBe(201);
+
+        const [ticket] = await db
+            .select()
+            .from(schema.ticket)
+            .where(eq(schema.ticket.id, ticketId));
+
+        expect(ticket.status).toBe("closed");
+        expect(ticket.closedAt).not.toBeNull();
+
+        // The message is there too, so this is not a close with nothing said.
+        const rows = await db
+            .select()
+            .from(schema.ticketMessage)
+            .where(eq(schema.ticketMessage.ticketId, ticketId));
+
+        expect(
+            rows.some((row) => row.displayText.includes("Hat sich erledigt")),
+        ).toBe(true);
+
+        // Reopen it, so the cases after this one see the ticket they expect.
+        await db
+            .update(schema.ticket)
+            .set({ status: "open", closedAt: null })
+            .where(eq(schema.ticket.id, ticketId));
+    });
+
     it("answers 404 when a customer key replies to somebody else's ticket", async () => {
         const response = await reply(
             bearer(

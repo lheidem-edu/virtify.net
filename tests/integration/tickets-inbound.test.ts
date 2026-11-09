@@ -1,10 +1,14 @@
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createId } from "@/lib/ulid";
-import { localStorage, setDocumentStorage } from "@/server/storage";
+import {
+    documentStorage,
+    localStorage,
+    setDocumentStorage,
+} from "@/server/storage";
 import { deleteAttachment, readAttachment } from "@/server/tickets/attachments";
 import {
     claimAutoReply,
@@ -1246,6 +1250,95 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
         });
     });
 
+    it("leaves no bytes behind when storing an attachment fails part-way", async () => {
+        /**
+         * A throw in here never reaches a transaction, so the caller's
+         * `removeOrphans` never runs: the first attachment was written,
+         * pointed at by nothing, and the exception went straight past the
+         * only code that knows how to clean up.
+         */
+        const { email } = await nextCustomer();
+        const message = inboundMessage({
+            from: { email },
+            subject: "Zwei Anhänge",
+            hasAttachments: true,
+            attachments: [
+                {
+                    id: "att-ok",
+                    filename: "erste.txt",
+                    contentType: "text/plain",
+                    sizeBytes: 5,
+                    isInline: false,
+                    contentId: null,
+                },
+                {
+                    id: "att-unstorable",
+                    filename: "zweite.txt",
+                    contentType: "text/plain",
+                    sizeBytes: 5,
+                    isInline: false,
+                    contentId: null,
+                },
+            ],
+        });
+
+        const channel = fakeChannel({
+            messages: [message],
+            attachments: {
+                "att-ok": Buffer.from("eins"),
+                "att-unstorable": Buffer.from("zwei"),
+            },
+        });
+
+        // Files, not directories: `removeOrphans` takes the bytes away and
+        // may leave the ticket's empty folder, which costs nothing.
+        const files = async () =>
+            (
+                await readdir(path.join(storageRoot, "tickets"), {
+                    recursive: true,
+                    withFileTypes: true,
+                }).catch(() => [])
+            )
+                .filter((entry) => entry.isFile())
+                .map((entry) => entry.name)
+                .sort();
+
+        const before = await files();
+
+        // The store refuses the second one, after the first is on disk.
+        const real = documentStorage();
+        let puts = 0;
+
+        setDocumentStorage({
+            ...real,
+            put: async (...args: Parameters<typeof real.put>) => {
+                puts += 1;
+
+                if (puts === 2) {
+                    throw new Error("the disk said no");
+                }
+
+                return real.put(...args);
+            },
+        });
+
+        try {
+            await expect(
+                processInboundMessage(
+                    db,
+                    options(channel, message.channelMessageId),
+                ),
+            ).rejects.toThrow(/the disk said no/);
+        } finally {
+            setDocumentStorage(localStorage(storageRoot));
+        }
+
+        // Both attachments were attempted, and nothing is left on disk.
+        expect(puts).toBe(2);
+
+        expect(await files()).toEqual(before);
+    });
+
     it("files the message when an attachment cannot be fetched at all", async () => {
         /**
          * Graph answers `$value` with 405 for an item attachment and for a
@@ -1445,6 +1538,7 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
             from: email,
             subject: message.subject,
             receivedAt: message.receivedAt,
+            body: message.bodyHtml ?? message.bodyText,
         });
 
         const [row] = await db
@@ -1461,6 +1555,69 @@ describe.skipIf(!available)("inbound mail becomes a ticket", () => {
                 options(channel, `${message.channelMessageId}-moved`),
             ),
         ).toMatchObject({ kind: "duplicate" });
+    });
+
+    it("tells two Message-ID-less messages of the same second apart", async () => {
+        /**
+         * Graph reports `receivedDateTime` to the second, and the things
+         * that send mail without a Message-ID are exactly the things that
+         * send the same subject from the same address twice in a row — a web
+         * form submitted twice, a script firing on two checks. On mailbox,
+         * sender, subject and second alone those two are one message, and the
+         * second one is filed nowhere, moved out of the inbox and never seen.
+         */
+        const { email } = await nextCustomer();
+        const shared = {
+            from: { email },
+            internetMessageId: null,
+            subject: "Kontaktformular",
+            receivedAt: new Date("2026-11-08T11:00:00.000Z"),
+        };
+
+        const one = inboundMessage({
+            ...shared,
+            channelMessageId: "AAMk-form-1",
+            bodyHtml: "<div>Bitte rufen Sie mich an.</div>",
+        });
+        const two = inboundMessage({
+            ...shared,
+            channelMessageId: "AAMk-form-2",
+            bodyHtml: "<div>Und meine Rechnung stimmt auch nicht.</div>",
+        });
+
+        const channel = fakeChannel({ messages: [one, two] });
+
+        const first = await processInboundMessage(
+            db,
+            options(channel, one.channelMessageId),
+        );
+        const second = await processInboundMessage(
+            db,
+            options(channel, two.channelMessageId),
+        );
+
+        if (first.kind !== "filed" || second.kind !== "filed") {
+            throw new Error(
+                `the two submissions were ${first.kind} and ${second.kind}`,
+            );
+        }
+
+        // Both are in the database, and both say what their sender wrote.
+        const rows = await db
+            .select({ text: schema.ticketMessage.displayText })
+            .from(schema.ticketMessage)
+            .where(
+                inArray(schema.ticketMessage.id, [
+                    first.ticketMessageId,
+                    second.ticketMessageId,
+                ]),
+            );
+
+        expect(rows).toHaveLength(2);
+        expect(rows.map((row) => row.text).sort()).toEqual([
+            "Bitte rufen Sie mich an.",
+            "Und meine Rechnung stimmt auch nicht.",
+        ]);
     });
 
     it("reprocesses a message whose claim an operator reopened", async () => {

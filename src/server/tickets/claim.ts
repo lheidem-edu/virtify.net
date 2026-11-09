@@ -37,14 +37,24 @@ type Db = Pick<typeof defaultDb, "insert" | "update" | "select" | "delete">;
  *
  * Rare but real — some scanners and web forms omit it. The provider's id
  * cannot stand in, because it changes on a move, so the identity is derived
- * from what does not: the mailbox, the sender, the subject and the instant
- * it was received.
+ * from what does not: the mailbox, the sender, the subject, the instant it
+ * was received **and the body**.
+ *
+ * The body is in there because the rest of it is not enough to tell two
+ * messages apart. Graph reports `receivedDateTime` to the second, and the
+ * things that send mail without a Message-ID are exactly the things that
+ * send the same subject from the same address twice in a row — a web form
+ * submitted twice, a monitoring script firing on two checks. Without the
+ * body those two collide, and the second one is filed nowhere, moved out of
+ * the inbox and never seen: the loser of a collision here is a customer's
+ * message that silently does not exist.
  */
 export function syntheticMessageId(input: {
     mailbox: string;
     from: string | null;
     subject: string;
     receivedAt: Date;
+    body?: string | null;
 }): string {
     const digest = createHash("sha256")
         .update(
@@ -53,6 +63,7 @@ export function syntheticMessageId(input: {
                 (input.from ?? "").toLowerCase(),
                 input.subject,
                 input.receivedAt.toISOString(),
+                input.body ?? "",
             ].join("\u0000"),
         )
         .digest("hex")

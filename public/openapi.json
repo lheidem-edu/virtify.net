@@ -7725,9 +7725,7 @@
                         "content": {
                             "application/problem+json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {},
-                                    "description": "RFC-9457-Problem."
+                                    "$ref": "#/components/schemas/Problem"
                                 }
                             }
                         }
