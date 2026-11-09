@@ -99,6 +99,10 @@ export async function makeProduct(
         type?: "vps" | "subscription";
         maxQuantity?: number;
         renewalLeadDays?: number | null;
+        /** Phase 8: which provisioning module, and how it is configured. */
+        module?: string;
+        moduleConfig?: Record<string, unknown>;
+        provisioningMode?: "manual" | "auto_on_payment";
     },
 ): Promise<string> {
     const [row] = await db
@@ -111,6 +115,9 @@ export async function makeProduct(
             status: "active",
             maxQuantity: input.maxQuantity ?? 5,
             renewalLeadDays: input.renewalLeadDays ?? null,
+            module: input.module ?? "none",
+            moduleConfig: input.moduleConfig ?? {},
+            provisioningMode: input.provisioningMode ?? "manual",
         })
         .returning();
 
@@ -275,3 +282,152 @@ export async function contactEmail(
 
     return row.email;
 }
+
+/**
+ * A Proxmox server row, with a token that really decrypts.
+ *
+ * There is no cluster behind it: every test hands the runner a
+ * `fetchImpl` from `tests/helpers/proxmox.ts` instead. What this fixture
+ * proves on the way is that the credential round-trip works at all — the
+ * token is encrypted with the row's own context string and read back by
+ * `serverCredentials`.
+ */
+export async function makeProxmoxServer(
+    db: TestDb,
+    over: Partial<{
+        name: string;
+        enabled: boolean;
+        maxServices: number | null;
+        config: Record<string, unknown>;
+        withToken: boolean;
+    }> = {},
+): Promise<string> {
+    const { createServer } = await import("@/server/provisioning/servers");
+
+    const row = await createServer(
+        db as never,
+        {
+            module: "proxmox",
+            name: over.name ?? "pve-test",
+            enabled: over.enabled ?? true,
+            maxServices: over.maxServices ?? null,
+            config: {
+                apiUrl: "https://pve.example.net:8006",
+                templateVmid: "9000",
+                templateNode: "pve1",
+                bridge: "vmbr0",
+                diskBus: "scsi0",
+                ...(over.config ?? {}),
+            },
+            credentials:
+                over.withToken === false
+                    ? null
+                    : {
+                          tokenId: "panel@pve!billing",
+                          tokenSecret: "a-uuid-looking-secret",
+                      },
+        },
+        ACTOR,
+    );
+
+    return row.id;
+}
+
+/** An IP pool with `count` free addresses in it. */
+export async function makeIpPool(
+    db: TestDb,
+    input: {
+        serverId?: string | null;
+        family?: "ipv4" | "ipv6";
+        count?: number;
+        first?: number;
+        gateway?: string | null;
+    } = {},
+): Promise<string> {
+    const { addAddresses, createPool } = await import(
+        "@/server/provisioning/ip-pools"
+    );
+    const family = input.family ?? "ipv4";
+
+    const pool = await createPool(
+        db as never,
+        {
+            serverId: input.serverId ?? null,
+            name: `${family} test`,
+            family,
+            prefixLength: family === "ipv4" ? 24 : 64,
+            gateway:
+                input.gateway === undefined
+                    ? family === "ipv4"
+                        ? "192.0.2.1"
+                        : "2001:db8::1"
+                    : input.gateway,
+            nameservers: ["9.9.9.9"],
+        },
+        ACTOR,
+    );
+
+    /**
+     * `first` is a flat offset, not an octet: a suite that makes a pool per
+     * scenario runs out of `192.0.2.x` after thirty of them, and the
+     * validator is right to refuse `192.0.2.300`.
+     */
+    const first = input.first ?? 10;
+    const addresses = Array.from({ length: input.count ?? 4 }, (_, index) => {
+        const offset = first + index;
+
+        return family === "ipv4"
+            ? `192.${Math.floor(offset / 62_500) % 250}.${
+                  Math.floor(offset / 250) % 250
+              }.${(offset % 250) + 1}`
+            : `2001:db8::${offset.toString(16)}`;
+    });
+
+    await addAddresses(db as never, pool.id, addresses, ACTOR);
+
+    return pool.id;
+}
+
+/** Every address currently held by a service. */
+export async function addressesOf(db: TestDb, serviceId: string) {
+    return db
+        .select()
+        .from(schema.ipAddress)
+        .where(eq(schema.ipAddress.serviceId, serviceId));
+}
+
+export async function tasksOf(db: TestDb, serviceId: string) {
+    return db
+        .select()
+        .from(schema.provisioningTask)
+        .where(eq(schema.provisioningTask.serviceId, serviceId));
+}
+
+export async function resourceOf(db: TestDb, serviceId: string) {
+    const [row] = await db
+        .select()
+        .from(schema.provisioningResource)
+        .where(eq(schema.provisioningResource.serviceId, serviceId));
+
+    return row ?? null;
+}
+
+export async function serviceOf(db: TestDb, id: string) {
+    const [row] = await db
+        .select()
+        .from(schema.service)
+        .where(eq(schema.service.id, id));
+
+    return row;
+}
+
+/** The product configuration a VPS test wants: one core, one address. */
+export const PROXMOX_CONFIG = {
+    cores: 2,
+    memoryMiB: 2048,
+    diskGiB: 40,
+    ipv4Count: 1,
+    ipv6Count: 0,
+    osUser: "root",
+    hostnamePattern: "{label}-{id}",
+};

@@ -174,6 +174,10 @@ export type BillingRunReport = {
     subscriptionsEnded: number;
     couponsExpired: number;
     reactivated: number;
+    /** Phase 8: services queued for setup, and module calls run. */
+    provisioningQueued: number;
+    provisioningRan: number;
+    provisioningFailed: number;
     failures: StepFailure[];
 };
 
@@ -194,6 +198,9 @@ function emptyReport(day: string): BillingRunReport {
         subscriptionsEnded: 0,
         couponsExpired: 0,
         reactivated: 0,
+        provisioningQueued: 0,
+        provisioningRan: 0,
+        provisioningFailed: 0,
         failures: [],
     };
 }
@@ -370,6 +377,7 @@ export async function runBilling(
         await closePeriodEndCancellations(db, context, report);
         await expireCoupons(db, context, report);
         await reactivateSettled(db, context, report);
+        await queueProvisioning(db, context, report);
 
         await db
             .update(schema.billingRun)
@@ -415,13 +423,17 @@ function scopedTo(context: BillingRunContext, column: AnyPgColumn) {
 function note(
     report: BillingRunReport,
     step: string,
-    entityId: string,
+    /** Null for a step that is about the whole pass rather than one row. */
+    entityId: string | null,
     error: unknown,
 ) {
     const message = error instanceof Error ? error.message : String(error);
 
-    console.error(`[billing:run] ${step} failed for ${entityId}:`, error);
-    report.failures.push({ step, entityId, message });
+    console.error(
+        `[billing:run] ${step} failed${entityId ? ` for ${entityId}` : ""}:`,
+        error,
+    );
+    report.failures.push({ step, entityId: entityId ?? "—", message });
 }
 
 /** The address a notice goes to: the account's owner contact. */
@@ -1811,12 +1823,22 @@ async function actOnDunningRung(
                     level: input.level,
                 });
 
-                servicesSuspended += await applyServiceFollow(
-                    tx,
-                    row.id,
-                    "suspended",
-                    now,
-                );
+                /**
+                 * Phase 8's cause, and it is unique by construction:
+                 * `markOverdue` above claimed `dunning_action (invoice_id,
+                 * 'suspend')`, which exists once for ever per invoice, so
+                 * this rung cannot fire twice for the same document. The
+                 * suspend task the module runs is keyed on it.
+                 */
+                servicesSuspended += (
+                    await applyServiceFollow(
+                        tx,
+                        row.id,
+                        "suspended",
+                        now,
+                        `dunning:${invoice.id}:suspend`,
+                    )
+                ).length;
 
                 await recordEvent(tx, {
                     subscriptionId: row.id,
@@ -2220,5 +2242,63 @@ export async function reactivateSettled(
         } catch (error) {
             note(report, "reactivate", candidate.id, error);
         }
+    }
+}
+
+/**
+ * Phase 8, step nine: the machines catch up with the billing.
+ *
+ * Two things, in order, and both deliberately *after* everything that could
+ * have changed a service's status in this pass — a trial that started, an
+ * invoice that was collected, a suspension rung, an Abo that ended. Running
+ * them first would queue against yesterday's picture.
+ *
+ *  1. **Every service that is waiting to be set up and may be.** This is the
+ *     backstop for `emitInvoicePaid`, which queues the same request the
+ *     moment money arrives; both end in `enqueueCreate` under the key
+ *     `"create"`, so a service that both of them see is set up once.
+ *  2. **Drain the queue.** The worker's own `provisioning/run` pass does
+ *     this every minute and is the normal route; doing it here too is what
+ *     makes „jetzt abrechnen“ in the admin area a complete pass rather than
+ *     one that queues work the operator then has to wait a minute for.
+ *
+ * A failure inside a module call is **not** a failure of this step. The task
+ * row carries its own error, its own attempt count and its own backoff, and
+ * a pass that threw because somebody's hypervisor was rebooting would be
+ * retried as a whole — re-reading every subscription in the installation to
+ * find out that every other step was already done.
+ */
+async function queueProvisioning(
+    db: Db,
+    context: BillingRunContext,
+    report: BillingRunReport,
+): Promise<void> {
+    try {
+        const { sweepPendingCreates } = await import(
+            "@/server/provisioning/hooks"
+        );
+
+        const queued = await sweepPendingCreates(db, {
+            requestedBy: "billing:run",
+        });
+
+        report.provisioningQueued += queued.enqueued;
+    } catch (error) {
+        note(report, "provisioning-queue", null, error);
+    }
+
+    try {
+        const { runProvisioningSweep } = await import(
+            "@/server/provisioning/runner"
+        );
+
+        const swept = await runProvisioningSweep(db, {
+            actor: context.actor,
+        });
+
+        report.provisioningRan += swept.ran;
+        report.provisioningFailed += swept.failed;
+    } catch (error) {
+        note(report, "provisioning-run", null, error);
     }
 }

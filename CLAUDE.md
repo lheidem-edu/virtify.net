@@ -31,6 +31,12 @@ The build is planned in phases: see `docs/BUILD_PLAN.md`, state in `docs/PROGRES
   the environment as the fallback · PDF: `@react-pdf/renderer` · GiroCode: `qrcode-generator`
   (zero dependencies; writing a QR encoder by hand means Reed-Solomon and mask selection with
   nothing to validate against, on a code that asks for money)
+- Provisioning: one `ProvisioningModule` interface (`src/server/provisioning/types.ts`),
+  first module **Proxmox VE** over an API token, `fetch` and no SDK. Server credentials
+  encrypted in `provisioning_server` (rule 6). **There is no Proxmox cluster for this
+  installation and none is to be gone looking for** — see `docs/proxmox-setup.md` for what
+  an administrator has to do in the cluster, including why the restricted token it asks for
+  is also the reason suspension does not rely on `lock`
 - Mail and ticketing: one `MailTransport` interface (`src/server/mail/transport.ts`) over
   nodemailer/SMTP and **Microsoft Graph**, picked by a setting rather than an environment
   variable; `src/server/tickets` with a pluggable `MailChannel`, first channel Graph, over
@@ -69,7 +75,9 @@ src/
     schema/_columns.ts   # shared helpers: ulidPk(), ulidFk(), timestamps(), money()
   server/                # domain logic, NO React here
     customers/  auth/  api/  api-keys/  audit/  documents/  payments/
-    catalog/  billing/  tax/  storage/  provisioning/  jobs/  openapi/
+    catalog/  billing/  tax/  storage/  jobs/  openapi/
+    provisioning/        # the registry, the task runner, the IP pools
+    provisioning/proxmox/ # the first real module: api, nodes, cloud-init, sanitize
     mail/                # the transactional layout + MailTransport (smtp | graph)
     tickets/             # the domain, and channels/ with the Graph implementation
   subscriptions/       # the state machine, plan changes, the guards around both
@@ -208,6 +216,45 @@ A ticket's HTML is sanitised *and* rendered in `<iframe sandbox srcdoc=…>` wit
 `sanitizeHtml` is the second layer, written in the knowledge that a hand-rolled sanitiser
 always has holes.
 
+One module call, one function: `runProvisioningTask()` in
+`src/server/provisioning/runner.ts` is the only place anything in this codebase touches a
+real machine. The worker's minute-by-minute sweep, the operator's „jetzt ausführen“, a
+customer pressing „Neustart“ and `POST /api/v1/services/{id}/actions/{action}` all end
+there — a second path would be a second answer to "may this customer reboot this server",
+and the one that was wrong would be the one somebody found. It is also where **giving
+things back** lives, in exactly two places: a successful `terminate` releases the addresses
+and the reserved provider id, and an attempt that aborted before the provider was ever
+asked releases exactly what *that attempt* took. Nothing else in the codebase releases
+anything.
+
+**A retry must not make a second VM, and only the provider's own id can say whether it
+would.** So the VMID is *ours*: `GET /cluster/nextid` is asked once, written to
+`provisioning_resource (server_id, kind, external_id)` **before** the clone, and the clone
+is asked for with `newid=` that value. A retry then asks the cluster whether VM 101 exists
+and either finds it — already done, success — or clones again under the same id, where
+Proxmox's own `500 VM 101 already exists` is read as the same success. `provisioning_task
+(service_id, action, request_key)` is the *work queue* and the "a retry is not a second
+request" guard, and it is deliberately not the thing that makes a create safe; every
+caller's request key is written out in `src/server/provisioning/tasks.ts`. The attempt
+ladder is **per action**, because a uniform one is how a reboot reboots twice and a
+reinstall destroys a customer's data twice.
+
+**`service.status` is the billing record's word and it always wins.** `getStatus` writes
+`service.provider_status`, a different column that nothing acts on, and a disagreement is
+*shown* („läuft nicht, obwohl die Leistung aktiv ist“) rather than resolved. Writing a
+reading back is how a VM an operator stopped by hand becomes `suspended`, gets woken by the
+mirror in `wakeSettledIn` because its Abo owes nothing, and is stopped again by the next
+sync: a machine flapping between two systems that each believe the other. The hooks fire on
+the rows `applyServiceFollow` actually **moved**, never on the statuses they now have, which
+is what keeps the same follow written twice from asking twice. And **no action runs on a
+service that is not `active`** — without that, the whole dunning ladder is one button away
+from being undone.
+
+Anything from a customer's order form that reaches a cloud-init payload, a hostname or a
+Proxmox parameter is attacker-controlled input. `src/server/provisioning/proxmox/sanitize.ts`
+is the gate in front of it and `URLSearchParams` in `proxmox/api.ts` is the encoding — in
+that order, because the only escaping worth relying on is "the value was never dangerous".
+
 A renewal is priced by `calculateQuote()` like everything else, fed the subscription item's own
 **snapshot** — a running Abo is not repriced by a catalog that has moved on. A price reaches a
 customer by way of a plan change they agreed to, and by no other route.
@@ -329,8 +376,9 @@ npm run db:up | db:generate | db:migrate | db:reset
 npm run test | test:watch               # Vitest
 npm run lint | format | typecheck
 npm run worker                          # pg-boss: the daily billing run, the five-minute
-                                        # mail sweep and the hourly Graph subscription
-                                        # renewal; its own process
+                                        # mail sweep, the hourly Graph subscription
+                                        # renewal and the minute-by-minute provisioning
+                                        # sweep; its own process
 npm run openapi:generate                # writes public/openapi.json (also served live)
 npm run seed -- "Name" mail@example.net # Super Admin role + employee + 3 demo customers
 npm run staff:add -- "Name" mail@…      # the first employee, when there is none to invite from

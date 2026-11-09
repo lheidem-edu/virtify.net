@@ -9,6 +9,7 @@ import "./health";
 import "./invoices";
 import "./orders";
 import "./products";
+import "./services";
 import "./subscriptions";
 import "./tickets";
 import "./transactions";

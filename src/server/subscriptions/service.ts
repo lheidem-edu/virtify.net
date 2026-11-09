@@ -76,6 +76,8 @@ export async function lockSubscription(tx: Tx, id: string) {
 export async function recordEvent(
     tx: Tx,
     input: {
+        /** Minted by the caller where it is also a request key (Phase 8). */
+        id?: string;
         subscriptionId: string;
         kind: "status" | "period" | "change" | "dunning" | "note";
         summary: string;
@@ -87,7 +89,7 @@ export async function recordEvent(
     },
 ) {
     await tx.insert(schema.subscriptionEvent).values({
-        id: createId("subscriptionevent"),
+        id: input.id ?? createId("subscriptionevent"),
         subscriptionId: input.subscriptionId,
         kind: input.kind,
         fromStatus: input.fromStatus ?? null,
@@ -117,9 +119,21 @@ export async function applyServiceFollow(
     subscriptionId: string,
     follow: ServiceFollow,
     at: Date,
-): Promise<number> {
+    /**
+     * Phase 8. The id of the status change that caused this — the
+     * subscription event, the dunning action — which becomes the request key
+     * of the module call that follows. It has to be **unique per
+     * occurrence**: an Abo suspended twice over a year is two causes and two
+     * suspensions, while the same transition reached twice in one
+     * transaction is one cause and one.
+     *
+     * Omitted means "move the rows and tell nobody", which is right for the
+     * places that are not a lifecycle event at all.
+     */
+    cause?: string | null,
+): Promise<string[]> {
     if (follow === null) {
-        return 0;
+        return [];
     }
 
     const items = await tx
@@ -128,7 +142,7 @@ export async function applyServiceFollow(
         .where(eq(schema.subscriptionItem.subscriptionId, subscriptionId));
 
     if (items.length === 0) {
-        return 0;
+        return [];
     }
 
     const ids = items.map((item) => item.id);
@@ -157,7 +171,29 @@ export async function applyServiceFollow(
         )
         .returning({ id: schema.service.id });
 
-    return updated.length;
+    const moved = updated.map((row) => row.id);
+
+    /**
+     * **The loop-breaker.** The update above moves only services whose
+     * status is in the set it is moving *from*, so writing the same follow
+     * twice moves zero rows — and the module calls are enqueued off the rows
+     * that actually moved, never off the statuses they now have. A hook that
+     * fired on the value rather than on the change would re-suspend an
+     * already suspended machine for as long as anything kept asking.
+     */
+    if (cause && moved.length > 0) {
+        const { onServicesFollowed } = await import(
+            "@/server/provisioning/hooks"
+        );
+
+        await onServicesFollowed(tx, {
+            serviceIds: moved,
+            follow,
+            cause,
+        });
+    }
+
+    return moved;
 }
 
 /**
@@ -404,14 +440,20 @@ export async function transitionSubscriptionIn(
         }
     }
 
-    const servicesMoved = await applyServiceFollow(
-        tx,
-        input.subscriptionId,
-        follow,
-        at,
-    );
+    /**
+     * The event id is minted here rather than inside `recordEvent`, because
+     * it is also the **cause** the module call is keyed on: one status
+     * change is one suspension, and the timeline entry and the Proxmox task
+     * then name each other.
+     */
+    const eventId = createId("subscriptionevent");
+
+    const servicesMoved = (
+        await applyServiceFollow(tx, input.subscriptionId, follow, at, eventId)
+    ).length;
 
     await recordEvent(tx, {
+        id: eventId,
         subscriptionId: input.subscriptionId,
         kind: "status",
         summary: input.summary,
@@ -875,18 +917,25 @@ export async function wakeSettledIn(
         return { woken: false, servicesWoken: 0 };
     }
 
-    const servicesWoken = await applyServiceFollow(
-        tx,
-        row.id,
-        "active",
-        input.at,
-    );
+    /**
+     * The cause here is the wake itself: a service woken because the money
+     * arrived is one occurrence, and a second settlement against the same
+     * subscription — a half payment followed by the rest — moves no rows the
+     * second time and so asks for nothing. The id is the event recorded
+     * below.
+     */
+    const wakeEventId = createId("subscriptionevent");
+
+    const servicesWoken = (
+        await applyServiceFollow(tx, row.id, "active", input.at, wakeEventId)
+    ).length;
 
     if (servicesWoken === 0) {
         return { woken: false, servicesWoken: 0 };
     }
 
     await recordEvent(tx, {
+        id: wakeEventId,
         subscriptionId: row.id,
         kind: "dunning",
         summary: `${input.reason} — Leistungen wieder freigeschaltet.`,

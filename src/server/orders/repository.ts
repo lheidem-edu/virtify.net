@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gt, ilike, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
 import { db, type db as defaultDb, schema } from "@/db";
 import type {
     Order,
@@ -326,7 +326,7 @@ export async function decideOrder(
                 );
 
             if (items.length > 0) {
-                await tx
+                const retired = await tx
                     .update(schema.service)
                     .set({
                         status: "terminated",
@@ -334,11 +334,39 @@ export async function decideOrder(
                         updatedAt: at,
                     })
                     .where(
-                        inArray(
-                            schema.service.subscriptionItemId,
-                            items.map((item) => item.id),
+                        and(
+                            inArray(
+                                schema.service.subscriptionItemId,
+                                items.map((item) => item.id),
+                            ),
+                            /**
+                             * Phase 8: only the rows that actually moved get
+                             * a teardown, which is also what keeps a second
+                             * „als Betrug markieren“ from asking for a
+                             * second one.
+                             */
+                            sql`${schema.service.status} <> 'terminated'`,
                         ),
+                    )
+                    .returning({ id: schema.service.id });
+
+                if (retired.length > 0) {
+                    const { onServicesFollowed } = await import(
+                        "@/server/provisioning/hooks"
                     );
+
+                    await onServicesFollowed(tx, {
+                        serviceIds: retired.map((row) => row.id),
+                        follow: "terminated",
+                        /**
+                         * The order's own decision, which happens once: the
+                         * status moved out of `pending` in this same
+                         * transaction, so a second attempt finds nothing to
+                         * decide.
+                         */
+                        cause: `order:${orderId}:${decision}`,
+                    });
+                }
             }
         }
 

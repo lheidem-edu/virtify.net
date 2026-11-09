@@ -2,12 +2,15 @@ import "server-only";
 import { PgBoss } from "pg-boss";
 import { db } from "@/db";
 import { runBilling } from "@/server/billing/run";
+import { runProvisioningPass } from "@/server/provisioning/run";
 import { runSubscriptionSync, runTicketSweep } from "@/server/tickets/run";
 import {
     BILLING_RUN_CRON,
     BILLING_RUN_MISSED,
     BILLING_RUN_QUEUE,
     BILLING_RUN_TZ,
+    PROVISIONING_CRON,
+    PROVISIONING_QUEUE,
     QUEUES,
     TICKET_MISSED,
     TICKET_SUBSCRIPTION_CRON,
@@ -160,6 +163,22 @@ export async function startWorker(): Promise<Worker> {
         console.log(`[worker] ${TICKET_SUBSCRIPTION_QUEUE}`, result.report);
     });
 
+    /**
+     * Phase 8. The queue carries no payload: a `pending` row in
+     * `provisioning_task` is the work, and this only says "look now". See
+     * `./queues.ts`.
+     */
+    await boss.work(PROVISIONING_QUEUE, { batchSize: 1 }, async () => {
+        const result = await runProvisioningPass(db);
+
+        if (result.queued === 0 && result.sweep.ran === 0) {
+            // The overwhelmingly common case: nothing to do, nothing to say.
+            return;
+        }
+
+        console.log(`[worker] ${PROVISIONING_QUEUE}`, result);
+    });
+
     await boss.schedule(BILLING_RUN_QUEUE, BILLING_RUN_CRON, null, {
         tz: BILLING_RUN_TZ,
         missed: BILLING_RUN_MISSED,
@@ -176,10 +195,19 @@ export async function startWorker(): Promise<Worker> {
         { missed: TICKET_MISSED },
     );
 
+    await boss.schedule(PROVISIONING_QUEUE, PROVISIONING_CRON, null, {
+        /**
+         * `skip`, like the mail sweep: there is nothing a sixty-second-old
+         * sweep can do that the one starting now will not.
+         */
+        missed: TICKET_MISSED,
+    });
+
     console.log(
         `[worker] ready — ${BILLING_RUN_QUEUE} at "${BILLING_RUN_CRON}" ${BILLING_RUN_TZ}, ` +
             `${TICKET_SWEEP_QUEUE} at "${TICKET_SWEEP_CRON}", ` +
-            `${TICKET_SUBSCRIPTION_QUEUE} at "${TICKET_SUBSCRIPTION_CRON}"`,
+            `${TICKET_SUBSCRIPTION_QUEUE} at "${TICKET_SUBSCRIPTION_CRON}", ` +
+            `${PROVISIONING_QUEUE} at "${PROVISIONING_CRON}"`,
     );
 
     return {

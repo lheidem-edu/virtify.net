@@ -93,6 +93,14 @@ export function buildSpec() {
                     "ein Zahlungsdienstleister holt nur das Geld.",
             },
             {
+                name: "Leistungen",
+                description:
+                    "Was tatsächlich läuft: virtuelle Maschinen, Webspaces " +
+                    "und was ein Bereitstellungsmodul sonst anlegt. Der Stand " +
+                    "einer Leistung ist der Stand in der Abrechnung — was die " +
+                    "Virtualisierung meldet, steht daneben und gilt nicht.",
+            },
+            {
                 name: "Tickets",
                 description:
                     "Support-Tickets und ihre Unterhaltung. Ein Ticket " +

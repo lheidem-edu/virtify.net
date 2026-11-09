@@ -37,6 +37,10 @@
             "description": "Was tatsächlich geflossen ist: Zahlungen, Erstattungen und Guthaben. Die Rechnung sagt, was geschuldet wird — ein Zahlungsdienstleister holt nur das Geld."
         },
         {
+            "name": "Leistungen",
+            "description": "Was tatsächlich läuft: virtuelle Maschinen, Webspaces und was ein Bereitstellungsmodul sonst anlegt. Der Stand einer Leistung ist der Stand in der Abrechnung — was die Virtualisierung meldet, steht daneben und gilt nicht."
+        },
+        {
             "name": "Tickets",
             "description": "Support-Tickets und ihre Unterhaltung. Ein Ticket entsteht aus einer Mail an ein Abteilungspostfach oder aus dem Kundenbereich; die Nummer im Betreff hält die Unterhaltung zusammen."
         },
@@ -2799,6 +2803,430 @@
                     "coupon_error"
                 ],
                 "description": "Ein Preisangebot. Dieselbe Funktion rechnet den Shop-Preis, die Kasse und diese Antwort — ein angezeigter Preis kann einem berechneten nicht widersprechen."
+            },
+            "ServiceAddress": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Adresszuweisung.",
+                        "example": "ipaddress_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "family": {
+                        "type": "string",
+                        "enum": [
+                            "ipv4",
+                            "ipv6"
+                        ],
+                        "description": "Adressfamilie.",
+                        "example": "ipv4"
+                    },
+                    "address": {
+                        "type": "string",
+                        "description": "Die Adresse selbst.",
+                        "example": "192.0.2.17"
+                    },
+                    "prefix_length": {
+                        "type": "integer",
+                        "description": "Die Maske in Bit, aus dem Pool.",
+                        "example": 24
+                    },
+                    "gateway": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Das Gateway des Pools.",
+                        "example": "192.0.2.1"
+                    },
+                    "nameservers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Was der Maschine per cloud-init mitgegeben wird.",
+                        "example": [
+                            "9.9.9.9",
+                            "149.112.112.112"
+                        ]
+                    },
+                    "rdns": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der PTR-Eintrag, den die Verwaltung gesetzt hat. Wird mit der Adresse freigegeben — er benennt einen Host, den es dann nicht mehr gibt.",
+                        "example": "vps-17.virtify.net"
+                    }
+                },
+                "required": [
+                    "id",
+                    "family",
+                    "address",
+                    "prefix_length",
+                    "gateway",
+                    "nameservers",
+                    "rdns"
+                ],
+                "description": "Eine IP-Adresse, solange sie dieser Leistung gehört. Eine Adresse wird beim Einrichten aus einem Pool genommen und beim Abbau zurückgegeben — und nur dann."
+            },
+            "ServiceAvailableAction": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Als `action` an die Aktions-Route zu übergeben.",
+                        "example": "reboot"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Beschriftung für eine Schaltfläche.",
+                        "example": "Neu starten"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Was die Aktion tut.",
+                        "example": "Fährt das Gastsystem herunter und startet es wieder."
+                    },
+                    "destructive": {
+                        "type": "boolean",
+                        "description": "Ob dabei Daten verloren gehen. Solche Aktionen werden nie automatisch wiederholt — ein Fehlschlag wird gemeldet, nicht nachgeholt.",
+                        "example": false
+                    }
+                },
+                "required": [
+                    "id",
+                    "label",
+                    "description",
+                    "destructive"
+                ]
+            },
+            "ServiceListItem": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Leistung.",
+                        "example": "service_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Wie die Leistung dem Kunden angezeigt wird.",
+                        "example": "VPS M (1/2)"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "provisioning",
+                            "active",
+                            "suspended",
+                            "terminated"
+                        ],
+                        "description": "Der **Stand der Leistung in der Abrechnung** — und damit das, was gilt. `pending` ist bestellt und noch nicht eingerichtet, `provisioning` wird gerade angelegt, `active` läuft, `suspended` ist gesperrt (offene Rechnung oder pausiertes Abo), `terminated` ist abgebaut.",
+                        "example": "active"
+                    },
+                    "module": {
+                        "type": "string",
+                        "description": "Das Bereitstellungsmodul. `none`, solange nichts automatisch eingerichtet wird.",
+                        "example": "proxmox"
+                    },
+                    "module_label": {
+                        "type": "string",
+                        "description": "Der Name des Moduls, auf Deutsch.",
+                        "example": "Proxmox VE"
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Wem die Leistung gehört.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "product_id": {
+                        "type": "string",
+                        "description": "Das Produkt, das sie beschreibt.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "subscription_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Das Abo, das sie bezahlt. `null` für eine Leistung, die von Hand angelegt wurde.",
+                        "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "hostname": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Hostname, der eingerichtet wurde.",
+                        "example": "vps-m-101"
+                    },
+                    "primary_address": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die erste zugewiesene Adresse, für die Liste.",
+                        "example": "192.0.2.17"
+                    },
+                    "provider_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "running",
+                            "stopped",
+                            "suspended",
+                            "unknown",
+                            "missing",
+                            null
+                        ],
+                        "description": "Was die Virtualisierung beim letzten Abruf gemeldet hat. Dies ist eine **Beobachtung, kein Zustand**: bei einem Widerspruch gilt immer `status`, und `mismatch` beschreibt ihn in Worten. `missing` heißt, dass auf dem Server keine Maschine mehr zu finden war.",
+                        "example": "running"
+                    },
+                    "provider_status_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann zuletzt abgefragt wurde, in UTC.",
+                        "example": "2026-11-09T07:05:00.000Z"
+                    },
+                    "activated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie in Betrieb genommen wurde, in UTC.",
+                        "example": "2026-11-01T09:00:00.000Z"
+                    },
+                    "suspended_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie gesperrt wurde, in UTC.",
+                        "example": null
+                    },
+                    "terminated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie abgebaut wurde, in UTC.",
+                        "example": null
+                    }
+                },
+                "required": [
+                    "id",
+                    "label",
+                    "status",
+                    "module",
+                    "module_label",
+                    "customer_id",
+                    "product_id",
+                    "subscription_id",
+                    "hostname",
+                    "primary_address",
+                    "provider_status",
+                    "provider_status_at",
+                    "activated_at",
+                    "suspended_at",
+                    "terminated_at"
+                ],
+                "description": "Eine bereitgestellte Sache — ein VPS, ein Webspace — eine je bestellter Einheit."
+            },
+            "ServiceTask": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Anfrage.",
+                        "example": "provtask_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "create",
+                            "suspend",
+                            "unsuspend",
+                            "terminate",
+                            "change_package",
+                            "power",
+                            "reinstall",
+                            "sync"
+                        ],
+                        "description": "Was vom Modul verlangt wurde.",
+                        "example": "create"
+                    },
+                    "request_key": {
+                        "type": "string",
+                        "description": "Wofür genau diese Zeile steht. `create` ist für jede Leistung ein einziges Mal vergeben — deshalb legt ein zweiter Anlauf keine zweite Maschine an.",
+                        "example": "create"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "running",
+                            "succeeded",
+                            "failed",
+                            "aborted"
+                        ],
+                        "description": "`aborted` heißt: abgebrochen, **bevor** die Virtualisierung überhaupt gefragt wurde — dann ist sicher nichts entstanden und alles Belegte wurde zurückgegeben.",
+                        "example": "succeeded"
+                    },
+                    "attempts": {
+                        "type": "integer",
+                        "description": "Wie oft es versucht wurde.",
+                        "example": 1
+                    },
+                    "max_attempts": {
+                        "type": "integer",
+                        "description": "Wie oft es versucht werden darf. Je Aktion verschieden: fünf für ein Anlegen, das über die reservierte Kennung wiederholbar ist, und genau einer für eine Neuinstallation, die Daten vernichtet.",
+                        "example": 5
+                    },
+                    "provider_called_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann zum ersten Mal etwas verlangt wurde, das auf der Virtualisierung etwas ändern kann. Solange dies `null` ist, kann dort nichts entstanden sein.",
+                        "example": "2026-11-01T09:00:03.000Z"
+                    },
+                    "last_error": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Was zuletzt schiefging.",
+                        "example": null
+                    },
+                    "requested_by": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Wer sie ausgelöst hat.",
+                        "example": "staff:Luca"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Wann sie eingereiht wurde, in UTC.",
+                        "example": "2026-11-01T09:00:00.000Z"
+                    },
+                    "finished_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie fertig wurde, in UTC.",
+                        "example": "2026-11-01T09:02:11.000Z"
+                    }
+                },
+                "required": [
+                    "id",
+                    "action",
+                    "request_key",
+                    "status",
+                    "attempts",
+                    "max_attempts",
+                    "provider_called_at",
+                    "last_error",
+                    "requested_by",
+                    "created_at",
+                    "finished_at"
+                ],
+                "description": "Ein Aufruf des Moduls. Nur für Schlüssel der Verwaltung."
+            },
+            "ServiceActionResult": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Anfrage, die dafür eingereiht wurde.",
+                        "example": "provtask_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "ok": {
+                        "type": "boolean",
+                        "description": "Ob die Aktion durchging.",
+                        "example": true
+                    },
+                    "already_done": {
+                        "type": "boolean",
+                        "description": "Es war nichts zu tun, weil es schon so war — die Maschine lief bereits, oder sie war bereits aus. Das ist **ein Erfolg**.",
+                        "example": false
+                    },
+                    "terminal": {
+                        "type": "boolean",
+                        "description": "Es wird nichts mehr automatisch versucht. Bei `ok: false` heißt das: jemand muss nachsehen.",
+                        "example": false
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "Was passiert ist, in einem Satz.",
+                        "example": "VM 101 neu gestartet."
+                    },
+                    "warnings": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Was nicht geklappt hat, ohne die Aktion scheitern zu lassen — etwa eine Sperre, die ein eingeschränkter API-Token nicht setzen darf, oder ein Datenträger, den Proxmox nicht verkleinern kann.",
+                        "example": []
+                    }
+                },
+                "required": [
+                    "task_id",
+                    "ok",
+                    "already_done",
+                    "terminal",
+                    "summary",
+                    "warnings"
+                ],
+                "description": "Das Ergebnis einer Aktion. Sie wird sofort ausgeführt, nicht nur eingereiht, damit die Antwort sagt, was wirklich geschehen ist."
+            },
+            "ServicePage": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ServiceListItem"
+                        },
+                        "description": "Die Zeilen dieser Seite, in ID-Reihenfolge."
+                    },
+                    "next_cursor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "An die nächste Anfrage als `cursor` weitergeben; `null` auf der letzten Seite.",
+                        "example": "invoice_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "has_more": {
+                        "type": "boolean",
+                        "description": "Ob nach dieser Seite noch Zeilen folgen.",
+                        "example": false
+                    }
+                },
+                "required": [
+                    "data",
+                    "next_cursor",
+                    "has_more"
+                ]
             },
             "SubscriptionService": {
                 "type": "object",
@@ -6352,6 +6780,369 @@
                             "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/services": {
+            "get": {
+                "tags": [
+                    "Leistungen"
+                ],
+                "summary": "Leistungen auflisten",
+                "description": "Die bereitgestellten Leistungen, seitenweise nach ID. Ein Kundenschlüssel sieht ausschließlich die eigenen — der Zuschnitt kommt aus dem Schlüssel, nicht aus einem Parameter. Abgebaute Leistungen bleiben außen vor, sofern nicht ausdrücklich verlangt.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "pending",
+                                "provisioning",
+                                "active",
+                                "suspended",
+                                "terminated"
+                            ],
+                            "description": "Nur Leistungen in diesem Stand.",
+                            "example": "active"
+                        },
+                        "required": false,
+                        "description": "Nur Leistungen in diesem Stand.",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
+                            "description": "Abgebaute Leistungen mitzählen. Standard `false`.",
+                            "example": "false"
+                        },
+                        "required": false,
+                        "description": "Abgebaute Leistungen mitzählen. Standard `false`.",
+                        "name": "include_terminated",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                            "example": "service_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": false,
+                        "description": "`next_cursor` der vorherigen Seite. Fehlt er, beginnt die Liste am Anfang.",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "description": "Zeilen pro Seite, höchstens 200.",
+                            "example": 50
+                        },
+                        "required": false,
+                        "description": "Zeilen pro Seite, höchstens 200.",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Eine Seite Leistungen.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePage"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/services/{id}": {
+            "get": {
+                "tags": [
+                    "Leistungen"
+                ],
+                "summary": "Eine Leistung ansehen",
+                "description": "Eine Leistung mit ihren Adressen, dem letzten Abruf von der Virtualisierung und den Aktionen, die für sie vorgesehen sind. Ein Schlüssel der Verwaltung sieht zusätzlich Server, Kennung und die letzten Moduls-Aufrufe.\n\nEine Leistung, die dieser Schlüssel nicht sehen darf, beantwortet diese Route mit **404 und nicht mit 403** — ein 403 würde bestätigen, dass es die ID gibt.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die Leistung.",
+                            "example": "service_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die Leistung.",
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Die Leistung.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/Service"
+                                        },
+                                        {
+                                            "description": "Eine Leistung mit allem, was zu ihr gehört. Zugangsdaten stehen **nicht** darin: ein Passwort wird nur über den Kundenbereich herausgegeben, und dieser Zugriff wird protokolliert."
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/services/{id}/actions/{action}": {
+            "post": {
+                "tags": [
+                    "Leistungen"
+                ],
+                "summary": "Eine Aktion auf einer Leistung auslösen",
+                "description": "Löst eine Aktion aus und **führt sie sofort aus**, damit die Antwort sagt, was wirklich geschehen ist.\n\n`start`, `stop`, `shutdown`, `reboot` und `reinstall` darf auch ein Kundenschlüssel, sofern das Modul sie für diese Leistung anbietet. `provision`, `suspend`, `unsuspend` und `terminate` bleiben der Verwaltung vorbehalten; `sync` holt nur einen frischen Stand.\n\nAuf einer Leistung, die nicht `active` ist, wird **keine** Aktion ausgeführt. Sonst wäre eine wegen einer offenen Rechnung gesperrte Maschine einen Knopfdruck weit davon entfernt, wieder zu laufen.\n\nEin Neustart ist nicht wiederholbar: zweimal drücken heißt zweimal neu starten, und ein fehlgeschlagener Versuch wird nicht automatisch nachgeholt.",
+                "security": [
+                    {
+                        "ApiKey": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Die Leistung.",
+                            "example": "service_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                        },
+                        "required": true,
+                        "description": "Die Leistung.",
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "start",
+                                "stop",
+                                "shutdown",
+                                "reboot",
+                                "reinstall",
+                                "sync",
+                                "provision",
+                                "suspend",
+                                "unsuspend",
+                                "terminate"
+                            ],
+                            "description": "Die Aktion.",
+                            "example": "reboot"
+                        },
+                        "required": true,
+                        "description": "Die Aktion.",
+                        "name": "action",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Die Aktion wurde ausgeführt.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceActionResult"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Die Anfrage war syntaktisch falsch.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Kein oder kein gültiger API-Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Der Schlüssel darf das nicht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Nicht vorhanden — oder nicht für diesen Schlüssel.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Die Aktion ist für diese Leistung nicht vorgesehen, die Leistung ist nicht `active`, oder die Anfrage hat ihre Versuche aufgebraucht.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Die Eingabe hat die Prüfung nicht bestanden.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Problem"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Die Virtualisierung hat die Aktion abgelehnt oder war nicht erreichbar. Der Körper hat dieselbe Gestalt wie bei 200, mit `ok: false` — ein Client liest `ok` und rät nicht am Statuscode.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceActionResult"
                                 }
                             }
                         }

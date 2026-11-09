@@ -178,6 +178,32 @@ export async function emitInvoicePaid(
         }
     }
 
+    /**
+     * Phase 8's half of the same seam. A customer who pays their first
+     * invoice at midnight has a machine at one minute past rather than at
+     * three the next morning, and the daily pass checks again for anything
+     * this missed — both end in `enqueueCreate` under the key `"create"`, so
+     * the two cannot produce two machines between them.
+     *
+     * It never throws, for the same reason the reactivation above does not:
+     * the payment is settled either way, and a webhook that answered 500
+     * because a VM could not be queued would be retried by the provider.
+     */
+    if (outcome.invoiceId) {
+        try {
+            const { provisionAfterSettlement } = await import(
+                "@/server/provisioning/hooks"
+            );
+
+            await provisionAfterSettlement(db, outcome.invoiceId);
+        } catch (error) {
+            console.error(
+                "[payments] queueing the provisioning failed:",
+                error,
+            );
+        }
+    }
+
     if (outcome.invoiceId && outcome.receiptTo) {
         /**
          * Imported at the point of use, and that is load-bearing rather than

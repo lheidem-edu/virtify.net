@@ -83,6 +83,16 @@ export const CUSTOMER_SCOPES = [
     "tickets.read",
     "tickets.reply",
     "tickets.write",
+    // A service is the customer's own machine, and the client area already
+    // offers them start, shutdown, reboot and reinstall. Every endpoint
+    // resolves the service through the key's own customer id and answers 404
+    // for anybody else's, and the runner refuses any action at all on a
+    // service that is not `active` — so a key cannot undo a suspension for
+    // non-payment, which is the one thing worth guarding here.
+    // `services.manage` is deliberately absent: the hypervisors and the IP
+    // pools are the operator's.
+    "services.read",
+    "services.write",
 ] as const satisfies readonly Permission[];
 
 export type CustomerScope = (typeof CUSTOMER_SCOPES)[number];

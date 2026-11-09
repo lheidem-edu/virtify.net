@@ -1443,9 +1443,10 @@ and produce one invoice between them, with neither reporting a failure.
 - [ ] **SCA on a renewal reaches nobody.** `collectIssuedInvoice` already mails an
       authentication link on `requires_action`, and there is still no SMTP relay — so an
       off-session renewal that needs SCA fails silently into the log. Phase 7 brings Graph.
-- [ ] **Services do not actually stop.** Suspension writes `service.status = 'suspended'` and a
-      timestamp; no module acts on it until Phase 8. The billing record is right and the machine
-      keeps running.
+- [x] **Services do not actually stop.** *Closed by Phase 8.* Suspension still writes
+      `service.status = 'suspended'` and a timestamp, and now `applyServiceFollow` enqueues
+      a `suspend` against the module as well — the machine is stopped and taken off the
+      host's boot list.
 - [ ] **A pending plan change is not shown on the renewal invoice's preview.** The renewal
       applies it correctly when it builds the lines, but nothing tells the customer in advance
       what the next invoice will say.
@@ -1932,6 +1933,217 @@ page has no serializer in front of it. Removing the filter broke nothing. Two mo
       compares against an array now, but a worker that registered the billing cron and not the
       ticket ones still reads as healthy.
 
+## Phase 8 — Bereitstellung (Proxmox VE) · done
+
+`npm run typecheck`, `npm run lint`, `npm run format`, `npm run test` (1001 tests),
+`npm run build` and `npm run openapi:generate` are green. Migration `0023`.
+
+**There is no Proxmox cluster for this installation, and none was gone looking for.**
+Everything below is written against the documented PVE API and tested against
+hand-written answers (`tests/helpers/proxmox.ts`). `docs/proxmox-setup.md` has the exact
+`pveum` commands an administrator runs, the cloud-init template, the TLS decision and why
+the restricted token it asks for is also the reason suspension does not rely on `lock`.
+
+**This phase closes "Services do not actually stop."** Phase 6 moved `service.status` and
+nothing listened; now five hooks do, and the machine follows.
+
+### Who wins when the machine disagrees with the billing
+
+`service.status` wins, always. `getStatus` writes `service.provider_status` — a *different*
+column that nothing acts on — and a disagreement is **shown** in both the client and the
+admin area ("Die Leistung ist aktiv, die Maschine läuft aber nicht.") rather than resolved.
+
+Writing a reading back into `service.status` is the loop this phase was most likely to
+ship: an operator stops a VM by hand in the Proxmox UI, the next sync writes `suspended`,
+`wakeSettledIn` sees a suspended service under an Abo that owes nothing and wakes it, the
+wake enqueues `unsuspend`, the machine starts, and the operator stops it again. A machine
+flapping between two systems that each believe the other. The only module results that
+move `service.status` are `create` and `terminate`, and both are narrowed with a `WHERE`
+on the status they may come from — so a create finishing after an operator has already
+terminated the service does not resurrect it.
+
+### What each claim row speaks for
+
+- **`provisioning_resource (server_id, kind, external_id)`** speaks for **one machine on
+  one cluster**, and this is the one that makes a create safe. Proxmox lets the caller
+  choose the VMID, so `GET /cluster/nextid` is asked once, the answer is written here
+  *before* the clone, and the clone is asked for with `newid=` that value. A retry then
+  asks the cluster whether VM 101 exists and either finds it — already done, success — or
+  clones again under the same id, where PVE's own `500 VM 101 already exists` is read as
+  the same success. Without a reserved id the only question a retry could ask is "did my
+  request arrive", which the network cannot answer, and the answer it guesses wrong is a
+  second VM the customer is not paying for. There is a second unique index on
+  `(service_id)`: a service is one machine.
+- **`provisioning_task (service_id, action, request_key)`** speaks for **one request to do
+  one thing to one service** — not one attempt, not one job, not one pass of the sweep.
+  The caller says which request it is and every caller's key is tabulated in
+  `src/server/provisioning/tasks.ts`: `"create"` for ever (every source of "this service
+  should exist now" is the same request), the id of the status change that caused a
+  suspend/unsuspend/terminate, the change row's id for a package change, and a fresh ULID
+  for anything a person pressed — because pressing „Neustart“ twice *means* two reboots.
+  It is deliberately **not** what keeps a create from making two VMs.
+- **`ip_address.service_id`** is the assignment itself. Allocating is a conditional
+  `UPDATE … WHERE service_id IS NULL` over a row picked `FOR UPDATE SKIP LOCKED`, so two
+  passes racing for the last address in a pool produce one winner and one "Pool erschöpft"
+  rather than two machines answering on the same address.
+
+### Both directions
+
+`create` takes addresses out of a pool and `terminate` puts them back, with their rDNS
+cleared — it names a host that is no longer there, and leaving it would point the next
+customer's reverse record at the last one's domain. Those are the only two things that
+move the column; a suspension, a plan change and a reinstall all leave the assignment
+exactly where it is, because the machine is still there and still answering on it.
+
+The exception is written down where it is enforced: **a create that aborted before the
+provider was ever asked gives everything back** (`provisioning_task.provider_called_at IS
+NULL`), because then nothing can exist. One that failed *afterwards* keeps it — a VM may
+be sitting on the other side of a timeout, and handing its address to the next customer is
+a far worse failure than leaking one until a person looks. The abort releases exactly the
+addresses *that attempt* took, never one the service already had.
+
+### The error that is an answer
+
+Proxmox answers logical errors with **500 and the message in the HTTP status line**, with
+`{"data":null}` in the body — so a client that reads only the body learns nothing about
+what went wrong. Decided per code, in `src/server/provisioning/proxmox/api.ts`:
+
+| What came back | Read as |
+|---|---|
+| `500 VM 101 already exists` on a clone | **already done — success** |
+| `500 Configuration file '…/101.conf' does not exist` on a destroy | **already done — success** |
+| `403 Permission check failed … only root@pam` on `lock` | a **warning on the task**, not a failure: the stop is the suspension |
+| 429 with `Retry-After`, 502, 503, 504, 596, 599 | **not yet** — honoured, then an exponential backoff, capped |
+| any other 500 | **never** — PVE's code for a logical error, and retrying it spends four attempts learning the same thing |
+| 401 | **never** — an API token is static, so a re-auth loop is all a retry would be |
+| a UPID whose task ends `exitstatus != "OK"` | the failure, in the cluster's own words |
+
+Two more the fake reproduces on purpose, because getting them wrong is how Phase 7 shipped
+a `/send` that threw after the mail had gone out: **a VMID is a string** (`{"data":"101"}`)
+and **an empty body is a success** (`PUT …/config` answers `{"data":null}`).
+
+### Suspension is `stop` + `onboot=0`
+
+The build plan asks for "stop + lock". Setting `lock` through the API is `root@pam` only
+on a normal installation — so a panel that treats the lock *as* the suspension has a
+suspension that silently does not happen the moment the operator follows our own setup
+guide and uses a restricted token. `onboot=0` needs no privilege and is the part that
+matters: without it the next host reboot brings a suspended customer's machine back. The
+lock is attempted when the server is configured for it, and a refusal is a warning.
+
+### The attempt ladder is per action
+
+Five for `create`, `suspend`, `unsuspend` and `terminate`, which are idempotent — through
+the reserved VMID, or because "already so" is a success. **One** for `power`, because a
+reboot is not idempotent and a retry is a second reboot of a machine whose owner asked for
+one. **One** for `reinstall`, because it destroys data and nothing automatic may do that
+twice. A uniform limit is how both of those go wrong at once.
+
+### The hooks
+
+| When | What | Where |
+|---|---|---|
+| a first invoice is settled | `create` | `emitInvoicePaid` → `provisionAfterSettlement` |
+| anything else makes a service eligible | `create` | the daily pass and the worker's sweep → `sweepPendingCreates` |
+| dunning's +14 rung, a pause | `suspend` | `applyServiceFollow` |
+| the money arrives, a pause is lifted | `unsuspend` | `applyServiceFollow` |
+| the Abo ends, an order is refused as fraud, a quantity drops | `terminate` | `applyServiceFollow`, `writeItemFromChange`, `decideOrder` |
+| a plan change comes into force | `change_package` | `writeItemFromChange`, only when the **product** changed |
+
+None of it can loop, and each reason is separate. `applyServiceFollow` moves only services
+whose status is in the set it is moving *from*, so writing the same follow twice moves zero
+rows — and the hooks fire on the rows that moved, never on the statuses they now have. A
+reading is never a status. And `"create"` is one key for ever, so the sweep running every
+minute against an installation of ten thousand services enqueues nothing.
+
+`past_due` deliberately still asks for nothing: the grace between the due date and the
+suspension rung *is* what dunning is.
+
+### Authorisation
+
+`services.read` / `services.write` / `services.manage` are new; the first two are in
+`CUSTOMER_SCOPES`, `services.manage` deliberately is not — the hypervisors and the IP
+pools are the operator's. A key that may not see a service gets **404, not 403**, on the
+*action* as much as on the read. A credential reveal and a console ticket are both audited
+(rule 8) with who looked and which fields were handed over — never the value.
+
+**No action runs on a service that is not `active`**, and that guard is asked before
+anything else that could refuse, so the reason the caller is given is that one. Without
+it the whole dunning ladder is a button away from being undone.
+
+### The mutation pass
+
+22 mutations, 22 killed — three only after the tests that killed them were written:
+a VM deleted *between* the status read and the destroy (the status-read branch covered the
+other half), the per-service mode check in `provisionAfterSettlement` (the sweep's own SQL
+made the one in `mayAutoProvision` redundant), and a module publishing a staff-only action
+as a client action (the narrower check already refused it, so the disjointness is now
+pinned in `tests/unit/provisioning-registry.test.ts`). One real defect was found while
+writing the tests: `toHostLabel` normalised to NFKD *before* replacing the umlauts, so
+`ö` had already decomposed into `o` + a combining diaeresis and „Größter“ came out
+`gro-sster` rather than `groesster`.
+
+### Decisions taken here, open to being overruled
+
+- **The VMID is chosen by the panel, not by Proxmox.** `GET /cluster/nextid` is advisory —
+  two panels asking at once get the same answer — which is why the id is claimed under a
+  unique index before it is used and a collision is resolved by reading back whoever won.
+- **There is no „Zertifikat nicht prüfen“ switch.** Node's global `fetch` takes no
+  per-request TLS options without undici as a dependency (rule 12), and the only thing that
+  could be built today is `NODE_TLS_REJECT_UNAUTHORIZED=0`, which would turn off
+  certificate checking for Stripe and Microsoft at the same time. A self-signed cluster
+  certificate wants its CA in `NODE_EXTRA_CA_CERTS`; `docs/proxmox-setup.md` says so.
+- **A node is chosen on free memory and nothing else.** Cores are oversubscribed as a
+  matter of course and are only checked against the host's physical count; a node's
+  `maxdisk` is the hypervisor's root filesystem, not the storage a VM is cloned onto, so
+  treating it as capacity would refuse to place a machine on an empty Ceph pool. The choice
+  is most-free-first rather than first-fit, so machines ordered in one afternoon do not all
+  land on one host.
+- **A downgrade does not shrink the disk.** Proxmox cannot, and a panel that pretended
+  otherwise would leave a customer on 200 GB while they pay for 50. It is a warning on the
+  task and in the admin area; the billing side is already right, because the proration was
+  calculated from the price.
+- **A retried create does not mint a second password.** The customer may already have the
+  first — the page shows it the moment the row is written — and cloud-init only applies
+  what it is given at first boot, so a second password would be one the machine does not
+  have.
+- **The queue is a table, not pg-boss's.** The web process holds no pg-boss instance and
+  is not going to grow one, so a `pending` row in `provisioning_task` *is* the request and
+  `provisioning/run` only says "look now". That is what makes „jetzt ausführen“ and the
+  scheduled pass the same function against the same claim.
+- **A plan change asks for a resize only when the product changed.** A module reads its
+  specification out of `product.module_config` and nowhere else, so a quantity going from
+  two to three leaves the existing machines alone — the third is a new service row.
+- **`subscriptions.read` no longer says "und Leistungen".** A role in an existing database
+  that was granted `subscriptions.read` does **not** thereby get `services.read`; it needs
+  the new permission or a `services.*` wildcard. A fresh installation's Super Admin has
+  `*` and is unaffected.
+
+### Still open in this phase
+
+- [ ] **There is no console viewer.** `vncproxy` is called, the ticket is minted, the
+      access is audited and the websocket address is handed over — but nothing renders it.
+      A noVNC client is a new dependency (rule 12) and an in-house one needs a websocket
+      proxy route of its own, which is a decision rather than a detail. The provider's own
+      console URL is offered for an operator who is signed in to Proxmox.
+- [ ] **rDNS is a field, not a DNS change.** The PTR is stored on the address and cleared
+      with it; nothing publishes it to a resolver or to the upstream's rDNS interface.
+- [ ] **A VM is never migrated, and a migration is never noticed.** The node is chosen
+      once and kept, because a retry has to look for the machine where it is. If an
+      operator moves a VM in the cluster, the panel keeps asking the old node and `sync`
+      reports it missing — which is loud rather than quiet, but it is still wrong.
+- [ ] **Certificate authentication is not implemented** for Proxmox any more than for
+      Graph. A token secret is what the client uses.
+- [ ] **`max_services` is the panel's own book-keeping.** It counts rows, not capacity, and
+      a cluster that has run out of memory is only discovered by the module asking.
+- [ ] **A service whose create has failed five times needs a person.** There is a „Erneut
+      versuchen“ button that gives the request its attempts back; nothing escalates by mail.
+- [ ] **A suspended service's `unsuspend` does not re-check the invoice.** The runner
+      refuses actions on a non-`active` service, and `wakeSettledIn` is the path that
+      actually checks — but an operator pressing „Entsperren“ is trusted. The dialog says so.
+- [ ] **Nothing cleans up `provisioning_task`.** The rows are small and the history is
+      useful, but there is no pruning pass as there is for `mail_notification`.
+
 ## Phases 5–11
 
 | Phase | State | Notes |
@@ -1939,7 +2151,7 @@ page has no serializer in front of it. Removing the filter broke nothing. Two mo
 | 5 Payments | done | See above. |
 | 6 Subscriptions, dunning | done | See above. The older `contract` table still exists beside `subscription` and is created by hand; nothing in the recurring run touches it. |
 | 7 Ticketing (M365 Graph) | done | See above. No tenant credentials exist yet; the channel reports itself unconfigured and every job that would talk to Microsoft does nothing. |
-| 8 Provisioning (Proxmox) | not started | Phase 2 put the registry interface and the `none` module in `src/server/provisioning`; Phase 4 added the `service` table and Phase 6 now moves its `status` — suspended at the dunning rung, terminated when an Abo ends, created and retired by a quantity change — but no module acts on any of it. The lifecycle methods and the Proxmox module are this phase's, and the hooks they attach to already exist. |
+| 8 Provisioning (Proxmox) | done | See above. No cluster exists yet; with no server configured every create aborts before anything is asked of a hypervisor, and the next pass asks again. |
 | 9 Client portal polish, i18n | not started | German only, no i18n layer, no `email_templates`. |
 | 10 Reports, webhooks, API | not started | |
 | 11 Hardening, deploy | not started | |
@@ -1964,7 +2176,14 @@ page has no serializer in front of it. Removing the filter broke nothing. Two mo
   so does any version already published in `legal_document`. The old path redirects, so nothing is
   broken meanwhile. `legal/*.txt` at the repo root is export, not source — run `npm run
   legal:export` to refresh it.
-- Operational, not code: `STRIPE_WEBHOOK_SECRET` and `PAYPAL_WEBHOOK_ID` need a public URL —
+- Operational, not code: there is **no Proxmox cluster and no API token**; until one is
+  entered in `/admin/settings/provisioning`, a Proxmox product can be ordered and billed
+  but nothing is set up — the task aborts before anything is asked of a hypervisor, the
+  service stays „Wartet“ and the next pass asks again. `docs/proxmox-setup.md` has the
+  `pveum` commands, the cloud-init template and the TLS decision. Two things there are not
+  optional: the token should be a restricted one (which is why suspension does not use
+  `lock`), and the API address needs a certificate Node trusts or its CA in
+  `NODE_EXTRA_CA_CERTS`. `STRIPE_WEBHOOK_SECRET` and `PAYPAL_WEBHOOK_ID` need a public URL —
   or, since Phase 5, a row in `/admin/settings/payments`, which is the same two secrets
   encrypted at rest; PayPal reference transactions need PayPal's written approval before the
   recurring mode is set to `vault`; Stripe receipt mails must be turned off, because our own

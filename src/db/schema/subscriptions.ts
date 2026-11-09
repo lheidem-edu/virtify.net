@@ -223,6 +223,41 @@ export const service = pgTable(
             .notNull()
             .default("manual"),
 
+        /**
+         * Which server it was put on, where a module put it anywhere. Phase
+         * 8's `provisioning_server`; null for `none` and for anything that
+         * has not been placed yet.
+         */
+        /**
+         * Deliberately without a foreign key: `provisioning.ts` imports this
+         * table, so pointing back at `provisioning_server` from here would
+         * be a cycle between the two schema files. The referential
+         * constraint that matters lives on `provisioning_resource`, which
+         * points at both — and a server is soft-deleted (rule 10), so a
+         * dangling id is not a state this column can reach.
+         */
+        serverId: ulidFk("server_id"),
+
+        /** The hostname cloud-init was given. Sanitised before it goes out. */
+        hostname: text("hostname"),
+
+        /**
+         * What the provider last said the machine is doing — `running`,
+         * `stopped`, `unknown` — and when it said it.
+         *
+         * **A different column from `status` on purpose, and nothing acts on
+         * it.** `status` is the billing record's word and it always wins; a
+         * reading from the cluster is shown beside it, never written over it.
+         * Writing a poll back into `status` is how a VM somebody stopped by
+         * hand in the Proxmox UI becomes `suspended`, gets woken by the
+         * mirror in `wakeSettledIn` because its Abo is active, and is stopped
+         * again by the next sync: a machine flapping between two systems that
+         * each believe the other.
+         */
+        providerStatus: text("provider_status"),
+        providerStatusAt: timestamp("provider_status_at"),
+        providerStatusDetail: text("provider_status_detail"),
+
         /** Whatever the module needs to recognise it again. */
         moduleData: jsonb("module_data").notNull().default({}),
         /**
@@ -245,6 +280,8 @@ export const service = pgTable(
         index("service_customer_id_idx").on(table.customerId),
         index("service_status_idx").on(table.status),
         index("service_subscription_item_id_idx").on(table.subscriptionItemId),
+        index("service_module_idx").on(table.module),
+        index("service_server_id_idx").on(table.serverId),
     ],
 );
 

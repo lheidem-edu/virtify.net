@@ -196,6 +196,24 @@ export function ProductEditForm({
                         Wird gegen das Schema des Moduls geprüft. „Keine
                         Bereitstellung“ nimmt nur ein leeres Objekt.
                     </p>
+                    <p className="text-xs text-muted-foreground">
+                        Proxmox VE kennt{" "}
+                        <code className="font-mono">cores</code>,{" "}
+                        <code className="font-mono">memoryMiB</code>,{" "}
+                        <code className="font-mono">diskGiB</code>,{" "}
+                        <code className="font-mono">ipv4Count</code>,{" "}
+                        <code className="font-mono">ipv6Count</code>,{" "}
+                        <code className="font-mono">osUser</code>,{" "}
+                        <code className="font-mono">hostnamePattern</code>,{" "}
+                        <code className="font-mono">onboot</code>,{" "}
+                        <code className="font-mono">nesting</code> und, um den
+                        Server zu übersteuern,{" "}
+                        <code className="font-mono">templateVmid</code>,{" "}
+                        <code className="font-mono">templateNode</code> sowie{" "}
+                        <code className="font-mono">storage</code>. Ein
+                        Tarifwechsel liest diese Werte erneut — die Maschine
+                        bekommt also die Ausstattung des neuen Produkts.
+                    </p>
                 </div>
             </div>
 

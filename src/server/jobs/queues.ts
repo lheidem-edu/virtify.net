@@ -27,6 +27,23 @@ export const BILLING_RUN_QUEUE = "billing/run";
 export const TICKET_SWEEP_QUEUE = "tickets/sweep";
 export const TICKET_SUBSCRIPTION_QUEUE = "tickets/subscriptions";
 
+/**
+ * Phase 8. The queue that drains `provisioning_task`.
+ *
+ * **It carries no work of its own.** A `pending` row in that table *is* the
+ * request — the web process holds no pg-boss instance to send a job to, and
+ * is not going to grow one (see `./worker.ts`) — so this schedule only says
+ * "look now". That is deliberate and it is what makes the operator's „jetzt
+ * ausführen“ and the scheduled pass the same function against the same
+ * claim.
+ *
+ * Every minute, which is the shortest cadence pg-boss's cron can express and
+ * the right one for the thing it does: a customer who has just paid is
+ * waiting for a server, and a sweep with nothing to do is one indexed query
+ * that returns no rows.
+ */
+export const PROVISIONING_QUEUE = "provisioning/run";
+
 /** Every queue the worker creates at boot. pg-boss 12 requires it up front. */
 export const QUEUES = [
     {
@@ -83,6 +100,33 @@ export const QUEUES = [
         expireInSeconds: 300,
         deleteAfterSeconds: 7 * 86_400,
     },
+    {
+        name: PROVISIONING_QUEUE,
+        /**
+         * One at a time, and this one matters more than for the others:
+         * these calls go to one operator's hypervisor, a clone is minutes of
+         * disk I/O, and twenty in parallel is a cluster that stops answering
+         * and twenty tasks that then all report a timeout.
+         */
+        policy: "singleton" as const,
+        /**
+         * **No retry.** Every module call carries its own ladder on the task
+         * row (`attempts`, `max_attempts`, `run_after`) because the right
+         * number of tries depends on the action — five for a create, which
+         * is idempotent through its reserved VMID, and exactly one for a
+         * reinstall, which destroys data. A queue-level retry would run a
+         * *second sweep* over the same table a minute later, which is what
+         * the next scheduled pass does anyway.
+         */
+        retryLimit: 0,
+        /**
+         * Long: a single clone can take minutes, and the sweep takes up to
+         * twenty-five tasks. A limit that expired mid-clone would mark the
+         * job failed while the cluster was still working.
+         */
+        expireInSeconds: 1_800,
+        deleteAfterSeconds: 7 * 86_400,
+    },
 ];
 
 /**
@@ -131,3 +175,20 @@ export const TICKET_SUBSCRIPTION_CRON = "0 * * * *";
  * omission.
  */
 export const TICKET_MISSED = "skip" as const;
+
+/**
+ * The provisioning sweep, every minute. UTC, like the mail sweep and for the
+ * same reason: "every minute" means the same thing in every zone, and naming
+ * one would only make the schedule skip or repeat an interval twice a year.
+ */
+export const PROVISIONING_CRON = "* * * * *";
+
+/**
+ * An hourly reading of every live machine, folded into the same queue.
+ *
+ * `provisioning/run` asks for the readings and then drains them, so there is
+ * one queue rather than two for a thing that is one pass. The request is
+ * keyed on the UTC hour, so the sweep running sixty times an hour asks for
+ * one reading per service per hour.
+ */
+export const PROVISIONING_SYNC_MINUTE = 7;

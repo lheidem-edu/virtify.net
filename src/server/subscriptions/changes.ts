@@ -597,6 +597,7 @@ export async function applyChange(
                 customerId: subscription.customerId,
                 target: preview.next,
                 at: now,
+                cause: changeId,
             });
         }
 
@@ -660,6 +661,12 @@ export async function writeItemFromChange(
         customerId: string;
         target: ChangeTarget;
         at: Date;
+        /**
+         * Phase 8. The `subscription_change` row's id, which is the request
+         * key of the module calls this sets off — one agreed change is one
+         * package change and one teardown of whatever the quantity dropped.
+         */
+        cause?: string | null;
     },
 ) {
     const [item] = await tx
@@ -721,6 +728,27 @@ export async function writeItemFromChange(
             .where(eq(schema.service.id, row.id));
     }
 
+    /**
+     * Phase 8: the machine follows the tariff.
+     *
+     * Only when the **product** changed. A module reads its specification
+     * out of `product.module_config` and nowhere else, so a quantity going
+     * from two to three leaves each existing machine exactly as it was —
+     * the third one is a new service row, and asking the cluster to resize
+     * the other two to the size they already are is an API call that can
+     * only fail.
+     */
+    if (input.cause && product && item.productId !== input.target.productId) {
+        const { onPackageChanged } = await import(
+            "@/server/provisioning/hooks"
+        );
+
+        await onPackageChanged(tx, {
+            serviceIds: running.map((row) => row.id),
+            cause: input.cause,
+        });
+    }
+
     const wanted = input.target.quantity;
 
     if (running.length < wanted) {
@@ -745,6 +773,8 @@ export async function writeItemFromChange(
         // Newest first: the oldest machine is the one the customer has been
         // using, and taking that one away to honour a quantity change would
         // be the panel picking the worst of the options.
+        const retired: string[] = [];
+
         for (const row of running.slice(wanted).reverse()) {
             await tx
                 .update(schema.service)
@@ -754,6 +784,32 @@ export async function writeItemFromChange(
                     updatedAt: input.at,
                 })
                 .where(eq(schema.service.id, row.id));
+
+            retired.push(row.id);
+        }
+
+        /**
+         * And the machines actually go away. Keyed on the change, so the
+         * renewal run applying the same pending change twice — it cannot,
+         * because the row is claimed `pending` — would still ask for one
+         * teardown. The addresses and the reserved VMID come back when the
+         * module reports the VM gone; see `runner.ts`.
+         *
+         * The new services a quantity *increase* creates are deliberately
+         * **not** enqueued here. They are `pending`, and whether they may be
+         * built without a person is the create sweep's question, which also
+         * asks whether the proration invoice has been paid.
+         */
+        if (input.cause && retired.length > 0) {
+            const { onServicesFollowed } = await import(
+                "@/server/provisioning/hooks"
+            );
+
+            await onServicesFollowed(tx, {
+                serviceIds: retired,
+                follow: "terminated",
+                cause: input.cause,
+            });
         }
     }
 }
@@ -818,6 +874,7 @@ export async function applyDueChangesIn(
                 selections: change.selections as QuoteSelection[],
             },
             at: input.at,
+            cause: change.id,
         });
 
         await tx

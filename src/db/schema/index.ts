@@ -15,6 +15,7 @@ export * from "./legal";
 export * from "./offers";
 export * from "./orders";
 export * from "./payments";
+export * from "./provisioning";
 export * from "./settings";
 export * from "./staff";
 export * from "./subscriptions";

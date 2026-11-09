@@ -122,6 +122,11 @@ export const ID_PREFIX = {
     mailNotification: "mailnotification",
     inboundMail: "inboundmail",
     autoReplyBudget: "autoreplybudget",
+    provisioningServer: "server",
+    ipPool: "ippool",
+    ipAddress: "ipaddress",
+    provisioningTask: "provtask",
+    provisioningResource: "provres",
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIX)[keyof typeof ID_PREFIX];

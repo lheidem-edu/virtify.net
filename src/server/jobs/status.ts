@@ -6,6 +6,8 @@ import {
     BILLING_RUN_CRON,
     BILLING_RUN_QUEUE,
     BILLING_RUN_TZ,
+    PROVISIONING_CRON,
+    PROVISIONING_QUEUE,
     TICKET_SUBSCRIPTION_CRON,
     TICKET_SUBSCRIPTION_QUEUE,
     TICKET_SWEEP_CRON,
@@ -91,6 +93,11 @@ export async function jobsOverview(): Promise<JobsOverview> {
         {
             name: TICKET_SUBSCRIPTION_QUEUE,
             cron: TICKET_SUBSCRIPTION_CRON,
+            timezone: "UTC",
+        },
+        {
+            name: PROVISIONING_QUEUE,
+            cron: PROVISIONING_CRON,
             timezone: "UTC",
         },
     ];
