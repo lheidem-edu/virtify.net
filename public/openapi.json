@@ -1622,7 +1622,7 @@
                 ],
                 "description": "Eine Position der Bestellung."
             },
-            "SubscriptionItem": {
+            "OrderSubscriptionItem": {
                 "type": "object",
                 "properties": {
                     "id": {
@@ -1666,7 +1666,7 @@
                 ],
                 "description": "Eine Position eines Abonnements, mit Preisstand."
             },
-            "Subscription": {
+            "OrderSubscription": {
                 "type": "object",
                 "properties": {
                     "id": {
@@ -1746,7 +1746,7 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/SubscriptionItem"
+                            "$ref": "#/components/schemas/OrderSubscriptionItem"
                         },
                         "description": "Was das Abonnement abrechnet."
                     }
@@ -1765,7 +1765,7 @@
                 ],
                 "description": "Ein Abonnement — die Abrechnungsvereinbarung selbst, nicht die eines Zahlungsdienstleisters."
             },
-            "Service": {
+            "OrderService": {
                 "type": "object",
                 "properties": {
                     "id": {
@@ -1961,14 +1961,14 @@
                     "subscriptions": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Subscription"
+                            "$ref": "#/components/schemas/OrderSubscription"
                         },
                         "description": "Die Abonnements, die daraus entstanden sind — eines je Abrechnungsrhythmus."
                     },
                     "services": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Service"
+                            "$ref": "#/components/schemas/OrderService"
                         },
                         "description": "Die Leistungen, die bereitzustellen sind."
                     }
@@ -3148,6 +3148,217 @@
                 ],
                 "description": "Ein Aufruf des Moduls. Nur für Schlüssel der Verwaltung."
             },
+            "Service": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Leistung.",
+                        "example": "service_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Wie die Leistung dem Kunden angezeigt wird.",
+                        "example": "VPS M (1/2)"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "provisioning",
+                            "active",
+                            "suspended",
+                            "terminated"
+                        ],
+                        "description": "Der **Stand der Leistung in der Abrechnung** — und damit das, was gilt. `pending` ist bestellt und noch nicht eingerichtet, `provisioning` wird gerade angelegt, `active` läuft, `suspended` ist gesperrt (offene Rechnung oder pausiertes Abo), `terminated` ist abgebaut.",
+                        "example": "active"
+                    },
+                    "module": {
+                        "type": "string",
+                        "description": "Das Bereitstellungsmodul. `none`, solange nichts automatisch eingerichtet wird.",
+                        "example": "proxmox"
+                    },
+                    "module_label": {
+                        "type": "string",
+                        "description": "Der Name des Moduls, auf Deutsch.",
+                        "example": "Proxmox VE"
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Wem die Leistung gehört.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "product_id": {
+                        "type": "string",
+                        "description": "Das Produkt, das sie beschreibt.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "subscription_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Das Abo, das sie bezahlt. `null` für eine Leistung, die von Hand angelegt wurde.",
+                        "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "hostname": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Hostname, der eingerichtet wurde.",
+                        "example": "vps-m-101"
+                    },
+                    "provider_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "running",
+                            "stopped",
+                            "suspended",
+                            "unknown",
+                            "missing",
+                            null
+                        ],
+                        "description": "Was die Virtualisierung beim letzten Abruf gemeldet hat. Dies ist eine **Beobachtung, kein Zustand**: bei einem Widerspruch gilt immer `status`, und `mismatch` beschreibt ihn in Worten. `missing` heißt, dass auf dem Server keine Maschine mehr zu finden war.",
+                        "example": "running"
+                    },
+                    "provider_status_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann zuletzt abgefragt wurde, in UTC.",
+                        "example": "2026-11-09T07:05:00.000Z"
+                    },
+                    "activated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie in Betrieb genommen wurde, in UTC.",
+                        "example": "2026-11-01T09:00:00.000Z"
+                    },
+                    "suspended_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie gesperrt wurde, in UTC.",
+                        "example": null
+                    },
+                    "terminated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann sie abgebaut wurde, in UTC.",
+                        "example": null
+                    },
+                    "subscription_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Stand des Abos, das sie bezahlt.",
+                        "example": "active"
+                    },
+                    "addresses": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ServiceAddress"
+                        },
+                        "description": "Die zugewiesenen IP-Adressen."
+                    },
+                    "provider_status_detail": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Ein Satz zum letzten Abruf.",
+                        "example": "Läuft seit 72 h."
+                    },
+                    "mismatch": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Gesetzt, wenn Abrechnung und Maschine sich widersprechen — etwa „Die Leistung ist aktiv, die Maschine läuft aber nicht.“ Es ist ein **Hinweis für einen Menschen**: nichts im Panel handelt danach, weil sonst zwei Systeme abwechselnd dieselbe Maschine starten und stoppen würden.",
+                        "example": null
+                    },
+                    "available_actions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ServiceAvailableAction"
+                        },
+                        "description": "Was für diese Leistung ausgelöst werden kann. Ein Kundenschlüssel darf genau diese; `provision`, `suspend`, `unsuspend` und `terminate` bleiben der Verwaltung vorbehalten."
+                    },
+                    "server_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Auf welchem Server sie liegt. Nur Verwaltung.",
+                        "example": "server_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "server_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Name dieses Servers. Nur Verwaltung.",
+                        "example": "pve-fra-1"
+                    },
+                    "external_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Kennung, unter der die Virtualisierung die Maschine führt — bei Proxmox die VMID. Nur Verwaltung.",
+                        "example": "101"
+                    },
+                    "module_data": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "Was das Modul sich notiert hat. Nur Verwaltung."
+                    },
+                    "tasks": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ServiceTask"
+                        },
+                        "description": "Die letzten Aufrufe des Moduls. Nur Verwaltung."
+                    }
+                },
+                "required": [
+                    "id",
+                    "label",
+                    "status",
+                    "module",
+                    "module_label",
+                    "customer_id",
+                    "product_id",
+                    "subscription_id",
+                    "hostname",
+                    "provider_status",
+                    "provider_status_at",
+                    "activated_at",
+                    "suspended_at",
+                    "terminated_at",
+                    "subscription_status",
+                    "addresses",
+                    "provider_status_detail",
+                    "mismatch",
+                    "available_actions"
+                ],
+                "description": "Eine Leistung mit allem, was zu ihr gehört. Zugangsdaten stehen **nicht** darin: ein Passwort wird nur über den Kundenbereich herausgegeben, und dieser Zugriff wird protokolliert."
+            },
             "ServiceActionResult": {
                 "type": "object",
                 "properties": {
@@ -3296,6 +3507,71 @@
                     "terminated_at"
                 ],
                 "description": "Eine bereitgestellte Sache — ein VPS, ein Webspace — die zu einer Position des Abos gehört. Eine je bestellter Einheit."
+            },
+            "SubscriptionItem": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID der Position.",
+                        "example": "subscriptionitem_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "position": {
+                        "type": "integer",
+                        "description": "Reihenfolge innerhalb des Abos, ab 1.",
+                        "example": 1
+                    },
+                    "product_id": {
+                        "type": "string",
+                        "description": "Das Produkt, das berechnet wird.",
+                        "example": "product_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Der Name des Produkts zum Zeitpunkt des Verkaufs. Der Katalog darf sich ändern; ein laufendes Abo wird davon nicht neu bepreist.",
+                        "example": "VPS M"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "description": "Wie viele Einheiten berechnet werden.",
+                        "example": 1
+                    },
+                    "unit_price_cents": {
+                        "type": "integer",
+                        "description": "Grundpreis je Einheit und vollem Zeitraum, in ganzen Cent, wie verkauft.",
+                        "example": 1999
+                    },
+                    "recurring_gross_cents": {
+                        "type": "integer",
+                        "description": "Grundpreis plus Zusatzoptionen für einen vollen Zeitraum, vor einem Gutschein.",
+                        "example": 2399
+                    },
+                    "selections": {
+                        "type": "array",
+                        "items": {},
+                        "description": "Die gewählten Zusatzoptionen mit den Namen und Preisen, zu denen sie verkauft wurden.",
+                        "example": []
+                    },
+                    "services": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SubscriptionService"
+                        },
+                        "description": "Die Leistungen, die zu dieser Position gehören. Leer bei einem reinen Abo-Produkt ohne Bereitstellung."
+                    }
+                },
+                "required": [
+                    "id",
+                    "position",
+                    "product_id",
+                    "description",
+                    "quantity",
+                    "unit_price_cents",
+                    "recurring_gross_cents",
+                    "selections",
+                    "services"
+                ],
+                "description": "Eine Position des Abos, zum verkauften Preis."
             },
             "SubscriptionInvoiceRef": {
                 "type": "object",
@@ -3652,6 +3928,233 @@
                     "next_cursor",
                     "has_more"
                 ]
+            },
+            "Subscription": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Technische ID des Abos.",
+                        "example": "subscription_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "trialing",
+                            "active",
+                            "past_due",
+                            "paused",
+                            "cancelled",
+                            "ended"
+                        ],
+                        "description": "`trialing` ist in der kostenlosen Testphase, `active` läuft, `past_due` hat eine überfällige Rechnung (die Leistungen laufen zunächst weiter — gesperrt wird erst im Mahnlauf), `paused` ist angehalten und wird nicht berechnet, `cancelled` wird nicht mehr verlängert und läuft bis zum Ende des bezahlten Zeitraums, `ended` ist vorbei. Aus `ended` führt kein Weg zurück.",
+                        "example": "active"
+                    },
+                    "cycle": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semiannual",
+                            "annual",
+                            "biennial",
+                            "onetime"
+                        ],
+                        "description": "Der Abrechnungsrhythmus des Abos.",
+                        "example": "monthly"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "ISO 4217. Jeder Betrag am Abo ist darin.",
+                        "example": "EUR"
+                    },
+                    "current_period_start": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Beginn des laufenden Zeitraums, in UTC.",
+                        "example": "2026-11-01T08:00:00.000Z"
+                    },
+                    "current_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende des laufenden Zeitraums, exklusiv — der Augenblick, in dem der nächste beginnt. `null` bei einem einmaligen Verkauf.",
+                        "example": "2026-12-01T00:00:00.000Z"
+                    },
+                    "next_billing_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann die nächste Rechnung fällig wird. Die Rechnung selbst wird einige Tage vorher gestellt. `null`, solange pausiert oder beendet.",
+                        "example": "2026-12-01T00:00:00.000Z"
+                    },
+                    "trial_ends_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Ende der kostenlosen Testphase, in UTC.",
+                        "example": null
+                    },
+                    "cancel_at_period_end": {
+                        "type": "boolean",
+                        "description": "Ob das Abo zum Ende des bezahlten Zeitraums endet. Dann wird keine Verlängerung mehr gestellt.",
+                        "example": false
+                    },
+                    "auto_charge": {
+                        "type": "boolean",
+                        "description": "Ob wir die Verlängerung vom hinterlegten Zahlungsmittel einziehen. Ohne hinterlegtes Mittel passiert nichts.",
+                        "example": true
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Das Kundenkonto, dem das Abo gehört.",
+                        "example": "customer_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "period_gross_cents": {
+                        "type": "integer",
+                        "description": "Was ein voller Zeitraum aller Positionen kostet, vor einem Gutschein, in ganzen Cent.",
+                        "example": 1999
+                    },
+                    "order_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Die Bestellung, aus der es entstanden ist.",
+                        "example": "order_01K9ZC4X7QG0VN3M8T6B2PFHRD"
+                    },
+                    "payment_method_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Das Zahlungsmittel, von dem eingezogen wird. `null` bedeutet: das Standardmittel des Kontos.",
+                        "example": null
+                    },
+                    "coupon_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Der Gutscheincode, der mitläuft.",
+                        "example": "WILLKOMMEN"
+                    },
+                    "discount_periods_remaining": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Wie viele **weitere** Zeiträume der Gutschein noch abdeckt. `null` heißt dauerhaft, `0` heißt aufgebraucht. Jede gestellte Verlängerung zählt einen herunter.",
+                        "example": 2
+                    },
+                    "started_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann das Abo begonnen hat, in UTC.",
+                        "example": "2026-11-01T08:00:00.000Z"
+                    },
+                    "paused_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Seit wann es pausiert ist. Beim Fortsetzen wandert das Ende des Zeitraums um genau diese Spanne nach hinten.",
+                        "example": null
+                    },
+                    "past_due_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Seit wann eine Rechnung überfällig ist.",
+                        "example": null
+                    },
+                    "cancelled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann gekündigt wurde, in UTC.",
+                        "example": null
+                    },
+                    "ended_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "Wann es beendet wurde, in UTC.",
+                        "example": null
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SubscriptionItem"
+                        },
+                        "description": "Die Positionen, zu den verkauften Preisen."
+                    },
+                    "invoices": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SubscriptionInvoiceRef"
+                        },
+                        "description": "Jede Rechnung, die je gegen dieses Abo gestellt wurde, neueste zuerst."
+                    },
+                    "events": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SubscriptionEvent"
+                        },
+                        "description": "Die Historie, neueste zuerst, maximal 100."
+                    },
+                    "pending_changes": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SubscriptionPendingChange"
+                        },
+                        "description": "Tarifwechsel, die zum Ende des Zeitraums greifen."
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "cycle",
+                    "currency",
+                    "current_period_start",
+                    "current_period_end",
+                    "next_billing_at",
+                    "trial_ends_at",
+                    "cancel_at_period_end",
+                    "auto_charge",
+                    "customer_id",
+                    "period_gross_cents",
+                    "order_id",
+                    "payment_method_id",
+                    "coupon_code",
+                    "discount_periods_remaining",
+                    "started_at",
+                    "paused_at",
+                    "past_due_at",
+                    "cancelled_at",
+                    "ended_at",
+                    "items",
+                    "invoices",
+                    "events",
+                    "pending_changes"
+                ],
+                "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
             },
             "SubscriptionCreate": {
                 "type": "object",
@@ -6953,14 +7456,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "allOf": [
-                                        {
-                                            "$ref": "#/components/schemas/Service"
-                                        },
-                                        {
-                                            "description": "Eine Leistung mit allem, was zu ihr gehört. Zugangsdaten stehen **nicht** darin: ein Passwort wird nur über den Kundenbereich herausgegeben, und dieser Zugriff wird protokolliert."
-                                        }
-                                    ]
+                                    "$ref": "#/components/schemas/Service"
                                 }
                             }
                         }
@@ -7309,14 +7805,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "allOf": [
-                                        {
-                                            "$ref": "#/components/schemas/Subscription"
-                                        },
-                                        {
-                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
-                                        }
-                                    ]
+                                    "$ref": "#/components/schemas/Subscription"
                                 }
                             }
                         }
@@ -7405,14 +7894,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "allOf": [
-                                        {
-                                            "$ref": "#/components/schemas/Subscription"
-                                        },
-                                        {
-                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
-                                        }
-                                    ]
+                                    "$ref": "#/components/schemas/Subscription"
                                 }
                             }
                         }
@@ -7511,14 +7993,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "allOf": [
-                                        {
-                                            "$ref": "#/components/schemas/Subscription"
-                                        },
-                                        {
-                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
-                                        }
-                                    ]
+                                    "$ref": "#/components/schemas/Subscription"
                                 }
                             }
                         }
@@ -7627,14 +8102,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "allOf": [
-                                        {
-                                            "$ref": "#/components/schemas/Subscription"
-                                        },
-                                        {
-                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
-                                        }
-                                    ]
+                                    "$ref": "#/components/schemas/Subscription"
                                 }
                             }
                         }
@@ -7743,14 +8211,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "allOf": [
-                                        {
-                                            "$ref": "#/components/schemas/Subscription"
-                                        },
-                                        {
-                                            "description": "Ein Abo: der Abrechnungsvertrag. Er sagt, was geschuldet ist, für welchen Zeitraum und zu welchem Preis. Ein Zahlungsdienstleister zieht nur Geld dagegen ein; die Wahrheit über den Vertrag steht hier."
-                                        }
-                                    ]
+                                    "$ref": "#/components/schemas/Subscription"
                                 }
                             }
                         }

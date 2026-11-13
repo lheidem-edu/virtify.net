@@ -371,11 +371,16 @@ async function takeOne(
                   and a.reserved = false
                   and p.enabled = true
                   and p.family = ${input.family}
-                  ${
-                      input.poolId
-                          ? sql`and p.id = ${input.poolId}`
-                          : sql`and (p.server_id is null or p.server_id = ${input.serverId})`
-}
+                  ${input.poolId ? sql`and p.id = ${input.poolId}` : sql``}
+                  /**
+                   * The server scope holds even when a product names its
+                   * pool. A pool belongs to one cluster's network; handing
+                   * one of its addresses to a machine on another cluster
+                   * produces a VM that is unreachable and an address that
+                   * is booked as in use — and the product form is exactly
+                   * where that mistake is made.
+                   */
+                  and (p.server_id is null or p.server_id = ${input.serverId})
                 order by a.id
                 limit 1
                 for update of a skip locked

@@ -237,7 +237,49 @@ Proxmox's own `500 VM 101 already exists` is read as the same success. `provisio
 request" guard, and it is deliberately not the thing that makes a create safe; every
 caller's request key is written out in `src/server/provisioning/tasks.ts`. The attempt
 ladder is **per action**, because a uniform one is how a reboot reboots twice and a
-reinstall destroys a customer's data twice.
+reinstall destroys a customer's data twice — and **the HTTP client underneath obeys it**:
+`call()` retries a lost answer four times, which is right for a clone that converges on a
+reserved id and wrong for the two calls that cannot be repeated. A `resize` takes a *delta*
+(`+60G`), so a second one leaves a customer with 140 GB of an 80 GB package that Proxmox
+cannot shrink back, and a repeated power action is a second reboot of a machine whose owner
+asked for one. Those pass `idempotent: false`. A ladder enforced in one layer and undone in
+the one below it is not a ladder.
+
+**A request has four states and each has to be a way out.** `pending` and `failed` are
+runnable; `running` is somebody's claim and **expires**, because a worker killed mid-clone
+would otherwise hold a service for ever; `aborted` means the request is over and needs a
+person. The three rules that keep them from wedging each other: a request with no attempts
+left is **not** re-opened to `pending` by the sweep asking again (it would become
+unclaimable *and* invisible to „Erneut versuchen“, which matches `failed` and `aborted`); a
+failure the runner calls terminal still gets a **backoff**, because `failed` with attempts
+to spare is runnable and "permanent" was otherwise retried a minute later; and an abort
+distinguishes **waiting for the operator** — no server, an empty pool, no node with room,
+all of which resolve themselves — from a request that is over. The first gives the attempt
+back and waits, because otherwise five minutes of a panel having no cluster configured yet
+permanently kills a create, and because only `create` is ever re-requested by a sweep: for
+every other action an abort was a dead end, so a cancelled customer kept their machine.
+
+**One service, one call at a time.** The sweep and the operator's button claim different
+rows, so nothing stopped a `terminate` from overtaking an in-flight `create` and releasing
+the addresses it was at that moment writing into cloud-init. The claim refuses a task whose
+service already has a live one. For the same reason a `create` does not run on a service
+that is no longer `pending` or `provisioning`: `applyResult` refuses to write `active` over
+`terminated`, but by then the module has already made the machine, and a VM no row points
+at is worse than a wrong label.
+
+**An error that is an answer, and an answer that is an error.** `500 VM 101 already
+exists` on a clone is a success and `500 Configuration file … does not exist` on a destroy
+is a success, but **a job that failed is never "already gone"**: PVE checks that a VM
+exists before it starts one, so a missing machine is always the request's own refusal,
+while a `qmdestroy` that fails with `storage 'local-zfs' does not exist` is a VM that is
+still running. Reading that as done booked a live machine as torn down and handed its
+addresses to the next customer. The same shape twice more: a VM that exists is not
+necessarily finished — PVE holds `lock: "clone"` on a half-built one, and configuring it
+fails permanently, so a retry must wait rather than conclude "already there"; and "not on
+the node we remember" is not "gone", so a teardown that cannot find the machine asks the
+cluster before it releases anything. **A timeout that only covers the headers covers
+nothing**: the body read races the deadline itself, because a node that answers `200 OK`
+and then stops sending held the whole sequential sweep for ever.
 
 **`service.status` is the billing record's word and it always wins.** `getStatus` writes
 `service.provider_status`, a different column that nothing acts on, and a disagreement is
@@ -249,6 +291,13 @@ the rows `applyServiceFollow` actually **moved**, never on the statuses they now
 is what keeps the same follow written twice from asking twice. And **no action runs on a
 service that is not `active`** — without that, the whole dunning ladder is one button away
 from being undone.
+
+**A plan change moves the tariff, never the module.** A module reads what a machine is out
+of its product, but what the machine *is* was decided when it was built — and
+`enqueueTask` asks the service's *current* module whether it provisions anything, so a VPS
+switched onto a Supportvertrag stopped being suspendable, terminable or even readable in
+the same instant, and kept running with its address held when the Abo ended. `previewChange`
+refuses it, so the customer is told before they agree.
 
 Anything from a customer's order form that reaches a cloud-init payload, a hostname or a
 Proxmox parameter is attacker-controlled input. `src/server/provisioning/proxmox/sanitize.ts`
@@ -335,7 +384,13 @@ Server actions and `/api/v1` routes call the **same** service functions.
    an attempt we recorded under a reference we generated.
 8. **Audit log** every state change on customers, subscriptions, services, invoices, payments,
    tickets and settings (actor, action, entity, before/after, IP).
-9. **Timestamps** are `timestamptz` in UTC; display in `Europe/Berlin`.
+9. **Timestamps** are `timestamptz` in UTC; display in `Europe/Berlin`. What is on disk is
+   still plain `timestamp` (111 columns; `docs/PROGRESS.md` carries the item), and until
+   that is put right a `Date` must never be bound into a hand-written `sql` fragment:
+   node-postgres serializes it with the server's local offset and Postgres drops the
+   offset, so the value lands an hour out in winter and two in summer. Drizzle's typed
+   column comparisons go through its own mapper and are safe; a raw fragment passes
+   `value.toISOString()` and casts it (`${iso}::timestamp`).
 10. **Soft-delete** customers and products (`deleted_at`); never hard-delete anything an invoice
     points at.
 11. **Every `/api/v1` endpoint is documented**: registered in the OpenAPI registry with summary,

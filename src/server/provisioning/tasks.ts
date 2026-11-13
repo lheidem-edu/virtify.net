@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
 import type { ProvisioningActionName } from "@/db/schema";
 import { createId } from "@/lib/ulid";
@@ -186,6 +186,8 @@ export async function enqueueTask(
         .select({
             id: schema.provisioningTask.id,
             status: schema.provisioningTask.status,
+            attempts: schema.provisioningTask.attempts,
+            maxAttempts: schema.provisioningTask.maxAttempts,
         })
         .from(schema.provisioningTask)
         .where(
@@ -207,8 +209,22 @@ export async function enqueueTask(
      * `failed` and `aborted` are re-opened; `succeeded`, `pending` and
      * `running` are left exactly as they are. See the header: this is what
      * makes a sweep safe to run every minute.
+     *
+     * **A request with no attempts left is not re-opened.** Both halves of
+     * this were right on their own and wedged a service together: the
+     * attempt count is kept on purpose (asking again is not a reason to
+     * forget that five tries have gone), and the sweep re-opens a failed row
+     * once a minute. So a create that had spent its ladder was relabelled
+     * `pending`, where `claimTask` would not take it — `attempts <
+     * max_attempts` — and „Erneut versuchen“, which matches `failed` and
+     * `aborted`, no longer saw it either. The row read as queued, nothing
+     * could run it, and the only way out was SQL. A spent request stays
+     * visibly spent until a person gives it its attempts back.
      */
-    if (existing.status === "failed" || existing.status === "aborted") {
+    if (
+        (existing.status === "failed" || existing.status === "aborted") &&
+        existing.attempts < existing.maxAttempts
+    ) {
         await tx
             .update(schema.provisioningTask)
             .set({
@@ -220,7 +236,20 @@ export async function enqueueTask(
                  * service stuck on "no node has memory" into a `GET /nodes`
                  * every sixty seconds for as long as it is stuck.
                  */
-                runAfter: sql`greatest(${schema.provisioningTask.runAfter}, ${input.runAfter ?? now})`,
+                /**
+                 * The instant goes in as an ISO **string** cast to
+                 * `timestamp`. These columns are plain `timestamp` and a
+                 * `Date` bound into a hand-written `sql` fragment is
+                 * serialized with the server's local offset, which Postgres
+                 * then drops — so every re-opened task was pushed a whole
+                 * hour into the future in Europe/Berlin (two in summer)
+                 * rather than being asked for again a minute later. Drizzle's
+                 * own typed comparisons go through its mapper and are fine;
+                 * raw fragments are not.
+                 */
+                runAfter: sql`greatest(${schema.provisioningTask.runAfter}, ${(
+                    input.runAfter ?? now
+                ).toISOString()}::timestamp)`,
                 payload: input.payload ?? {},
                 requestedBy: input.requestedBy ?? null,
                 updatedAt: now,
@@ -244,6 +273,68 @@ export async function enqueueForServices(
     }
 
     return results;
+}
+
+/**
+ * How long a claim is good for.
+ *
+ * `claimTask` writes `running` and the module call then runs for minutes
+ * outside any transaction, so the row is the only record that somebody has
+ * it — and a worker that is killed mid-clone (a redeploy, an OOM) leaves it
+ * behind. Without a lease that row is `running` for ever: no sweep, no
+ * button and no API call can touch it again, and a `create` holds its
+ * service in `provisioning` with it.
+ *
+ * Half an hour is longer than the longest call this module can make — a
+ * clone waits `taskTimeoutMs` and every request inside it is bounded — so a
+ * lease that has run out means the process is gone, not slow. The attempt
+ * it spent stays spent, which is what keeps a call that reliably kills the
+ * worker from being retried for ever.
+ */
+export const TASK_LEASE_SECONDS = 1_800;
+
+/**
+ * The instant a claim older than this is no longer anybody's.
+ *
+ * Rendered as an ISO **string** cast to `timestamp`, not bound as a `Date`.
+ * These columns are plain `timestamp` (the repo-wide rule 9 backlog), and a
+ * `Date` bound into raw SQL is serialized by node-postgres with the server's
+ * local offset — which Postgres then drops, leaving a value an hour out in
+ * Europe/Berlin. Drizzle's own column comparisons go through its mapper and
+ * do not have this problem; a hand-written `sql` fragment does. The first
+ * version of the lease was an hour wrong in summer and silently never
+ * reclaimed anything.
+ */
+function leaseCutoff(at: Date): string {
+    return new Date(at.getTime() - TASK_LEASE_SECONDS * 1000).toISOString();
+}
+
+/** A claim nobody is holding any more. */
+function staleClaim(at: Date) {
+    return and(
+        eq(schema.provisioningTask.status, "running"),
+        sql`${schema.provisioningTask.startedAt} < ${leaseCutoff(at)}::timestamp`,
+    );
+}
+
+/**
+ * Another task is working on this service right now.
+ *
+ * One service, one call at a time. Two tasks on one machine is how a
+ * `terminate` that overtakes an in-flight `create` releases the addresses
+ * the create is at that moment writing into cloud-init — and the queue is
+ * otherwise perfectly happy to run them side by side, because the worker's
+ * sweep and the operator's button claim different rows.
+ */
+function busyService(taskId: string, at: Date) {
+    return sql`not exists (
+        select 1
+          from provisioning_task other
+         where other.service_id = provisioning_task.service_id
+           and other.id <> ${taskId}
+           and other.status = 'running'
+           and other.started_at >= ${leaseCutoff(at)}::timestamp
+    )`;
 }
 
 /**
@@ -272,7 +363,14 @@ export async function claimTask(
         .where(
             and(
                 eq(schema.provisioningTask.id, taskId),
-                inArray(schema.provisioningTask.status, ["pending", "failed"]),
+                or(
+                    inArray(schema.provisioningTask.status, [
+                        "pending",
+                        "failed",
+                    ]),
+                    staleClaim(at),
+                ),
+                busyService(taskId, at),
                 lte(schema.provisioningTask.runAfter, at),
                 /**
                  * The attempt ladder is enforced here and not only in the
@@ -301,7 +399,13 @@ export async function runnableTasks(
         .from(schema.provisioningTask)
         .where(
             and(
-                inArray(schema.provisioningTask.status, ["pending", "failed"]),
+                or(
+                    inArray(schema.provisioningTask.status, [
+                        "pending",
+                        "failed",
+                    ]),
+                    staleClaim(at),
+                ),
                 sql`${schema.provisioningTask.attempts} < ${schema.provisioningTask.maxAttempts}`,
                 lte(schema.provisioningTask.runAfter, at),
             ),

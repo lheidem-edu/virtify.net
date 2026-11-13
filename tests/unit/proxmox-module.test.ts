@@ -560,3 +560,103 @@ describe("the module's surface", () => {
         expect(check?.detail).toContain("kein vollständiger API-Token");
     });
 });
+
+describe("ipconfig0 carries one address per family", () => {
+    function withAddresses(
+        addresses: {
+            family: "ipv4" | "ipv6";
+            address: string;
+            prefixLength: number;
+            gateway: string | null;
+        }[],
+    ) {
+        return configParams({
+            config: proxmoxConfigSchema.parse({}),
+            server: proxmoxServerSchema.parse({
+                apiUrl: "https://pve.example.net:8006",
+                templateVmid: "9000",
+                templateNode: "pve1",
+            }),
+            hostname: "vps-101",
+            password: null,
+            sshKeys: [],
+            addresses: addresses.map((entry, index) => ({
+                id: `ipaddr_${index}`,
+                poolId: "ippool_1",
+                nameservers: [],
+                rdns: null,
+                ...entry,
+            })),
+        });
+    }
+
+    /**
+     * `ipconfig0` belongs to `net0` and its grammar is one `ip=` and one
+     * `ip6=`. Built from every assigned address, a product ordering two
+     * IPv4s sent `ip=…,gw=…,ip=…,gw=…`, which PVE refuses with `parameter
+     * verification failed` — so that product could not be provisioned at
+     * all, on any attempt, while the second address was held by a machine
+     * that was never made.
+     */
+    it("emits one ip= and one gw=, however many addresses are assigned", () => {
+        const params = withAddresses([
+            {
+                family: "ipv4",
+                address: "192.0.2.10",
+                prefixLength: 24,
+                gateway: "192.0.2.1",
+            },
+            {
+                family: "ipv4",
+                address: "192.0.2.11",
+                prefixLength: 24,
+                gateway: "192.0.2.1",
+            },
+        ]);
+
+        expect(params.ipconfig0).toBe("ip=192.0.2.10/24,gw=192.0.2.1");
+        expect(String(params.ipconfig0).match(/\bip=/g)).toHaveLength(1);
+    });
+
+    it("still carries one of each family together", () => {
+        const params = withAddresses([
+            {
+                family: "ipv4",
+                address: "192.0.2.10",
+                prefixLength: 24,
+                gateway: "192.0.2.1",
+            },
+            {
+                family: "ipv6",
+                address: "2001:db8::2",
+                prefixLength: 64,
+                gateway: "2001:db8::1",
+            },
+        ]);
+
+        expect(params.ipconfig0).toBe(
+            "ip=192.0.2.10/24,gw=192.0.2.1,ip6=2001:db8::2/64,gw6=2001:db8::1",
+        );
+    });
+});
+
+describe("one address, one spelling", () => {
+    /**
+     * The unique index on `(pool_id, address)` compares text, so an
+     * operator pasting a range twice in two notations would get two rows
+     * for one address — and the pool would hand it to two customers.
+     */
+    it("canonicalises IPv6 so the same address cannot be added twice", () => {
+        expect(
+            assertAddress("2001:0db8:0000:0000:0000:0000:0000:0001", "ipv6"),
+        ).toBe("2001:db8::1");
+        expect(assertAddress("2001:DB8::0001", "ipv6")).toBe("2001:db8::1");
+        expect(assertAddress("2001:db8::1", "ipv6")).toBe("2001:db8::1");
+    });
+
+    it("still refuses something that is not an address", () => {
+        expect(() => assertAddress("2001:db8::1,gw=::1", "ipv6")).toThrow(
+            ProvisioningInputError,
+        );
+    });
+});

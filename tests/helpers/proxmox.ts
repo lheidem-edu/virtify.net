@@ -242,6 +242,25 @@ export function fakeProxmox(options: FakeProxmoxOptions = {}): FakeProxmox {
             return json(nodes);
         }
 
+        /**
+         * `GET /cluster/resources?type=vm` — every VM the cluster knows,
+         * with the node it is on *now*. This is the only answer that tells
+         * "somebody migrated it" from "it is gone", which is what a
+         * terminate has to know before it gives a customer's addresses
+         * back. It reports the fake's whole VM map, migrations included.
+         */
+        if (path.startsWith("/cluster/resources")) {
+            return json(
+                [...vms.values()].map((vm) => ({
+                    type: "qemu",
+                    vmid: Number(vm.vmid),
+                    node: vm.node,
+                    name: vm.name,
+                    status: vm.status,
+                })),
+            );
+        }
+
         if (path === "/cluster/nextid") {
             // A string, as PVE really answers.
             const id = String(nextId);
@@ -283,7 +302,21 @@ export function fakeProxmox(options: FakeProxmoxOptions = {}): FakeProxmox {
         }
 
         const [, node, vmid, rest] = vmMatch;
-        const vm = vms.get(vmid);
+        /**
+         * **A VM is only on the node it is on.**
+         *
+         * PVE addresses a guest as `/nodes/{node}/qemu/{vmid}`, and asking
+         * the wrong node answers the same "configuration file does not
+         * exist" as asking about a VM that was never made — which is
+         * precisely why a migration is indistinguishable from a teardown
+         * unless somebody asks the cluster. Resolving by vmid alone made
+         * the panel's assumption true by construction: a terminate against
+         * a migrated VM "worked" in the suite and released a live machine's
+         * addresses in production.
+         */
+        const onThisNode = vms.get(vmid);
+        const vm =
+            onThisNode && onThisNode.node === node ? onThisNode : undefined;
 
         if (
             rest.startsWith("/status/current") &&

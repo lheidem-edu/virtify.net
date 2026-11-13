@@ -11,7 +11,12 @@ import { allocateAddresses, poolCounts } from "@/server/provisioning/ip-pools";
 import { loadService } from "@/server/provisioning/repository";
 import { runProvisioningTask } from "@/server/provisioning/runner";
 import { chooseServer, serverCredentials } from "@/server/provisioning/servers";
-import { enqueueTask } from "@/server/provisioning/tasks";
+import {
+    claimTask,
+    enqueueTask,
+    MAX_ATTEMPTS,
+    TASK_LEASE_SECONDS,
+} from "@/server/provisioning/tasks";
 import {
     cancelSubscription,
     transitionSubscription,
@@ -595,17 +600,409 @@ describe.skipIf(!available)("provisioning", () => {
         const outcome = await runCreate(service.id, fake);
 
         expect(outcome.ran && outcome.ok).toBe(false);
-        expect(outcome.ran && outcome.terminal).toBe(true);
 
         const [task] = await tasksOf(db, service.id);
 
-        expect(task.status).toBe("aborted");
+        /**
+         * An empty pool is the request **waiting**, not failing: the
+         * operator adds a range and it goes through. So the row goes back
+         * on the queue with its attempt returned and a backoff on it —
+         * spending one of five on the discovery that a pool is still empty
+         * used to kill a create permanently about a quarter of an hour
+         * after the order, with nothing wrong except that the panel was
+         * new. What it must still do is give back everything it took.
+         */
+        expect(outcome.ran && outcome.terminal).toBe(false);
+        expect(task.status).toBe("pending");
+        expect(task.attempts).toBe(0);
+        expect(task.runAfter.getTime()).toBeGreaterThan(Date.now());
         expect(task.providerCalledAt).toBeNull();
         expect(await resourceOf(db, service.id)).toBeNull();
         expect(await addressesOf(db, service.id)).toEqual([]);
         // Not one request went out.
         expect(fake.calls).toEqual([]);
         expect(serverId).toBeTruthy();
+    });
+
+    /**
+     * The other half of the same line: a precondition that will **not**
+     * resolve itself is a failure, and it spends an attempt like any other.
+     */
+    /**
+     * The two mechanisms that wedged a service between them. Each was right
+     * on its own: a request keeps its attempt count when it is asked for
+     * again, and the create sweep re-opens a failed row every minute. A
+     * create that had spent its ladder was therefore relabelled `pending`,
+     * where nothing could claim it — `attempts < max_attempts` — and
+     * „Erneut versuchen“, which matches `failed` and `aborted`, could no
+     * longer see it either. The row read as queued, nothing ran it, and the
+     * only way out was SQL.
+     */
+    it("leaves a spent request visibly spent, so the retry button still finds it", async () => {
+        const { service } = await scenario();
+        const fake = fakeProxmox({ unreachable: ["/clone"] });
+
+        for (let attempt = 0; attempt < MAX_ATTEMPTS.create; attempt += 1) {
+            await db
+                .update(schema.provisioningTask)
+                .set({ runAfter: new Date(Date.now() - 1000) })
+                .where(eq(schema.provisioningTask.serviceId, service.id));
+
+            await runCreate(service.id, fake);
+        }
+
+        const [spent] = await tasksOf(db, service.id);
+
+        expect(spent.attempts).toBe(MAX_ATTEMPTS.create);
+        expect(spent.status).toBe("failed");
+
+        // The sweep asks again, a minute later and every minute after that.
+        await db.transaction((tx) => enqueueCreate(tx, service.id, "worker"));
+
+        const [asked] = await tasksOf(db, service.id);
+
+        expect(asked.status).toBe("failed");
+        expect(asked.attempts).toBe(MAX_ATTEMPTS.create);
+
+        /**
+         * And the operator's recovery works: the button matches `failed`,
+         * gives the request its attempts back, and the create goes through
+         * once the cluster answers.
+         */
+        await db
+            .update(schema.provisioningTask)
+            .set({ attempts: 0, status: "pending", runAfter: new Date() })
+            .where(eq(schema.provisioningTask.id, asked.id));
+
+        const outcome = await runProvisioningTask(db, asked.id, {
+            actor: ACTOR,
+            fetchImpl: fakeProxmox().fetchImpl,
+        });
+
+        expect(outcome.ran && outcome.ok).toBe(true);
+        expect((await serviceOf(db, service.id)).status).toBe("active");
+    });
+
+    /**
+     * A claim is a committed `running` row and the call that holds it runs
+     * for minutes outside any transaction. A worker killed mid-clone — a
+     * redeploy, an OOM — used to leave that row behind for ever: no sweep,
+     * no button and no API call could touch the service again.
+     */
+    it("takes back a claim whose worker is gone, and not one that is still held", async () => {
+        const { service } = await scenario();
+        const fake = fakeProxmox();
+
+        const { taskId } = await db.transaction((tx) =>
+            enqueueTask(tx, {
+                serviceId: service.id,
+                action: "create",
+                requestKey: "create",
+            }),
+        );
+
+        // Somebody claims it and dies.
+        const claimed = await claimTask(db, taskId, new Date());
+
+        expect(claimed?.status).toBe("running");
+        expect(await claimTask(db, taskId, new Date())).toBeNull();
+
+        const stale = new Date(Date.now() + (TASK_LEASE_SECONDS + 60) * 1000);
+
+        expect(await claimTask(db, taskId, stale)).not.toBeNull();
+
+        await db
+            .update(schema.provisioningTask)
+            .set({ status: "pending", attempts: 0, runAfter: new Date() })
+            .where(eq(schema.provisioningTask.id, taskId));
+
+        expect(
+            await runProvisioningTask(db, taskId, {
+                actor: ACTOR,
+                fetchImpl: fake.fetchImpl,
+                sleepImpl: fake.sleep,
+            }).then((outcome) => outcome.ran && outcome.ok),
+        ).toBe(true);
+    });
+
+    /**
+     * One service, one call at a time. Two tasks on one machine is how a
+     * terminate that overtakes an in-flight create releases the addresses
+     * the create is at that moment writing into cloud-init.
+     */
+    it("will not run a second task on a service that already has one running", async () => {
+        const { service } = await scenario();
+
+        const first = await db.transaction((tx) =>
+            enqueueTask(tx, {
+                serviceId: service.id,
+                action: "create",
+                requestKey: "create",
+            }),
+        );
+        const second = await db.transaction((tx) =>
+            enqueueTask(tx, {
+                serviceId: service.id,
+                action: "terminate",
+                requestKey: "manual:overtake",
+            }),
+        );
+
+        expect(await claimTask(db, first.taskId, new Date())).not.toBeNull();
+        expect(await claimTask(db, second.taskId, new Date())).toBeNull();
+
+        // Once the first is finished the second may go.
+        await db
+            .update(schema.provisioningTask)
+            .set({ status: "succeeded" })
+            .where(eq(schema.provisioningTask.id, first.taskId));
+
+        expect(await claimTask(db, second.taskId, new Date())).not.toBeNull();
+    });
+
+    /**
+     * `create` is queued under one key for ever, so a cancellation that
+     * overtakes a failed create does not cancel it — the row is still there
+     * and still runnable. Building the machine then leaves one on the
+     * cluster that nothing in the panel points at.
+     */
+    it("does not build a machine for a service that has been terminated", async () => {
+        const { service } = await scenario();
+        const fake = fakeProxmox({ unreachable: ["/clone"] });
+
+        await runCreate(service.id, fake);
+
+        await db
+            .update(schema.service)
+            .set({ status: "terminated", terminatedAt: new Date() })
+            .where(eq(schema.service.id, service.id));
+
+        const [task] = await tasksOf(db, service.id);
+
+        await db
+            .update(schema.provisioningTask)
+            .set({ runAfter: new Date(Date.now() - 1000) })
+            .where(eq(schema.provisioningTask.id, task.id));
+
+        const healthy = fakeProxmox();
+        const outcome = await runProvisioningTask(db, task.id, {
+            actor: ACTOR,
+            fetchImpl: healthy.fetchImpl,
+            sleepImpl: healthy.sleep,
+        });
+
+        expect(outcome.ran && outcome.ok).toBe(false);
+        expect(healthy.callsTo("/clone")).toEqual([]);
+        expect((await serviceOf(db, service.id)).status).toBe("terminated");
+    });
+
+    /**
+     * PVE writes the target's configuration at the *start* of a clone and
+     * holds `lock: "clone"` until the copy is done. A create retried while
+     * the first clone was still running found the VM, concluded "already
+     * there", and configured it — which PVE refuses, permanently, so any
+     * clone slower than the task deadline ended with a VMID held, addresses
+     * held, cloud-init never applied and a paid invoice.
+     */
+    it("waits for a clone that is still running instead of configuring it", async () => {
+        const { service } = await scenario();
+        // The first attempt reserves the VMID and asks for the clone; the
+        // answer never arrives, which is exactly the case this is about.
+        const lost = fakeProxmox({ unreachable: ["/clone"] });
+
+        await runCreate(service.id, lost);
+
+        const vmid = (await resourceOf(db, service.id))?.externalId as string;
+        const building = fakeProxmox({
+            vms: [
+                fakeVm({
+                    vmid,
+                    node: "pve1",
+                    lock: "clone",
+                    status: "stopped",
+                }),
+                fakeVm({ vmid: "9000", node: "pve1" }),
+            ],
+            nextId: Number(vmid) + 1,
+        });
+
+        const [task] = await tasksOf(db, service.id);
+
+        await db
+            .update(schema.provisioningTask)
+            .set({
+                status: "pending",
+                attempts: 0,
+                runAfter: new Date(Date.now() - 1000),
+            })
+            .where(eq(schema.provisioningTask.id, task.id));
+
+        const outcome = await runProvisioningTask(db, task.id, {
+            actor: ACTOR,
+            fetchImpl: building.fetchImpl,
+            sleepImpl: building.sleep,
+        });
+
+        expect(outcome.ran && outcome.ok).toBe(false);
+        // Not configured, and not given up on either.
+        expect(building.callsTo("/config")).toEqual([]);
+        expect(outcome.ran && outcome.terminal).toBe(false);
+        expect(await resourceOf(db, service.id)).not.toBeNull();
+    });
+
+    /**
+     * "Not on the node we remember" is not "gone". An operator who migrates
+     * a VM in the Proxmox UI moves it, and the old node then answers `does
+     * not exist` — which `terminate` read as its documented success, booked
+     * the service as torn down and put the customer's addresses back in the
+     * pool while the machine kept running and answering on one of them.
+     */
+    it("finds a migrated VM before it believes the machine is gone", async () => {
+        const { service } = await scenario();
+        const fake = fakeProxmox();
+
+        await runCreate(service.id, fake);
+
+        const resource = await resourceOf(db, service.id);
+        const vmid = resource?.externalId as string;
+
+        expect(resource?.node).toBe("pve1");
+
+        // Somebody migrated it to the other node.
+        const migrated = fakeProxmox({
+            nodes: [{ node: "pve1" }, { node: "pve2" }],
+            vms: [fakeVm({ vmid, node: "pve2", status: "running" })],
+        });
+
+        const { taskId } = await db.transaction((tx) =>
+            enqueueTask(tx, {
+                serviceId: service.id,
+                action: "terminate",
+                requestKey: "manual:migrated",
+            }),
+        );
+
+        const outcome = await runProvisioningTask(db, taskId, {
+            actor: ACTOR,
+            fetchImpl: migrated.fetchImpl,
+            sleepImpl: migrated.sleep,
+        });
+
+        expect(outcome.ran && outcome.ok).toBe(true);
+        // It was actually destroyed, on the node it is really on.
+        expect(
+            migrated.calls.some(
+                (call) =>
+                    call.method === "DELETE" && call.path.includes("/pve2/"),
+            ),
+        ).toBe(true);
+        expect(migrated.vms.has(vmid)).toBe(false);
+        expect(await addressesOf(db, service.id)).toEqual([]);
+    });
+
+    /**
+     * The other half: a machine that really is gone everywhere is still a
+     * successful teardown, or a cancelled customer's addresses would never
+     * come back.
+     */
+    it("still releases when the VM is gone from the whole cluster", async () => {
+        const { service } = await scenario();
+        const fake = fakeProxmox();
+
+        await runCreate(service.id, fake);
+
+        const vmid = (await resourceOf(db, service.id))?.externalId as string;
+        const empty = fakeProxmox({ vms: [] });
+
+        const { taskId } = await db.transaction((tx) =>
+            enqueueTask(tx, {
+                serviceId: service.id,
+                action: "terminate",
+                requestKey: "manual:really-gone",
+            }),
+        );
+
+        const outcome = await runProvisioningTask(db, taskId, {
+            actor: ACTOR,
+            fetchImpl: empty.fetchImpl,
+            sleepImpl: empty.sleep,
+        });
+
+        expect(outcome.ran && outcome.ok).toBe(true);
+        expect(outcome.ran && outcome.alreadyDone).toBe(true);
+        expect(empty.vms.has(vmid)).toBe(false);
+        expect(await addressesOf(db, service.id)).toEqual([]);
+        expect(await resourceOf(db, service.id)).toBeNull();
+    });
+
+    /**
+     * A terminate is the end of a service, and `provider_status` is never
+     * read again for one — `enqueueStatusSync` only asks about `active` and
+     * `suspended`. Left at the last hourly reading, every normally
+     * cancelled service showed „auf dem Server existiert aber noch eine
+     * Maschine“ for ever, which is the one warning that is supposed to mean
+     * somebody should go and look.
+     */
+    it("records that the machine is gone when it tears one down", async () => {
+        const { service } = await scenario();
+        const fake = fakeProxmox();
+
+        await runCreate(service.id, fake);
+
+        await db
+            .update(schema.service)
+            .set({ providerStatus: "running", providerStatusAt: new Date() })
+            .where(eq(schema.service.id, service.id));
+
+        const { taskId } = await db.transaction((tx) =>
+            enqueueTask(tx, {
+                serviceId: service.id,
+                action: "terminate",
+                requestKey: "manual:status",
+            }),
+        );
+
+        await runProvisioningTask(db, taskId, {
+            actor: ACTOR,
+            fetchImpl: fake.fetchImpl,
+            sleepImpl: fake.sleep,
+        });
+
+        const after = await serviceOf(db, service.id);
+
+        expect(after.status).toBe("terminated");
+        expect(after.providerStatus).toBe("missing");
+    });
+
+    it("spends an attempt when an abort is the request's own fault", async () => {
+        const { service, serverId } = await scenario({ poolSize: 2 });
+        const fake = fakeProxmox();
+        const { encrypt } = await import("@/lib/crypto");
+
+        /**
+         * A token that is stored but is not a token. Nothing can make that
+         * work by waiting, so unlike an empty pool it is a real failure: it
+         * ends `aborted` and it costs one of the five.
+         */
+        await db
+            .update(schema.provisioningServer)
+            .set({
+                credentialsEncrypted: encrypt(
+                    JSON.stringify({ tokenId: "nonsense", tokenSecret: "x" }),
+                    `provisioning_server.${serverId}.token`,
+                ),
+            })
+            .where(eq(schema.provisioningServer.id, serverId));
+
+        const outcome = await runCreate(service.id, fake);
+        const [task] = await tasksOf(db, service.id);
+
+        expect(outcome.ran && outcome.ok).toBe(false);
+        expect(outcome.ran && outcome.terminal).toBe(true);
+        expect(task.status).toBe("aborted");
+        expect(task.attempts).toBe(1);
+        expect(fake.calls).toEqual([]);
+        expect(await addressesOf(db, service.id)).toEqual([]);
     });
 
     it("hands back only this attempt's addresses, not ones already held", async () => {
@@ -1010,18 +1407,28 @@ describe.skipIf(!available)("provisioning", () => {
 
     it("gives a create five attempts, because it is safe to repeat", async () => {
         const { service } = await scenario();
-        const [row] = await db
-            .insert(schema.provisioningTask)
-            .values({
+
+        /**
+         * Through `enqueueTask`, which is what decides the ladder. The
+         * first version of this inserted a row with `maxAttempts: 5` by
+         * hand and read the 5 back — a tautology that would have passed
+         * with the whole `MAX_ATTEMPTS` table set to one.
+         */
+        const created = await db.transaction((tx) =>
+            enqueueTask(tx, {
                 serviceId: service.id,
-                module: "proxmox",
                 action: "create",
                 requestKey: "ladder",
-                maxAttempts: 5,
-            })
-            .returning();
+            }),
+        );
+
+        const [row] = await db
+            .select()
+            .from(schema.provisioningTask)
+            .where(eq(schema.provisioningTask.id, created.taskId));
 
         expect(row.maxAttempts).toBe(5);
+        expect(row.maxAttempts).toBe(MAX_ATTEMPTS.create);
 
         const { taskId } = await db.transaction((tx) =>
             enqueueTask(tx, {
@@ -1363,8 +1770,20 @@ describe.skipIf(!available)("provisioning", () => {
 
         expect(outcome.ran && outcome.ok).toBe(false);
         expect(fake.calls).toEqual([]);
-        expect((await tasksOf(db, service.id))[0].status).toBe("aborted");
         expect(await addressesOf(db, service.id)).toEqual([]);
+
+        /**
+         * **An installation with no cluster yet is the normal case, not a
+         * broken request.** This is what every action does on the day the
+         * panel is installed, so it waits — with its attempt given back, so
+         * that five minutes of waiting cannot use up a create's whole
+         * ladder before the operator has finished reading the setup guide.
+         */
+        const [task] = await tasksOf(db, service.id);
+
+        expect(task.status).toBe("pending");
+        expect(task.attempts).toBe(0);
+        expect(outcome.ran && outcome.terminal).toBe(false);
 
         await db
             .update(schema.provisioningServer)

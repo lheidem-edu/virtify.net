@@ -99,6 +99,25 @@ export class ProxmoxError extends Error {
             return true;
         }
 
+        /**
+         * **A task that failed is never "already gone".**
+         *
+         * PVE checks that a VM exists before it starts a job on it, so
+         * "there is no such machine" always comes back as the request's own
+         * refusal. What comes back through a UPID is the job failing while
+         * doing the work — and `qmdestroy` fails with wording like
+         * `storage 'local-zfs' does not exist` when the VM references a
+         * storage the operator has since removed from `storage.cfg`.
+         * Matched as "already gone", that booked a running machine as torn
+         * down: the service went `terminated`, its addresses went back into
+         * the pool for the next customer, and the VM carried on running
+         * with nothing in the panel pointing at it. "Already done is a
+         * success" has to mean the machine, and only a refusal can say so.
+         */
+        if (this.exitStatus !== null) {
+            return false;
+        }
+
         return /does not exist|no such vm|not exist|unable to find|nicht vorhanden/i.test(
             this.text,
         );
@@ -171,7 +190,17 @@ export type ProxmoxClientOptions = {
 const MAX_ATTEMPTS = 4;
 const MAX_BACKOFF_MS = 15_000;
 const DEFAULT_TIMEOUT_MS = 20_000;
-const DEFAULT_TASK_TIMEOUT_MS = 120_000;
+/**
+ * How long to wait for one PVE job.
+ *
+ * A `full=1` clone of a template of any real size takes longer than two
+ * minutes on NFS, on spinning disks or on a busy Ceph pool, so the first
+ * figure here guaranteed that nearly every real create went through the
+ * "give up and retry" path. Giving up is now *safe* — the retry sees the
+ * clone lock and waits rather than configuring a half-built machine — but
+ * it should also be rare, which ten minutes makes it.
+ */
+const DEFAULT_TASK_TIMEOUT_MS = 600_000;
 
 /** How long to wait before attempt `attempt` (0-based), in ms. */
 export function backoffMs(
@@ -253,6 +282,7 @@ export function proxmoxClient(options: ProxmoxClientOptions) {
         method: string,
         path: string,
         params?: Record<string, string | number | undefined | null>,
+        options: { idempotent?: boolean } = {},
     ): Promise<T> {
         const search = new URLSearchParams();
 
@@ -271,12 +301,58 @@ export function proxmoxClient(options: ProxmoxClientOptions) {
                 ? `${base}${path}`
                 : `${base}${path}?${query}`;
 
-        let response: Response | null = null;
+        /**
+         * Whether this call may be sent a second time.
+         *
+         * **A retry is a second request, and the cluster cannot tell us
+         * whether it ran the first.** For most of these that does not
+         * matter: a clone converges on the reserved VMID, a `setConfig`
+         * writes the same values, a destroy of something already destroyed
+         * is a success. For two of them it matters a great deal — `resize`
+         * takes a *delta* (`+60G`), so a repeat leaves the customer with
+         * 140 GB of a 80 GB package that Proxmox cannot shrink back; and a
+         * power action repeated is a second reboot of a machine whose owner
+         * asked for one. The per-action attempt ladder in `tasks.ts` gives
+         * those exactly one go, and this loop sat underneath it quietly
+         * giving them four.
+         */
+        const mayRetry = options.idempotent !== false;
+
+        let outcome: {
+            status: number;
+            statusText: string;
+            text: string;
+        } | null = null;
         let lastError: unknown = null;
 
         for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            /**
+             * The deadline is a promise as well as a signal.
+             *
+             * Aborting the controller is what a real `fetch` needs to tear
+             * the body stream down, but *waiting* for that to happen is
+             * trusting somebody else's implementation with the only thing
+             * standing between a wedged node and a worker that never runs
+             * another task. So the read races the deadline directly, and
+             * the abort is the tidy-up rather than the mechanism.
+             */
+            let fired: () => void = () => undefined;
+            const deadline = new Promise<never>((_, reject) => {
+                const timer = setTimeout(() => {
+                    controller.abort();
+                    reject(new Error(`timed out after ${timeoutMs} ms`));
+                }, timeoutMs);
+
+                fired = () => clearTimeout(timer);
+            });
+
+            // Nothing is listening for the rejection until the race below.
+            deadline.catch(() => undefined);
+
+            const timer = { clear: fired };
+            let response: Response;
+            let text: string;
 
             try {
                 response = await doFetch(url, {
@@ -293,56 +369,83 @@ export function proxmoxClient(options: ProxmoxClientOptions) {
                     ...(hasBody ? { body: query } : {}),
                     signal: controller.signal,
                 });
+
+                /**
+                 * **The body is read while the timer is still armed.**
+                 *
+                 * `fetch` resolves when the *headers* arrive, so a timeout
+                 * cleared at that point guards nothing that matters: a
+                 * pveproxy that answers `200 OK` and then stops sending —
+                 * a node blocked on I/O, a half-closed connection the
+                 * kernel never reaps — left `await response.text()` pending
+                 * for ever. The provisioning sweep is sequential and the
+                 * worker awaits it, so one such call stopped every
+                 * create, suspend and terminate on the installation until
+                 * somebody killed the process. Which is the exact thing
+                 * `timeoutMs` exists to prevent.
+                 */
+                text = await Promise.race([response.text(), deadline]);
             } catch (error) {
                 /**
                  * A refused connection, a DNS failure, our own timeout. None
                  * of those says anything about whether the cluster acted —
                  * which is precisely why `create` reserves the VMID first and
-                 * asks afterwards.
+                 * asks afterwards, and why a call that must not run twice
+                 * stops here rather than asking again.
                  */
+                timer.clear();
                 lastError = error;
-                response = null;
 
-                if (attempt === MAX_ATTEMPTS - 1) {
+                if (!mayRetry || attempt === MAX_ATTEMPTS - 1) {
                     throw new ProxmoxUnreachableError(error);
                 }
 
                 await sleep(backoffMs(null, attempt));
                 continue;
-            } finally {
-                clearTimeout(timer);
             }
 
+            timer.clear();
+
             if (response.ok) {
+                outcome = {
+                    status: response.status,
+                    statusText: response.statusText,
+                    text,
+                };
                 break;
             }
 
             const transient = new ProxmoxError(
                 response.status,
                 response.statusText,
-                "",
+                text,
             ).retryable;
 
-            if (transient && attempt < MAX_ATTEMPTS - 1) {
-                const retryAfter = response.headers.get("retry-after");
-
-                // Drained so the connection can be reused for the retry.
-                await response.text().catch(() => "");
-                await sleep(backoffMs(retryAfter, attempt));
+            if (transient && mayRetry && attempt < MAX_ATTEMPTS - 1) {
+                await sleep(
+                    backoffMs(response.headers.get("retry-after"), attempt),
+                );
                 continue;
             }
 
+            outcome = {
+                status: response.status,
+                statusText: response.statusText,
+                text,
+            };
             break;
         }
 
-        if (!response) {
+        if (!outcome) {
             throw new ProxmoxUnreachableError(lastError);
         }
 
-        if (!response.ok) {
-            const body = await response.text().catch(() => "");
-
-            throw new ProxmoxError(response.status, response.statusText, body);
+        if (outcome.status < 200 || outcome.status >= 300) {
+            throw new ProxmoxError(
+                outcome.status,
+                outcome.statusText,
+                outcome.text,
+            );
         }
 
         /**
@@ -351,13 +454,11 @@ export function proxmoxClient(options: ProxmoxClientOptions) {
          * a status code made the most important call in that system throw
          * after the work had already been done.
          */
-        const text = await response.text();
-
-        if (text.trim() === "") {
+        if (outcome.text.trim() === "") {
             return undefined as T;
         }
 
-        const parsed = JSON.parse(text) as { data?: T };
+        const parsed = JSON.parse(outcome.text) as { data?: T };
 
         return parsed.data as T;
     }
@@ -436,6 +537,29 @@ export function proxmoxClient(options: ProxmoxClientOptions) {
             }));
         },
 
+        /**
+         * The node a VMID is on right now, or null when the cluster has
+         * never heard of it.
+         *
+         * `GET /cluster/resources?type=vm` is the only question that can
+         * tell "this machine was migrated" from "this machine is gone", and
+         * the difference decides whether a customer's addresses go back
+         * into the pool.
+         */
+        async findVm(vmid: string): Promise<string | null> {
+            const rows = await call<Record<string, unknown>[]>(
+                "GET",
+                "/cluster/resources",
+                { type: "vm" },
+            );
+
+            const row = (rows ?? []).find(
+                (entry) => String(entry.vmid ?? "") === String(vmid),
+            );
+
+            return row?.node ? String(row.node) : null;
+        },
+
         /** `GET /cluster/nextid` — a string, and it stays one. */
         async nextId(): Promise<string> {
             const value = await call<string | number>("GET", "/cluster/nextid");
@@ -488,7 +612,17 @@ export function proxmoxClient(options: ProxmoxClientOptions) {
             disk: string,
             size: string,
         ): Promise<void> {
-            await call("PUT", `${qemu(node, vmid)}/resize`, { disk, size });
+            /**
+             * `size` is a delta — `+60G`, not "make it 80G" — so this is
+             * the one call in the module that must never be sent twice.
+             * Proxmox cannot shrink a disk back.
+             */
+            await call(
+                "PUT",
+                `${qemu(node, vmid)}/resize`,
+                { disk, size },
+                { idempotent: false },
+            );
         },
 
         async status(node: string, vmid: string): Promise<VmStatus> {
@@ -527,6 +661,14 @@ export function proxmoxClient(options: ProxmoxClientOptions) {
             const upid = await call<string>(
                 "POST",
                 `${qemu(node, vmid)}/status/${what}`,
+                undefined,
+                /**
+                 * A reboot is not idempotent, and neither is a `stop` on a
+                 * guest that was already shutting down. The attempt ladder
+                 * gives a power action exactly one go for that reason; this
+                 * is the same decision one layer down.
+                 */
+                { idempotent: false },
             );
 
             const wait =

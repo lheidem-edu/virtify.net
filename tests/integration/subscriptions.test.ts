@@ -460,6 +460,58 @@ describe.skipIf(!available)("subscriptions", () => {
             expect(preview.currentPeriodCents).toBe(1999);
         });
 
+        /**
+         * A VPS moved onto a Supportvertrag used to rewrite
+         * `service.module` to `none`, and from that instant every call for
+         * that service was a silent no-op: `enqueueTask` asks the service's
+         * *current* module whether it provisions anything. When the Abo
+         * later ended, the machine kept running on the hypervisor and its
+         * IP address never came back to the pool — with nothing anywhere
+         * saying so, because the warning that would have is driven by a
+         * reading that is no longer taken either.
+         */
+        it("refuses to move a running machine onto a tariff that provisions nothing", async () => {
+            const { subscriptionId, item } = await oneVps();
+
+            const services = await db
+                .select()
+                .from(schema.service)
+                .where(eq(schema.service.subscriptionItemId, item.id));
+
+            expect(services).toHaveLength(1);
+
+            await db
+                .update(schema.service)
+                .set({ module: "proxmox", status: "active" })
+                .where(eq(schema.service.id, services[0].id));
+
+            const request = {
+                subscriptionId,
+                itemId: item.id,
+                productId: support,
+                effective: "immediately" as const,
+            };
+
+            // The preview refuses, so the customer is told before they agree.
+            await expect(
+                previewChange(db, request, { now: MIDWAY }),
+            ).rejects.toThrow(/anders bereitgestellt/);
+
+            await expect(
+                applyChange(db, request, ACTOR, {
+                    now: MIDWAY,
+                    settings: SETTINGS,
+                }),
+            ).rejects.toThrow(/anders bereitgestellt/);
+
+            const [after] = await db
+                .select()
+                .from(schema.service)
+                .where(eq(schema.service.id, services[0].id));
+
+            expect(after.module).toBe("proxmox");
+        });
+
         it("charges exactly what the preview said, and no second arithmetic", async () => {
             const { subscriptionId, item, customerId } = await oneVps();
 

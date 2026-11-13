@@ -172,6 +172,27 @@ export function isIpv6(value: string): boolean {
     return value.split(":").filter((part) => part !== "").length <= 8;
 }
 
+/**
+ * One IPv6 address, written one way.
+ *
+ * `2001:db8::1`, `2001:0db8:0000:0000:0000:0000:0000:0001` and
+ * `2001:DB8::0001` are the same address, and the unique index on
+ * `(pool_id, address)` compares text — so an operator who pastes a range
+ * twice in two notations gets two rows for one address, and the pool hands
+ * it to two customers. Node's URL parser implements the WHATWG IPv6
+ * serializer, which is the canonical compressed form, and it costs no
+ * dependency (rule 12).
+ */
+export function canonicalIpv6(value: string): string | null {
+    try {
+        const host = new URL(`http://[${value}]/`).hostname;
+
+        return host.startsWith("[") ? host.slice(1, -1) : host;
+    } catch {
+        return null;
+    }
+}
+
 export function assertAddress(
     address: string,
     family: "ipv4" | "ipv6",
@@ -184,6 +205,18 @@ export function assertAddress(
                 family === "ipv4" ? "IPv4" : "IPv6"
             }-Adresse.`,
         );
+    }
+
+    if (family === "ipv6") {
+        const canonical = canonicalIpv6(value);
+
+        if (!canonical) {
+            throw new ProvisioningInputError(
+                `„${address}“ ist keine gültige IPv6-Adresse.`,
+            );
+        }
+
+        return canonical;
     }
 
     return value;

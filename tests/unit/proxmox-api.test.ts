@@ -273,3 +273,157 @@ describe("backoff", () => {
         expect(backoffMs(null, 20)).toBe(15_000);
     });
 });
+
+/**
+ * The three things the client assumed about an answer that it should not
+ * have. Each of these was reachable from a cluster that was merely slow or
+ * merely behind a reverse proxy.
+ */
+describe("what a bad answer must not be allowed to do", () => {
+    function counting(answers: () => Promise<Response>) {
+        let calls = 0;
+
+        return {
+            get calls() {
+                return calls;
+            },
+            fetchImpl: (async () => {
+                calls += 1;
+
+                return answers();
+            }) as unknown as typeof fetch,
+        };
+    }
+
+    it("times out on a body that never arrives, not just on headers", async () => {
+        const stalled = counting(
+            async () =>
+                new Response(
+                    new ReadableStream({
+                        start() {
+                            // Headers are out; the body never comes.
+                        },
+                    }),
+                    { status: 200 },
+                ),
+        );
+
+        const api = proxmoxClient({
+            baseUrl: "https://pve.example.net:8006",
+            credentials: { tokenId: "a@pve!b", tokenSecret: "secret12" },
+            fetchImpl: stalled.fetchImpl,
+            sleepImpl: async () => undefined,
+            timeoutMs: 50,
+        });
+
+        /**
+         * `fetch` resolves on the headers, so a timer cleared at that point
+         * guards nothing. This used to hang for ever — and because the
+         * provisioning sweep is sequential, one such call stopped every
+         * create, suspend and terminate on the installation.
+         */
+        await expect(
+            Promise.race([
+                api.version(),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("STILL HANGING")), 2_000),
+                ),
+            ]),
+        ).rejects.toThrow(ProxmoxUnreachableError);
+    });
+
+    it("sends a disk resize exactly once, whatever the proxy answers", async () => {
+        const flaky = counting(async () =>
+            flaky.calls === 1
+                ? new Response("", { status: 596, statusText: "proxy error" })
+                : new Response(JSON.stringify({ data: null }), { status: 200 }),
+        );
+
+        const api = proxmoxClient({
+            baseUrl: "https://pve.example.net:8006",
+            credentials: { tokenId: "a@pve!b", tokenSecret: "secret12" },
+            fetchImpl: flaky.fetchImpl,
+            sleepImpl: async () => undefined,
+        });
+
+        /**
+         * `size` is a delta — `+60G`. A second send after an answer that was
+         * merely lost leaves the customer with 140 GB of an 80 GB package,
+         * and Proxmox cannot shrink a disk back.
+         */
+        await expect(
+            api.resizeDisk("pve1", "101", "scsi0", "+60G"),
+        ).rejects.toThrow(ProxmoxError);
+        expect(flaky.calls).toBe(1);
+    });
+
+    it("sends a reboot exactly once, even when the connection drops", async () => {
+        const dropping = counting(async () => {
+            throw new Error("socket hang up");
+        });
+
+        const api = proxmoxClient({
+            baseUrl: "https://pve.example.net:8006",
+            credentials: { tokenId: "a@pve!b", tokenSecret: "secret12" },
+            fetchImpl: dropping.fetchImpl,
+            sleepImpl: async () => undefined,
+        });
+
+        await expect(api.power("pve1", "101", "reboot")).rejects.toThrow(
+            ProxmoxUnreachableError,
+        );
+        // The attempt ladder gives a power action one go for a reason; this
+        // loop used to give it four underneath.
+        expect(dropping.calls).toBe(1);
+    });
+
+    it("still retries the idempotent calls four times", async () => {
+        const flaky = counting(async () =>
+            flaky.calls < 3
+                ? new Response("", { status: 503, statusText: "busy" })
+                : new Response(JSON.stringify({ data: { version: "8.3.0" } }), {
+                      status: 200,
+                  }),
+        );
+
+        const api = proxmoxClient({
+            baseUrl: "https://pve.example.net:8006",
+            credentials: { tokenId: "a@pve!b", tokenSecret: "secret12" },
+            fetchImpl: flaky.fetchImpl,
+            sleepImpl: async () => undefined,
+        });
+
+        expect((await api.version()).version).toBe("8.3.0");
+        expect(flaky.calls).toBe(3);
+    });
+});
+
+describe("a task that failed is not a machine that is gone", () => {
+    it("reads a refusal naming a missing config as already gone", () => {
+        const refusal = new ProxmoxError(
+            500,
+            "Configuration file 'nodes/pve1/qemu-server/101.conf' does not exist",
+            "",
+        );
+
+        expect(refusal.missing).toBe(true);
+    });
+
+    it("does not read a failed destroy job as already gone", () => {
+        /**
+         * `qmdestroy` fails like this when the VM references a storage the
+         * operator has removed from `storage.cfg`. Read as "already gone",
+         * it booked a running machine as torn down and handed the
+         * customer's addresses to the next one.
+         */
+        const job = new ProxmoxError(
+            500,
+            "storage 'local-zfs' does not exist",
+            "",
+            "storage 'local-zfs' does not exist",
+        );
+
+        expect(job.missing).toBe(false);
+        expect(job.exitStatus).toBe("storage 'local-zfs' does not exist");
+    });
+});

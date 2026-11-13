@@ -27,6 +27,63 @@ async function operations(): Promise<[string, string, Operation][]> {
 }
 
 describe("the specification", () => {
+    /**
+     * Two registrations of one component name is not an error anywhere: the
+     * generator keeps the first and says nothing. Phase 8 registered
+     * `Service` for the service detail while `orders.ts` already had one for
+     * the small order-time shape, and the detail endpoint was published as
+     * somebody else's five-field object — with no failing test, because
+     * every other assertion here is about *paths*.
+     *
+     * The registry itself cannot be asked for its names, so this reaches
+     * them the way a reader would: every `$ref` the document resolves has to
+     * find a component, and every component has to be the one its own
+     * module registered.
+     */
+    it("registers each component name exactly once", async () => {
+        const modules = await Promise.all(
+            fs
+                .readdirSync(
+                    path.join(process.cwd(), "src/server/openapi/paths"),
+                )
+                .filter((file) => file.endsWith(".ts") && file !== "index.ts")
+                .map(async (file) => ({
+                    file,
+                    source: fs.readFileSync(
+                        path.join(
+                            process.cwd(),
+                            "src/server/openapi/paths",
+                            file,
+                        ),
+                        "utf8",
+                    ),
+                })),
+        );
+
+        const seen = new Map<string, string>();
+        const clashes: string[] = [];
+
+        for (const { file, source } of modules) {
+            for (const match of source.matchAll(
+                /registry\.register\(\s*\n?\s*"([A-Za-z0-9_]+)"/g,
+            )) {
+                const name = match[1];
+                const first = seen.get(name);
+
+                if (first) {
+                    clashes.push(`${name}: ${first} and ${file}`);
+                } else {
+                    seen.set(name, file);
+                }
+            }
+        }
+
+        expect(clashes).toEqual([]);
+        // A tripwire on the tripwire: if the regex stops matching, the test
+        // passes vacuously.
+        expect(seen.size).toBeGreaterThan(20);
+    });
+
     it("is OpenAPI 3.1 and points at whatever origin served it", async () => {
         const document = await spec();
 

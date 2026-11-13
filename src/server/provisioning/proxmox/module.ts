@@ -288,12 +288,30 @@ export function configParams(input: {
 }): Record<string, string | number | undefined> {
     const specs = specsOf(input.config);
 
-    const entries: IpConfigInput[] = input.addresses.map((address) => ({
-        family: address.family,
-        address: address.address,
-        prefixLength: address.prefixLength,
-        gateway: address.gateway,
-    }));
+    /**
+     * **`ipconfig0` carries one address per family, because that is what it
+     * is.** It belongs to `net0` and its grammar is one `ip=` and one
+     * `ip6=`; a second of either is a duplicate key, which PVE refuses with
+     * `parameter verification failed`. Built from every assigned address,
+     * a product ordering two IPv4s therefore could not be provisioned at
+     * all — the create failed on every attempt and the second address was
+     * held by a machine that was never made.
+     *
+     * The further addresses are still the customer's and still assigned to
+     * the service; they are routed to the machine's first address and
+     * configured inside the guest. `create` says so on the task.
+     */
+    const entries: IpConfigInput[] = (["ipv4", "ipv6"] as const)
+        .map((family) =>
+            input.addresses.find((address) => address.family === family),
+        )
+        .filter((address) => address !== undefined)
+        .map((address) => ({
+            family: address.family,
+            address: address.address,
+            prefixLength: address.prefixLength,
+            gateway: address.gateway,
+        }));
 
     const nameservers = nameserverValue(
         input.addresses.flatMap((address) => address.nameservers),
@@ -340,11 +358,23 @@ function gone(error: unknown): boolean {
     return error instanceof ProxmoxError && error.missing;
 }
 
+/**
+ * A lock that means "somebody is still building this machine".
+ *
+ * `backup`, `migrate` and our own `suspended` all say something else, and
+ * only these two say the VM is incomplete.
+ */
+function isBuilding(lock: string | null): boolean {
+    return lock === "clone" || lock === "create";
+}
+
+type VmReading = { exists: boolean; status: string; lock: string | null };
+
 async function readStatus(
     client: ProxmoxClient,
     node: string,
     vmid: string,
-): Promise<{ exists: boolean; status: string; lock: string | null }> {
+): Promise<VmReading> {
     try {
         const status = await client.status(node, vmid);
 
@@ -356,6 +386,44 @@ async function readStatus(
 
         throw error;
     }
+}
+
+/**
+ * Where a VM actually is, before tearing it down.
+ *
+ * **"Not on the node we remember" is not "gone".** The node is recorded once
+ * at create and kept for ever, because a retry has to look for the machine
+ * where it was put — but an operator who migrates a VM in the Proxmox UI
+ * moves it, and from then on the old node answers `does not exist`.
+ * `terminate` read that as "already gone", which is its documented success:
+ * the service was booked as torn down and the customer's addresses went back
+ * into the pool, while the machine kept running and answering on one of
+ * them. The next customer would have been handed the same address.
+ *
+ * So a terminate that cannot find the machine asks the cluster before it
+ * believes it. One call, only on the path that would otherwise release
+ * somebody's addresses.
+ */
+async function locate(
+    client: ProxmoxClient,
+    node: string,
+    vmid: string,
+): Promise<{ node: string; status: VmReading } | null> {
+    const here = await readStatus(client, node, vmid);
+
+    if (here.exists) {
+        return { node, status: here };
+    }
+
+    const elsewhere = await client.findVm(vmid);
+
+    if (!elsewhere || elsewhere === node) {
+        return null;
+    }
+
+    const there = await readStatus(client, elsewhere, vmid);
+
+    return there.exists ? { node: elsewhere, status: there } : null;
 }
 
 async function create(ctx: Ctx): Promise<ModuleResult> {
@@ -428,6 +496,30 @@ async function create(ctx: Ctx): Promise<ModuleResult> {
 
     const existing = await readStatus(client, placedOn, vmid);
     let cloned = false;
+
+    /**
+     * **A VM that exists is not necessarily a VM that is finished.**
+     *
+     * PVE writes the target's configuration at the *start* of a clone and
+     * holds `lock: "clone"` on it until the copy is done, so a create
+     * retried while the first clone is still running finds the machine,
+     * concludes "already there", and issues `setConfig` against it — which
+     * PVE refuses with `500 VM 101 is locked (clone)`. That is not in the
+     * retryable set, so it counted as permanent: any clone slower than the
+     * task deadline ended with the VMID held, the addresses held, cloud-init
+     * never applied and the machine never started, on a paid invoice.
+     *
+     * Waiting is the right answer and it is already built — a retryable
+     * error puts the task back on the queue with a backoff, and the next
+     * attempt asks the same question again.
+     */
+    if (existing.exists && isBuilding(existing.lock)) {
+        throw new ProxmoxError(
+            503,
+            `VM ${vmid} wird gerade angelegt (lock: ${existing.lock}) — später erneut`,
+            "",
+        );
+    }
 
     if (!existing.exists) {
         try {
@@ -519,6 +611,17 @@ async function create(ctx: Ctx): Promise<ModuleResult> {
         password,
         host: addresses[0]?.address ?? "",
     });
+
+    const extra =
+        addresses.length - new Set(addresses.map((a) => a.family)).size;
+
+    if (extra > 0) {
+        warnings.push(
+            `${extra} weitere Adresse(n) sind der Leistung zugewiesen, aber nicht ` +
+                "in cloud-init eingetragen: `ipconfig0` trägt je Familie genau eine. " +
+                "Sie sind auf die erste Adresse geroutet und werden im Gast konfiguriert.",
+        );
+    }
 
     await ctx.patchModuleData({
         vmid,
@@ -691,26 +794,34 @@ async function terminate(ctx: Ctx): Promise<ModuleResult> {
     await ctx.markProviderCalled();
 
     try {
-        const current = await readStatus(client, node, vmid);
+        const found = await locate(client, node, vmid);
 
-        if (!current.exists) {
+        if (!found) {
             return {
-                summary: `VM ${vmid} existiert nicht mehr.`,
+                summary: `VM ${vmid} existiert nirgends im Cluster mehr.`,
                 alreadyDone: true,
             };
         }
 
+        const current = found.status;
+
+        if (found.node !== node) {
+            ctx.log(
+                `VM ${vmid} liegt inzwischen auf ${found.node}, nicht auf ${node}.`,
+            );
+        }
+
         if (current.lock) {
             await client
-                .setConfig(node, vmid, { lock: "" })
+                .setConfig(found.node, vmid, { lock: "" })
                 .catch(() => undefined);
         }
 
         if (current.status === "running") {
-            await client.power(node, vmid, "stop");
+            await client.power(found.node, vmid, "stop");
         }
 
-        await client.destroy(node, vmid, { purge: true });
+        await client.destroy(found.node, vmid, { purge: true });
     } catch (error) {
         /**
          * A VM that is not there is a VM that does not need destroying. This

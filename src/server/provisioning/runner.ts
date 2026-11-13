@@ -163,6 +163,50 @@ export async function runProvisioningTask(
         return { ran: false, reason: "not-claimable" };
     }
 
+    /**
+     * **Everything past the claim is inside a `try`.**
+     *
+     * The claim is a committed `running`, and until this call writes a
+     * status over it the row says somebody is working on this. So a throw
+     * that escapes leaves it saying that for ever — and `load()` throws by
+     * design: `parseModuleConfig` and `serverConfig` raise `ModuleConfigError`
+     * on a product whose configuration no longer parses, which is exactly
+     * what an operator editing a product causes. `permanent()` lists that
+     * error as a permanent failure and could never see one, because the only
+     * place it was raised was outside the `try`.
+     */
+    try {
+        return await execute(db, task, { at, actor, options });
+    } catch (error) {
+        await finish(db, task.id, {
+            status: "failed",
+            error: describe(error),
+            at,
+            runAfter: new Date(
+                at.getTime() + backoffSeconds(task.attempts) * 1000,
+            ),
+        });
+
+        return {
+            ran: true,
+            taskId: task.id,
+            action: task.action,
+            ok: false,
+            summary: describe(error),
+            warnings: [],
+            alreadyDone: false,
+            terminal: permanent(error) || task.attempts >= task.maxAttempts,
+        };
+    }
+}
+
+async function execute(
+    db: Db,
+    task: typeof schema.provisioningTask.$inferSelect,
+    context: { at: Date; actor: Actor; options: RunOptions },
+): Promise<RunOutcome> {
+    const { at, actor, options } = context;
+
     const loaded = await load(db, task.serviceId);
 
     if (!loaded) {
@@ -239,12 +283,48 @@ export async function runProvisioningTask(
         };
     }
 
+    /**
+     * **A terminated service is never built.**
+     *
+     * `applyResult` already refuses to write `active` over `terminated`, so
+     * the *record* could not be resurrected — but the module had already run
+     * by then, and the clone it made is a machine on somebody's cluster that
+     * no row points at. The order is what matters: a `create` that was
+     * queued, or that failed and is being retried, can easily outlive the
+     * cancellation that overtook it, because the two carry different request
+     * keys and nothing cancels a queued row.
+     */
+    if (
+        task.action === "create" &&
+        !["pending", "provisioning"].includes(loaded.service.status)
+    ) {
+        await finish(db, task.id, {
+            status: "aborted",
+            error: `Die Leistung ist „${loaded.service.status}“ — sie wird nicht mehr eingerichtet.`,
+            at,
+        });
+
+        return {
+            ran: true,
+            taskId: task.id,
+            action: task.action,
+            ok: false,
+            summary: `Die Leistung ist „${loaded.service.status}“ — nichts einzurichten.`,
+            warnings: [],
+            alreadyDone: false,
+            terminal: true,
+        };
+    }
+
     if (!loaded.server) {
         /**
-         * No server, or none with a token. Transient by nature — the
-         * operator is about to add one — so it aborts rather than failing:
-         * nothing has been reserved, nothing is held, and the next sweep
-         * asks again.
+         * No server, or none with a token. This is not a failure of the
+         * request, it is the request waiting for the operator — so it gives
+         * back its attempt and waits, rather than spending one of five on
+         * the discovery that a cluster has still not been configured. Five
+         * of those used to kill a create permanently about fifteen minutes
+         * after the first order, on an installation where nothing was wrong
+         * except that the panel was new.
          */
         await abort(db, task.id, {
             error:
@@ -254,6 +334,7 @@ export async function runProvisioningTask(
             serviceId: loaded.service.id,
             attempts: task.attempts,
             at,
+            waiting: true,
         });
 
         return {
@@ -264,7 +345,7 @@ export async function runProvisioningTask(
             summary: "Kein Server hinterlegt.",
             warnings: [],
             alreadyDone: false,
-            terminal: true,
+            terminal: false,
         };
     }
 
@@ -407,21 +488,47 @@ export async function runProvisioningTask(
 
         async allocateAddresses(request) {
             const before = new Set(addresses.map((entry) => entry.id));
-            const after = await allocateAddresses(db, {
-                ...request,
-                serviceId: loaded.service.id,
-                serverId: loaded.server?.row.id ?? null,
-            });
 
-            for (const entry of after) {
-                if (!before.has(entry.id)) {
-                    allocated.push(entry.id);
+            /**
+             * **What this attempt took is read back from the database, not
+             * from the return value.**
+             *
+             * `allocateAddresses` takes one address per statement and throws
+             * `PoolExhaustedError` when the next one is not there — and the
+             * ones it had already committed were then invisible to the abort
+             * path, because they were never returned. A product asking for
+             * two addresses against a pool holding one therefore leaked that
+             * one on every single attempt, which is the opposite of what
+             * "an abort gives back exactly what this attempt took" says.
+             */
+            const record = async () => {
+                addresses = await addressesForService(db, loaded.service.id);
+
+                for (const entry of addresses) {
+                    if (
+                        !before.has(entry.id) &&
+                        !allocated.includes(entry.id)
+                    ) {
+                        allocated.push(entry.id);
+                    }
                 }
+            };
+
+            try {
+                const after = await allocateAddresses(db, {
+                    ...request,
+                    serviceId: loaded.service.id,
+                    serverId: loaded.server?.row.id ?? null,
+                });
+
+                await record();
+
+                return after;
+            } catch (error) {
+                await record();
+
+                throw error;
             }
-
-            addresses = await addressesForService(db, loaded.service.id);
-
-            return after;
         },
 
         async setCredentials(value) {
@@ -551,12 +658,21 @@ export async function runProvisioningTask(
          * leaking one until a person looks.
          */
         if (!providerCalled) {
+            const waiting = transient(error);
+
             await abort(db, task.id, {
                 error: message,
                 allocated,
                 serviceId: loaded.service.id,
                 attempts: task.attempts,
                 at,
+                /**
+                 * An empty pool and a cluster with no room are states that
+                 * change on their own, and nothing was asked of the
+                 * provider — so the request waits rather than spending one
+                 * of its five goes on the discovery.
+                 */
+                waiting,
                 /** Only one this attempt reserved and never used. */
                 resourceId:
                     task.action === "create" &&
@@ -587,7 +703,7 @@ export async function runProvisioningTask(
                 summary: message,
                 warnings: logLines,
                 alreadyDone: false,
-                terminal: true,
+                terminal: !waiting,
             };
         }
 
@@ -599,9 +715,19 @@ export async function runProvisioningTask(
             status: "failed",
             error: message,
             at,
-            runAfter: terminal
-                ? null
-                : new Date(at.getTime() + backoffSeconds(task.attempts) * 1000),
+            /**
+             * A backoff even on a failure this call decided is terminal.
+             * `terminal` means "trying again will not help", but the row is
+             * still `failed` with attempts to spare, and `runnableTasks`
+             * takes any such row whose `run_after` has passed — so leaving
+             * it unchanged meant "permanent" was retried sixty seconds
+             * later, and again, until the ladder was spent. The ladder is
+             * the only thing that actually stops it; the backoff is what
+             * keeps it from being spent inside five minutes.
+             */
+            runAfter: new Date(
+                at.getTime() + backoffSeconds(task.attempts) * 1000,
+            ),
             /**
              * A create that has given up leaves the service `pending` rather
              * than `provisioning`: nothing is working on it, and a label that
@@ -843,6 +969,19 @@ async function applyResult(
             .set({
                 status: "terminated",
                 terminatedAt: service.terminatedAt ?? at,
+                /**
+                 * The module has just reported that the machine is gone,
+                 * which is a reading as good as any `sync` — and no further
+                 * one will ever be taken, because `enqueueStatusSync` only
+                 * asks about `active` and `suspended` services. Left at
+                 * whatever the last hourly reading said, every normally
+                 * cancelled service showed „auf dem Server existiert aber
+                 * noch eine Maschine“ for ever, which is the one warning
+                 * that is supposed to mean somebody should go and look.
+                 */
+                providerStatus: "missing",
+                providerStatusAt: at,
+                providerStatusDetail: null,
                 updatedAt: at,
             })
             .where(
@@ -917,6 +1056,16 @@ async function finish(
     }
 }
 
+/**
+ * How long a request that is waiting for the operator waits between asks.
+ *
+ * It costs nothing at the provider — the server lookup and the pool are
+ * both asked before anything leaves this process — but `NoCapacityError`
+ * comes back from a real `GET /nodes`, so the wait is five minutes rather
+ * than the sweep's minute.
+ */
+const WAITING_BACKOFF_SECONDS = 300;
+
 async function abort(
     db: Db,
     taskId: string,
@@ -927,6 +1076,20 @@ async function abort(
         attempts: number;
         at: Date;
         resourceId?: string | null;
+        /**
+         * The precondition is not met **yet**: no server configured, an
+         * empty pool, no node with room. Nothing was asked of the provider
+         * and nothing is wrong with the request, so it goes back on the
+         * queue with its attempt returned rather than being written off.
+         *
+         * Without this, `aborted` was a dead end for every action but
+         * `create`: only the create sweep re-requests a key, so a `suspend`
+         * or a `terminate` that aborted — which is what *every* action does
+         * on an installation whose cluster is not configured yet — was
+         * simply never tried again. A cancelled customer kept their IP
+         * addresses and their machine, and nothing said so.
+         */
+        waiting?: boolean;
     },
 ): Promise<void> {
     await db.transaction(async (tx) => {
@@ -943,17 +1106,27 @@ async function abort(
         await tx
             .update(schema.provisioningTask)
             .set({
-                status: "aborted",
-                finishedAt: input.at,
+                status: input.waiting ? "pending" : "aborted",
+                finishedAt: input.waiting ? null : input.at,
+                ...(input.waiting
+                    ? {
+                          attempts: sql`greatest(${schema.provisioningTask.attempts} - 1, 0)`,
+                      }
+                    : {}),
                 lastError: input.error.slice(0, 2000),
                 /**
-                 * A backoff even though the task is "aborted": the sweep
-                 * re-requests it, and without one a service stuck behind an
-                 * empty pool would ask the cluster for its node list every
-                 * sixty seconds for as long as it is stuck.
+                 * A backoff either way. An aborted request can still be
+                 * re-opened — by the create sweep under the same key, or by
+                 * „Erneut versuchen“ — and without one a service stuck
+                 * behind an empty pool would ask the cluster for its node
+                 * list every sixty seconds for as long as it is stuck.
                  */
                 runAfter: new Date(
-                    input.at.getTime() + backoffSeconds(input.attempts) * 1000,
+                    input.at.getTime() +
+                        (input.waiting
+                            ? WAITING_BACKOFF_SECONDS
+                            : backoffSeconds(input.attempts)) *
+                            1000,
                 ),
                 updatedAt: input.at,
             })
@@ -1026,10 +1199,27 @@ export async function runProvisioningSweep(
     };
 
     for (const id of ids) {
-        const outcome = await runProvisioningTask(db, id, {
-            ...options,
-            at: new Date(),
-        });
+        /**
+         * One task's failure is not the pass's. `runProvisioningTask`
+         * returns rather than throws for everything it knows about, but
+         * "everything it knows about" is a claim this loop should not be
+         * making on its behalf: a throw here used to abandon the rest of
+         * the batch — up to twenty-four other customers' machines — for
+         * that pass, and the one that threw was the one that was wedged.
+         */
+        let outcome: RunOutcome;
+
+        try {
+            outcome = await runProvisioningTask(db, id, {
+                ...options,
+                at: new Date(),
+            });
+        } catch (error) {
+            console.error(`[provisioning] task ${id} threw:`, error);
+            report.ran += 1;
+            report.failed += 1;
+            continue;
+        }
 
         if (!outcome.ran) {
             continue;

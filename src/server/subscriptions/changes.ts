@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, lte } from "drizzle-orm";
+import { and, asc, eq, lte, ne } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
 import type {
     BillingCycle,
@@ -250,6 +250,52 @@ export async function previewChange(
 
     if (!detail) {
         throw new CatalogError("Dieses Produkt ist nicht bestellbar.");
+    }
+
+    /**
+     * **A machine cannot be moved to a tariff that does not know what a
+     * machine is.**
+     *
+     * `writeItemFromChange` writes the new product's module onto every
+     * running service, and `enqueueTask` asks the service's *current*
+     * module whether it provisions anything — so a VPS switched onto a
+     * Supportvertrag (module `none`, an ordinary entry in this catalogue)
+     * stopped being suspendable, terminable and even readable in the same
+     * instant. When the Abo later ended the machine kept running on the
+     * hypervisor with its IP address held and nothing in the panel pointing
+     * at it, because the warning that would have said so is driven by a
+     * reading that is no longer taken either.
+     *
+     * Refused here rather than patched there: the preview and the booking
+     * both come through this function, so the customer is told before they
+     * agree to anything. Replacing a machine with a different kind of thing
+     * is a termination and a new order, which is a decision a person makes
+     * on purpose.
+     */
+    const machines = await executor
+        .select({ module: schema.service.module })
+        .from(schema.service)
+        .where(
+            and(
+                eq(schema.service.subscriptionItemId, item.id),
+                ne(schema.service.status, "terminated"),
+            ),
+        );
+
+    if (
+        machines.some(
+            (service) =>
+                service.module !== "none" &&
+                service.module !== detail.product.module,
+        )
+    ) {
+        throw new SubscriptionError(
+            "item",
+            `„${detail.product.name}“ wird anders bereitgestellt als die ` +
+                "laufende Leistung. Ein Tarifwechsel kann eine bestehende " +
+                "Maschine nicht ersetzen — dafür wird die Leistung gekündigt " +
+                "und neu bestellt.",
+        );
     }
 
     const quoted = await quoteProductDetail(
@@ -717,11 +763,44 @@ export async function writeItemFromChange(
         .where(eq(schema.product.id, input.target.productId));
 
     for (const row of running) {
+        /**
+         * **The module may not be rewritten out from under a machine.**
+         *
+         * `enqueueTask` asks the service's *current* module whether it
+         * provisions anything, so the moment this column says `none` every
+         * call for that service is a silent no-op — the suspension at the
+         * dunning rung, the teardown when the Abo ends, the hourly reading.
+         * A VPS moved onto a Supportvertrag (a perfectly ordinary entry in
+         * this catalogue) therefore kept running on the hypervisor for
+         * ever, kept its IP address out of the pool for ever, and showed
+         * nothing anywhere, because the one warning that would have said so
+         * is also driven by a reading that is no longer taken.
+         *
+         * So the tariff moves and the module stays. What a machine *is* was
+         * decided when it was built; a plan change that means to replace it
+         * is a termination and a new order, which is a thing a person does
+         * deliberately.
+         */
+        const keepsItsModule =
+            product !== undefined &&
+            product.module !== row.module &&
+            row.module !== "none";
+
+        if (keepsItsModule) {
+            console.warn(
+                `[subscriptions] service ${row.id} stays on module ` +
+                    `"${row.module}": the new product ${product.id} uses ` +
+                    `"${product.module}" and the machine already exists.`,
+            );
+        }
+
         await tx
             .update(schema.service)
             .set({
                 productId: input.target.productId,
-                module: product?.module ?? row.module,
+                module: keepsItsModule
+                    ? row.module
+                    : (product?.module ?? row.module),
                 label: input.target.description,
                 updatedAt: input.at,
             })

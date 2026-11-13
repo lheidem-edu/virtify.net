@@ -258,8 +258,20 @@ const OrderItemSchema = registry.register(
         .openapi({ description: "Eine Position der Bestellung." }),
 );
 
+/**
+ * **The shapes an *order* carries, under their own names.**
+ *
+ * These are the small, order-time views of a subscription, its items and its
+ * services, and they used to be registered as `Subscription`,
+ * `SubscriptionItem` and `Service` — the same names the detail endpoints in
+ * `subscriptions.ts` and `services.ts` register for the full shapes. The
+ * generator keeps the first definition of a duplicated name and says
+ * nothing, and this module is imported first, so the three richest endpoints
+ * in the API were published as these five-field objects instead. Nothing
+ * failed: every other assertion in the suite is about paths.
+ */
 const SubscriptionItemSchema = registry.register(
-    "SubscriptionItem",
+    "OrderSubscriptionItem",
     z
         .object({
             id: zId("subscriptionitem").openapi({
@@ -294,7 +306,7 @@ const SubscriptionItemSchema = registry.register(
 );
 
 const SubscriptionSchema = registry.register(
-    "Subscription",
+    "OrderSubscription",
     z
         .object({
             id: zId("subscription").openapi({
@@ -360,7 +372,7 @@ const SubscriptionSchema = registry.register(
 );
 
 const ServiceSchema = registry.register(
-    "Service",
+    "OrderService",
     z
         .object({
             id: zId("service").openapi({

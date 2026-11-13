@@ -1126,6 +1126,152 @@ without `causedBy` because no payment row moved), and for somebody who is leavin
 the provider they just left is not payment. Which way it goes back is the operator's call, through
 `recordRefund`. Taking both would have credited the customer twice.
 
+### Reviewed after the fact, and fixed
+
+The phase was read back adversarially — fourteen independent lenses over the 7,200 new
+lines, then three skeptics per finding, one of them with its own worktree and database and
+told to reproduce rather than reason. 61 candidates, 37 confirmed, about twenty distinct
+defects; 150 separate points were checked and found correct. They clustered in four places,
+and the first cluster is the one worth reading: **every one of those defects was a correct
+decision meeting another correct decision.**
+
+**The queue's state machine.**
+
+- **A spent request was relabelled `pending`, where nothing could run it and nothing could
+  reset it.** Keeping the attempt count when a request is asked for again is right. So is
+  the create sweep re-opening a failed row every minute. Together they wedged a service for
+  ever: `claimTask` wants `attempts < max_attempts`, so no sweep would take it, and „Erneut
+  versuchen“ matches `failed` and `aborted`, so the button no longer saw it either — and
+  the detail page stopped rendering the button at all, because the row said `pending`. The
+  only way out was SQL. A spent request now stays visibly spent.
+- **A claim nobody was holding was never taken back.** `claimTask` writes `running` and the
+  call then runs for minutes outside any transaction, so a worker killed mid-clone — a
+  redeploy, an OOM — left that row behind for ever, with a `create` holding its service in
+  `provisioning` beside it. There is now a half-hour lease: longer than the longest call
+  this module can make, so a lease that has run out means the process is gone rather than
+  slow. The attempt it spent stays spent.
+- **A throw between the claim and the `try` escaped the function entirely**, leaving the
+  same stranded `running` row — and `load()` throws by design, on a product whose
+  configuration no longer parses. `permanent()` listed `ModuleConfigError` and could never
+  see one, because the only place it was raised was outside the `try`. Everything past the
+  claim is now inside it, and the sweep's loop no longer abandons the other twenty-four
+  tasks of its batch when one of them throws.
+- **"Permanent" was retried a minute later, and again.** A failure the runner decided was
+  terminal was left `failed` with attempts to spare and no backoff, and `runnableTasks`
+  takes any such row whose `run_after` has passed. The ladder was the only thing stopping
+  it, and it was spent inside five minutes.
+- **An abort was a dead end for every action but `create`.** Only the create sweep
+  re-requests a key, so a `suspend` or a `terminate` that aborted — which is what *every*
+  action does on an installation whose cluster is not configured yet — was simply never
+  tried again: a cancelled customer kept their machine and their addresses, and nothing
+  said so. An abort now distinguishes **waiting for the operator** (no server, an empty
+  pool, no node with room: back on the queue, attempt returned, five-minute backoff) from
+  **this request is over** (aborted, attempt spent). The first also fixes a create dying
+  permanently about fifteen minutes after the first order on a panel that was merely new.
+- **Two tasks ran on one service at once.** The worker's sweep and the operator's button
+  claim different rows, so a `terminate` could overtake an in-flight `create` and release
+  the addresses the create was at that moment writing into cloud-init. One service, one
+  call at a time, enforced in the claim.
+- **A `create` outlived the cancellation that should have stopped it.** `applyResult`
+  refused to write `active` over `terminated`, so the *record* was safe — but the module
+  had already run, and the clone it made was a machine on somebody's cluster that no row
+  pointed at. A create no longer runs on a service that is not `pending` or `provisioning`.
+
+**The Proxmox client.**
+
+- **The request timeout only covered time-to-headers.** `fetch` resolves when the headers
+  arrive, so clearing the timer there guarded nothing: a pveproxy that answers `200 OK` and
+  then stops sending left `await response.text()` pending for ever. The provisioning sweep
+  is sequential and the worker awaits it, so one such call stopped every create, suspend and
+  terminate on the installation until somebody killed the process — the exact thing the
+  timeout exists to prevent. The body read now races the deadline directly rather than
+  trusting the body stream to honour an abort signal.
+- **The retry loop re-sent calls that must not be sent twice.** `resize` takes a *delta*
+  (`+60G`), so a repeat after an answer that was merely lost leaves the customer with 140 GB
+  of an 80 GB package that Proxmox cannot shrink back; and a power action repeated is a
+  second reboot of a machine whose owner asked for one. The per-action ladder gives those
+  exactly one go and this loop sat underneath it quietly giving them four.
+- **A clone slower than the task deadline ended in a half-built machine.** PVE writes the
+  target's configuration at the *start* of a clone and holds `lock: "clone"` until it is
+  done, so the retry found the VM, concluded "already there", and configured it — which PVE
+  refuses with a 500 that is not retryable. Any clone slower than two minutes (which is most
+  real clones) therefore ended permanently out of attempts, with the VMID held, the
+  addresses held, cloud-init never applied, the machine never started and the first invoice
+  paid. The retry now recognises the lock and waits, and the deadline is ten minutes.
+- **A failed job was read as "the machine is already gone".** `qmdestroy` fails with
+  wording like `storage 'local-zfs' does not exist` when a VM references a storage the
+  operator has removed from `storage.cfg`, and `missing` matched that against the task's
+  exit status. The service was booked as torn down, the addresses went back into the pool
+  and the still-running machine was handed to nobody. PVE checks that a VM exists before it
+  starts a job on it, so "there is no such machine" is always the request's own refusal —
+  a task that failed is never already gone.
+
+**Addresses.**
+
+- **`ipconfig0` was built from every assigned address.** It belongs to `net0` and its
+  grammar is one `ip=` and one `ip6=`; a product ordering two IPv4s sent a duplicate key,
+  which PVE refuses — so that product could not be provisioned at all, on any attempt, while
+  the second address was held by a machine that was never made. One per family now, and the
+  further addresses are said out loud on the task.
+- **"Not on the node we remember" was read as "gone".** An operator who migrates a VM moves
+  it, and the old node then answers `does not exist` — which `terminate` took as its
+  documented success. A terminate that cannot find the machine now asks the cluster before
+  it believes it, one call, only on the path that would otherwise release somebody's
+  addresses. (This closes half of "a migration is never noticed".)
+- **An allocation that threw half-way kept what it had already taken.** `allocateAddresses`
+  takes one address per statement, and the ones it had committed before the pool ran dry
+  were invisible to the abort path because they were never returned. A product asking for
+  two addresses against a pool holding one leaked that one on every attempt — the opposite
+  of what "an abort gives back exactly what this attempt took" says. What the attempt took
+  is now read back from the database rather than from the return value.
+- **A pool named by a product ignored the server it belongs to**, so a misconfigured product
+  could hand a machine on one cluster an address from another's network.
+- **IPv6 was not canonicalised.** The unique index on `(pool_id, address)` compares text, so
+  an operator pasting a range twice in two notations got two rows for one address — and the
+  pool would hand it to two customers.
+
+**Elsewhere.**
+
+- **A plan change rewrote `service.module`.** A VPS moved onto a Supportvertrag became
+  module `none`, and from that instant every call for that service was a silent no-op,
+  because `enqueueTask` asks the service's *current* module. When the Abo ended the machine
+  kept running with its address held and nothing anywhere saying so — the warning that would
+  have said it is driven by a reading that is no longer taken either. Refused now, in
+  `previewChange`, so the customer is told before they agree: replacing a machine with a
+  different kind of thing is a termination and a new order.
+- **`provider_status` was never cleared by a teardown**, and no further reading is ever
+  taken for a terminated service, so every normally cancelled one showed „auf dem Server
+  existiert aber noch eine Maschine“ for ever. The one warning that means "go and look" fired
+  on every single teardown.
+- **Three OpenAPI components were registered twice.** `orders.ts` registers small order-time
+  shapes called `Service`, `Subscription` and `SubscriptionItem`; `services.ts` and
+  `subscriptions.ts` register the full ones under the same names. The generator keeps the
+  first and says nothing, and `index.ts` imports orders first — so the three richest
+  endpoints in the API were published as somebody else's five-field object. Nothing failed,
+  because every other assertion in that suite is about paths. The order-time shapes are now
+  `OrderService`, `OrderSubscription` and `OrderSubscriptionItem`; `Service` went from 5
+  documented fields to 24. Two of the three predate this phase.
+
+**Two the review did not find, and the tests did.**
+
+- **Every re-opened task was pushed an hour into the future.** `enqueueTask` keeps a
+  request's place with `greatest(run_after, now)`, and `now` was a `Date` bound into a
+  hand-written `sql` fragment. These columns are plain `timestamp` (the rule 9 backlog), and
+  node-postgres serializes a `Date` with the server's local offset, which Postgres then
+  drops — so the create sweep asking again once a minute actually delayed it by an hour in
+  Europe/Berlin, two in summer. Drizzle's own typed comparisons go through its mapper and are
+  fine; raw fragments are not. Found by a test that counted attempts and got three where it
+  wanted five. The lease comparisons added in this round had the same bug before they ever
+  ran.
+- **The fake resolved a VM by id and ignored the node in the path**, which made the
+  migration defect above untestable — and made the panel's assumption true by construction,
+  exactly as Phase 7's `/send` fake did. PVE addresses a guest as
+  `/nodes/{node}/qemu/{vmid}` and the wrong node answers the same "does not exist" as a VM
+  that was never made. The fake now says so, and the suite still passes, which is what
+  makes the migration test mean anything.
+
+The mutation pass over the repairs: 13 mutations, 13 killed. 1022 tests.
+
 ### Still open in this phase
 
 - [ ] **A cancelled renewal that was already paid leaves an overpayment nobody is told about.**
@@ -2128,10 +2274,22 @@ writing the tests: `toHostLabel` normalised to NFKD *before* replacing the umlau
       console URL is offered for an operator who is signed in to Proxmox.
 - [ ] **rDNS is a field, not a DNS change.** The PTR is stored on the address and cleared
       with it; nothing publishes it to a resolver or to the upstream's rDNS interface.
-- [ ] **A VM is never migrated, and a migration is never noticed.** The node is chosen
-      once and kept, because a retry has to look for the machine where it is. If an
-      operator moves a VM in the cluster, the panel keeps asking the old node and `sync`
-      reports it missing — which is loud rather than quiet, but it is still wrong.
+- [ ] **A VM is never migrated, and a migration is only noticed by a teardown.** The node
+      is chosen once and kept, because a retry has to look for the machine where it is. A
+      `terminate` that cannot find the machine now asks the cluster and acts on the node it
+      is really on — that path had to learn, because believing a migration was a teardown
+      released a live machine's addresses. Everything else still asks the recorded node: if
+      an operator moves a VM, `sync` reports it missing until somebody terminates it, which
+      is loud rather than quiet but still wrong.
+- [ ] **An action that is waiting for the operator waits for ever.** No server configured,
+      an empty pool and a cluster with no room now return the attempt rather than spending
+      it, which is right — but it means such a request retries every five minutes
+      indefinitely, and nothing escalates. The admin page shows it; no mail goes out.
+- [ ] **The lease is half an hour and is not configurable.** A module call that genuinely
+      took longer than that — a clone on very slow storage, with the ten-minute task
+      deadline raised — could be reclaimed while it is still running, and then two passes
+      would be in flight for one service. Every call this module makes is bounded well
+      inside the lease today; a module that is not would need its own.
 - [ ] **Certificate authentication is not implemented** for Proxmox any more than for
       Graph. A token secret is what the client uses.
 - [ ] **`max_services` is the panel's own book-keeping.** It counts rows, not capacity, and
@@ -2158,9 +2316,13 @@ writing the tests: `toHostLabel` normalised to NFKD *before* replacing the umlau
 
 ## Carried over from before the conversion
 
-- **Timestamps are `timestamp`, not `timestamptz`** (58 columns before Phase 7, 91 after —
-  migration `0022` followed the existing pattern rather than deviating from it), against hard
-  rule 9. Postgres
+- **Timestamps are `timestamp`, not `timestamptz`** (58 columns before Phase 7, 91 after,
+  **111 after Phase 8** — migrations `0022` and `0023` followed the existing pattern rather
+  than deviating from it), against hard rule 9. It is no longer only a latent risk: a `Date`
+  bound into a hand-written `sql` fragment is serialized with the server's local offset and
+  Postgres drops it, which is how `enqueueTask` came to push every re-opened task an hour
+  into the future. Drizzle's typed column comparisons are unaffected; raw fragments must
+  pass an ISO string and cast it. Postgres
   stores them without a zone and node-postgres then reads them as the server's local time, so a
   deployment in another zone would read every date back shifted. Fixing it is one migration that
   rewrites every timestamp column at once, which wants its own change and a look at the data
