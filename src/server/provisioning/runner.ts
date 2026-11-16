@@ -9,6 +9,7 @@ import type {
 import { decrypt, encrypt } from "@/lib/crypto";
 import { createId } from "@/lib/ulid";
 import { type Actor, audit } from "@/server/audit";
+import { emitEvent } from "@/server/events/emit";
 import { getModule, ModuleConfigError, parseModuleConfig } from "./index";
 import {
     addressesForService,
@@ -947,7 +948,7 @@ async function applyResult(
      * Abo was reinstated does not tear down a machine that is wanted again.
      */
     if (task.action === "create") {
-        await tx
+        const activated = await tx
             .update(schema.service)
             .set({
                 status: "active",
@@ -960,7 +961,36 @@ async function applyResult(
                     eq(schema.service.id, service.id),
                     inArray(schema.service.status, ["pending", "provisioning"]),
                 ),
-            );
+            )
+            .returning({ id: schema.service.id });
+
+        /**
+         * Phase 9. Off the row the update **moved**, not off the status it
+         * now has — so a create that finished after an operator had already
+         * terminated the service moves nothing and announces nothing, and a
+         * retried task that finds its machine already there (which is a
+         * success, see the module header) announces it once.
+         *
+         * The key is the task's own request key, which for a create is the
+         * constant `"create"`: a service is created once, for ever, so every
+         * source of "this service should exist now" is the same cause and
+         * the customer is told once however many of them fire.
+         */
+        if (activated.length > 0) {
+            await emitEvent(tx, {
+                type: "service.activated",
+                dedupeKey: `service:${service.id}:${task.requestKey}`,
+                entityType: "service",
+                entityId: service.id,
+                customerId: service.customerId,
+                occurredAt: at,
+                payload: {
+                    serviceId: service.id,
+                    label: service.label,
+                    hostname: service.hostname,
+                },
+            });
+        }
     }
 
     if (task.action === "terminate") {

@@ -25,7 +25,7 @@ import {
 } from "./legal-actions";
 
 const LINK =
-    "underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground";
+    "underline decoration-border underline-offset-4 transition-colors hover:text-foreground";
 
 /** § 17 of the terms promises six weeks before a change applies. */
 function suggestedDate() {

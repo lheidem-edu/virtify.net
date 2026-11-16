@@ -197,7 +197,7 @@ export default function Configurator({
                             {option.required ? " *" : ""}
                         </legend>
                         {option.description ? (
-                            <p className="text-sm text-zinc-500">
+                            <p className="text-sm text-muted-foreground">
                                 {option.description}
                             </p>
                         ) : null}
@@ -369,7 +369,7 @@ export default function Configurator({
                                             : ""}
                                         {line.label}
                                         {line.detail ? (
-                                            <span className="block text-xs text-zinc-500">
+                                            <span className="block text-xs text-muted-foreground">
                                                 {line.detail}
                                             </span>
                                         ) : null}
@@ -389,7 +389,7 @@ export default function Configurator({
                                 </dd>
                             </div>
                             {quote.totals.cycle !== "onetime" ? (
-                                <div className="flex items-baseline justify-between gap-4 text-zinc-500">
+                                <div className="flex items-baseline justify-between gap-4 text-muted-foreground">
                                     <dt>{renewalLabel(quote.totals)}</dt>
                                     <dd className="tabular-nums">
                                         {formatPrice(
@@ -399,7 +399,7 @@ export default function Configurator({
                                 </div>
                             ) : null}
                             {quote.totals.trial_days > 0 ? (
-                                <div className="text-xs text-zinc-500">
+                                <div className="text-xs text-muted-foreground">
                                     {quote.totals.trial_days === 1
                                         ? "Ein Tag kostenlos."
                                         : `${quote.totals.trial_days} Tage kostenlos.`}{" "}
@@ -462,7 +462,7 @@ export default function Configurator({
                                     {addError}
                                 </p>
                             ) : null}
-                            <p className="text-xs leading-5 text-zinc-500">
+                            <p className="text-xs leading-5 text-muted-foreground">
                                 Gemäß § 19 UStG wird keine Umsatzsteuer
                                 berechnet.
                             </p>

@@ -184,7 +184,7 @@ export default async function Page() {
                                             <td className="px-4 py-3">
                                                 <Link
                                                     href={`/admin/catalog/${row.id}`}
-                                                    className="underline decoration-zinc-600 underline-offset-4 transition-colors hover:decoration-white"
+                                                    className="underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
                                                 >
                                                     {row.name}
                                                 </Link>

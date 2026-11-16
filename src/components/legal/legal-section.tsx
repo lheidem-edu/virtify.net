@@ -11,15 +11,15 @@ export default function LegalSection({
         <section className="grid gap-x-12 gap-y-6 border-b px-6 py-12 last:border-b-0 md:grid-cols-[13rem_minmax(0,1fr)] md:px-10 md:py-16">
             <div className="self-start md:sticky md:top-24">
                 {label ? (
-                    <p className="mb-2 text-xs tabular-nums text-zinc-600">
+                    <p className="mb-2 text-xs tabular-nums text-muted-foreground">
                         {label}
                     </p>
                 ) : null}
-                <h2 className="text-sm font-medium tracking-tight text-white text-balance">
+                <h2 className="text-sm font-medium tracking-tight text-foreground text-balance">
                     {title}
                 </h2>
             </div>
-            <div className="max-w-2xl space-y-4 text-sm leading-7 text-zinc-400">
+            <div className="max-w-2xl space-y-4 text-sm leading-7 text-muted-foreground">
                 {children}
             </div>
         </section>

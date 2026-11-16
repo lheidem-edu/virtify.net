@@ -40,7 +40,7 @@ import {
 import ContractEditForm from "./contract-edit-form";
 
 const linkClass =
-    "underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground";
+    "underline decoration-border underline-offset-4 transition-colors hover:text-foreground";
 
 function Field({
     label,

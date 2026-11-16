@@ -30,7 +30,7 @@ export default function Page() {
                         Nichts angekommen? Sieh im Spam-Ordner nach oder{" "}
                         <Link
                             href="/client/register"
-                            className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-zinc-300"
+                            className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                         >
                             versuche es erneut
                         </Link>
@@ -38,7 +38,7 @@ export default function Page() {
                     </p>
                 }
             >
-                <p className="text-sm leading-7 text-zinc-500">
+                <p className="text-sm leading-7 text-muted-foreground">
                     Der Bestätigungslink ist aus Sicherheitsgründen nur begrenzt
                     gültig.
                 </p>
@@ -55,7 +55,7 @@ export default function Page() {
                     Schon ein Konto?{" "}
                     <Link
                         href="/client/login"
-                        className="text-white underline decoration-zinc-600 underline-offset-4 transition-colors hover:decoration-white"
+                        className="text-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
                     >
                         Anmelden
                     </Link>

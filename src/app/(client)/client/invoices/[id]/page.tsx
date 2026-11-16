@@ -118,13 +118,13 @@ export default async function Page({
                 <div className="mt-6 flex flex-wrap gap-4 text-sm">
                     <Link
                         href={`/client/invoices/${invoice.id}/pdf`}
-                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                     >
                         PDF
                     </Link>
                     <Link
                         href={`/client/invoices/${invoice.id}/xml`}
-                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                     >
                         XRechnung
                     </Link>
@@ -222,6 +222,7 @@ export default async function Page({
                                                 commands, with none of the
                                                 customer's text in it. */}
                                             <div
+                                                // A QR code is dark-on-light or it is not a QR code.
                                                 className="rounded bg-white p-2"
                                                 // biome-ignore lint/security/noDangerouslySetInnerHtml: generated SVG, see above
                                                 dangerouslySetInnerHTML={{

@@ -20,11 +20,15 @@ import {
 } from "@/server/documents/repository";
 import { renderXRechnung } from "@/server/documents/xrechnung";
 import {
+    addressList,
     logMailError,
+    type MailMessage,
     mailFrom,
     mailTransport,
     renderEmail,
 } from "@/server/mail";
+import { recordMail } from "@/server/mail/outbox";
+import type { DirectMailId } from "@/server/mail/templates/direct";
 import { loadSettings } from "@/server/settings";
 
 async function transportOrThrow() {
@@ -35,6 +39,76 @@ async function transportOrThrow() {
     }
 
     return transport;
+}
+
+/**
+ * Sends a document mail and writes it into `email_log`.
+ *
+ * These are the `direct` half of the catalogue
+ * (`src/server/mail/templates/direct.ts`): an operator presses „senden", the
+ * document is rendered in that request, and the failure has to come back to
+ * the button rather than to a queue. The outbox can *fetch* a stored PDF but
+ * never render one — deliberately, because that is what lets the worker send
+ * mail at all — so a mail that carries a freshly rendered XRechnung belongs
+ * in a web process.
+ *
+ * They are still recorded, under the same unique key as a queued mail, so
+ * there is one table that answers "what has this customer ever been sent".
+ * The record is best-effort: a recording that fails must not make a send that
+ * worked look like a failure, which is the same direction Phase 7's reply
+ * takes and for the same reason — the one thing that must not happen next is
+ * the operator pressing send again.
+ */
+async function deliver(input: {
+    template: DirectMailId;
+    dedupeKey: string;
+    customerId?: string | null;
+    entityType?: string | null;
+    entityId?: string | null;
+    context: string;
+    message: MailMessage;
+}): Promise<void> {
+    const transport = await transportOrThrow();
+    const to = addressList(input.message.to)[0] ?? "";
+
+    const record = async (
+        outcome: Parameters<typeof recordMail>[1]["outcome"],
+    ) => {
+        try {
+            await recordMail(db, {
+                template: input.template,
+                dedupeKey: input.dedupeKey,
+                toEmail: to,
+                customerId: input.customerId ?? null,
+                entityType: input.entityType ?? null,
+                entityId: input.entityId ?? null,
+                subject: input.message.subject,
+                bodyText: input.message.text ?? null,
+                outcome,
+            });
+        } catch (error) {
+            console.error(`[mail] could not record ${input.context}:`, error);
+        }
+    };
+
+    try {
+        const sent = await transport.sendMail(input.message);
+
+        await record({
+            sent: true,
+            messageId: sent.messageId,
+            transport: transport.id,
+        });
+    } catch (error) {
+        logMailError(input.context, error);
+
+        await record({
+            sent: false,
+            error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw error;
+    }
 }
 
 export async function sendOfferMail(
@@ -72,10 +146,14 @@ export async function sendOfferMail(
         taxNotes,
     });
 
-    const transport = await transportOrThrow();
-
-    try {
-        await transport.sendMail({
+    await deliver({
+        template: "offer.document",
+        dedupeKey: `offer:${offer.id}:${offer.sentAt?.toISOString() ?? "draft"}`,
+        customerId: buyer.id,
+        entityType: "offer",
+        entityId: offer.id,
+        context: "offer mail",
+        message: {
             from: await mailFrom(),
             to,
             subject: `Angebot ${offer.number} — ${site.name}`,
@@ -133,11 +211,8 @@ export async function sendOfferMail(
                     contentType: "application/pdf",
                 },
             ],
-        });
-    } catch (error) {
-        logMailError("offer mail", error);
-        throw error;
-    }
+        },
+    });
 }
 
 export async function sendInvoiceMail(
@@ -188,11 +263,16 @@ export async function sendInvoiceMail(
         totals,
     });
 
-    const transport = await transportOrThrow();
     const { operator } = await loadSettings();
 
-    try {
-        await transport.sendMail({
+    await deliver({
+        template: "invoice.document",
+        dedupeKey: `invoice:${invoice.id}:${number}`,
+        customerId: invoice.customerId,
+        entityType: "invoice",
+        entityId: invoice.id,
+        context: "invoice mail",
+        message: {
             from: await mailFrom(),
             to,
             subject: `Rechnung ${number} — ${site.name}`,
@@ -249,11 +329,8 @@ export async function sendInvoiceMail(
                     contentType: "application/xml",
                 },
             ],
-        });
-    } catch (error) {
-        logMailError("invoice mail", error);
-        throw error;
-    }
+        },
+    });
 }
 
 /**
@@ -309,10 +386,14 @@ export async function sendCreditNoteMail(
         totals,
     });
 
-    const transport = await transportOrThrow();
-
-    try {
-        await transport.sendMail({
+    await deliver({
+        template: "creditnote.document",
+        dedupeKey: `creditnote:${creditNote.id}`,
+        customerId: creditNote.customerId,
+        entityType: "credit_note",
+        entityId: creditNote.id,
+        context: "credit note mail",
+        message: {
             from: await mailFrom(),
             to,
             subject: `Rechnungskorrektur ${creditNote.number} — ${site.name}`,
@@ -357,11 +438,8 @@ export async function sendCreditNoteMail(
                     contentType: "application/xml",
                 },
             ],
-        });
-    } catch (error) {
-        logMailError("credit note mail", error);
-        throw error;
-    }
+        },
+    });
 }
 
 /**
@@ -378,10 +456,14 @@ export async function sendOfferWithdrawnMail(offerId: string, to: string) {
     }
 
     const { offer } = loaded;
-    const transport = await transportOrThrow();
-
-    try {
-        await transport.sendMail({
+    await deliver({
+        template: "offer.withdrawn",
+        dedupeKey: `offer:${offer.id}:withdrawn`,
+        customerId: offer.customerId,
+        entityType: "offer",
+        entityId: offer.id,
+        context: "offer withdrawn mail",
+        message: {
             from: await mailFrom(),
             to,
             subject: `Angebot ${offer.number} zurückgezogen — ${site.name}`,
@@ -412,11 +494,8 @@ export async function sendOfferWithdrawnMail(offerId: string, to: string) {
                     `Mit freundlichen Grüßen\n${operator.name}`,
                 ],
             }),
-        });
-    } catch (error) {
-        logMailError("offer withdrawn mail", error);
-        throw error;
-    }
+        },
+    });
 }
 
 /**
@@ -435,10 +514,14 @@ export async function sendOfferAcceptedMail(offerId: string, to: string) {
     }
 
     const { offer, totals } = loaded;
-    const transport = await transportOrThrow();
-
-    try {
-        await transport.sendMail({
+    await deliver({
+        template: "offer.accepted",
+        dedupeKey: `offer:${offer.id}:accepted`,
+        customerId: offer.customerId,
+        entityType: "offer",
+        entityId: offer.id,
+        context: "offer accepted mail",
+        message: {
             from: await mailFrom(),
             to,
             subject: `Auftragsbestätigung zu Angebot ${offer.number} — ${site.name}`,
@@ -487,11 +570,8 @@ export async function sendOfferAcceptedMail(offerId: string, to: string) {
                     `Mit freundlichen Grüßen\n${operator.name}`,
                 ],
             }),
-        });
-    } catch (error) {
-        logMailError("offer accepted mail", error);
-        throw error;
-    }
+        },
+    });
 }
 
 /**
@@ -511,10 +591,14 @@ export async function sendContractTerminationMail(
 
     const { contract } = loaded;
     const endsOn = formatDate(contract.terminatedTo);
-    const transport = await transportOrThrow();
-
-    try {
-        await transport.sendMail({
+    await deliver({
+        template: "contract.terminated",
+        dedupeKey: `contract:${contract.id}:terminated`,
+        customerId: contract.customerId,
+        entityType: "contract",
+        entityId: contract.id,
+        context: "contract termination mail",
+        message: {
             from: await mailFrom(),
             to,
             subject: `Kündigungsbestätigung ${contract.title} — ${site.name}`,
@@ -550,93 +634,17 @@ export async function sendContractTerminationMail(
                     `Mit freundlichen Grüßen\n${operator.name}`,
                 ],
             }),
-        });
-    } catch (error) {
-        logMailError("contract termination mail", error);
-        throw error;
-    }
+        },
+    });
 }
 
 /**
- * Confirms that money arrived. Stripe and PayPal both offer to send their own
- * receipt and both are switched off, because a second document about the same
- * payment is exactly what confuses a customer holding our invoice — so this is
- * the one confirmation, and it names our invoice.
+ * The receipt mail used to live here. Phase 9 moved it into the outbox: it is
+ * `payment.received`, emitted inside the transaction that books the money and
+ * rendered from `src/server/mail/templates`. Nothing sends a receipt from a
+ * request any more, which is why a receipt can no longer be lost by a process
+ * that died between the commit and the send.
  */
-export async function sendPaymentReceivedMail(input: {
-    invoiceId: string;
-    to: string;
-    amountCents: number;
-    paidAt: Date;
-    /** What is still owed afterwards. Zero for the ordinary case. */
-    outstandingCents?: number;
-}) {
-    const { operator, site } = await loadSettings();
-    const loaded = await loadInvoice(input.invoiceId, "", true);
-
-    if (!loaded?.invoice.number) {
-        return;
-    }
-
-    const number = loaded.invoice.number;
-    const transport = await transportOrThrow();
-
-    // A part payment must not be confirmed as "ausgeglichen". The customer
-    // would reasonably stop there, and the invoice would quietly go overdue.
-    const outstanding = input.outstandingCents ?? 0;
-    const settled = outstanding <= 0;
-    const sentence = settled
-        ? `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Die Rechnung ist damit ausgeglichen.`
-        : `wir haben Ihre Zahlung über ${formatPrice(input.amountCents)} zu Rechnung ${number} erhalten. Offen sind davon noch ${formatPrice(outstanding)}.`;
-
-    try {
-        await transport.sendMail({
-            from: await mailFrom(),
-            to: input.to,
-            subject: `Zahlungseingang zu Rechnung ${number} — ${site.name}`,
-            text: [
-                "Sehr geehrte Damen und Herren,",
-                "",
-                sentence,
-                "",
-                `Ihre Rechnungen finden Sie in Ihrem Kundenbereich: ${site.url}/client/invoices`,
-                "",
-                "Mit freundlichen Grüßen",
-                operator.name,
-            ].join("\n"),
-            html: await renderEmail({
-                preheader: `Zahlung über ${formatPrice(input.amountCents)} erhalten.`,
-                heading: "Zahlungseingang",
-                intro: ["Sehr geehrte Damen und Herren,", sentence],
-                action: {
-                    label: "Rechnungen ansehen",
-                    url: `${site.url}/client/invoices`,
-                },
-                rowsTitle: "Eckdaten",
-                rows: [
-                    { label: "Rechnungsnummer", value: number },
-                    { label: "Betrag", value: formatPrice(input.amountCents) },
-                    {
-                        label: "Eingegangen am",
-                        value: formatDate(input.paidAt),
-                    },
-                    ...(settled
-                        ? []
-                        : [
-                              {
-                                  label: "Noch offen",
-                                  value: formatPrice(outstanding),
-                              },
-                          ]),
-                ],
-                outro: [`Mit freundlichen Grüßen\n${operator.name}`],
-            }),
-        });
-    } catch (error) {
-        logMailError("payment received mail", error);
-        throw error;
-    }
-}
 
 /**
  * The notice § 17 of the terms owes the customer before a new version of a
@@ -652,11 +660,16 @@ export async function sendLegalChangeMail(input: {
     effectiveFrom: Date;
 }) {
     const { operator, site } = await loadSettings();
-    const transport = await transportOrThrow();
     const effective = formatDate(input.effectiveFrom);
 
-    try {
-        await transport.sendMail({
+    await deliver({
+        template: "legal.change",
+        dedupeKey: `legal:${input.documentPath}:${input.effectiveFrom.toISOString()}`,
+        customerId: null,
+        entityType: "legal_document",
+        entityId: input.documentPath,
+        context: "legal change notice",
+        message: {
             from: await mailFrom(),
             to: input.to,
             subject: `Änderung: ${input.documentLabel} zum ${effective} — ${site.name}`,
@@ -693,9 +706,6 @@ export async function sendLegalChangeMail(input: {
                     `Mit freundlichen Grüßen\n${operator.name}`,
                 ],
             }),
-        });
-    } catch (error) {
-        logMailError("legal change notice", error);
-        throw error;
-    }
+        },
+    });
 }

@@ -20,7 +20,7 @@ export default function FormStatus({
         return (
             <p
                 className={`max-w-xs text-xs leading-5 ${
-                    tone === "error" ? "text-destructive" : "text-zinc-300"
+                    tone === "error" ? "text-destructive" : "text-foreground"
                 }`}
             >
                 {message}
@@ -33,7 +33,7 @@ export default function FormStatus({
             className={
                 tone === "error"
                     ? "rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
-                    : "rounded-lg border p-4 text-sm text-zinc-300"
+                    : "rounded-lg border p-4 text-sm text-foreground"
             }
         >
             {message}

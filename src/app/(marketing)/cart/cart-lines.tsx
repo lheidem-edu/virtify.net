@@ -78,11 +78,13 @@ function CartLine({ entry }: { entry: CartLineView }) {
                     <h2 className="text-base font-medium tracking-tight">
                         {entry.name}
                     </h2>
-                    <p className="text-xs text-zinc-500">{entry.cycleLabel}</p>
+                    <p className="text-xs text-muted-foreground">
+                        {entry.cycleLabel}
+                    </p>
                 </div>
                 <button
                     type="button"
-                    className="text-xs text-zinc-500 underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                    className="text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                     onClick={() => run(() => removeFromCart(entry.id))}
                 >
                     Entfernen
@@ -102,7 +104,7 @@ function CartLine({ entry }: { entry: CartLineView }) {
                                 {line.quantity > 1 ? `${line.quantity} × ` : ""}
                                 {line.label}
                                 {line.detail ? (
-                                    <span className="block text-xs text-zinc-500">
+                                    <span className="block text-xs text-muted-foreground">
                                         {line.detail}
                                     </span>
                                 ) : null}
@@ -167,7 +169,9 @@ function CartLine({ entry }: { entry: CartLineView }) {
                 </div>
 
                 <div className="ml-auto text-right">
-                    <p className="text-xs text-zinc-500">Heute fällig</p>
+                    <p className="text-xs text-muted-foreground">
+                        Heute fällig
+                    </p>
                     <p className="tabular-nums">{entry.dueToday}</p>
                 </div>
             </div>
@@ -181,7 +185,7 @@ function CartLine({ entry }: { entry: CartLineView }) {
                 <p className="text-xs text-destructive">{entry.couponError}</p>
             ) : null}
             {entry.trialDays > 0 ? (
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                     {entry.trialDays === 1
                         ? "Ein Tag kostenlos"
                         : `${entry.trialDays} Tage kostenlos`}{" "}

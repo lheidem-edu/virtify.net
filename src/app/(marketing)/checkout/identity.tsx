@@ -169,7 +169,7 @@ function Register() {
             </h2>
 
             {state.status === "sent" ? (
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-muted-foreground">
                     Wir haben eine Bestätigung an {state.email} geschickt.
                     Bestätigen Sie die Adresse und melden Sie sich hier an — Ihr
                     Warenkorb bleibt so lange liegen.
@@ -205,7 +205,7 @@ function Register() {
                             minLength={12}
                             required
                         />
-                        <p className="text-xs text-zinc-500">
+                        <p className="text-xs text-muted-foreground">
                             Mindestens zwölf Zeichen.
                         </p>
                     </div>

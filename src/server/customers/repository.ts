@@ -4,6 +4,7 @@ import { createId } from "@/lib/ulid";
 import { type Actor, audit, diff } from "@/server/audit";
 import type { CustomerInput, CustomerPatch } from "@/server/customers/schema";
 import { nextCustomerNumber } from "@/server/documents/numbering";
+import { emitEvent } from "@/server/events/emit";
 
 /**
  * Everything that reads or writes a billing account. Plain functions over a
@@ -263,6 +264,32 @@ export async function createCustomerForUser(
         userId: user.id,
         role: "owner",
         email: user.email,
+    });
+
+    /**
+     * Phase 9. In the caller's transaction, beside the two rows that make the
+     * account exist: a welcome queued outside it would be a welcome to an
+     * account whose login failed to be written.
+     *
+     * The key is the customer id — an account is opened once, for ever — so a
+     * sign-up that is retried after a failure welcomes the person once.
+     *
+     * The *verification* mail is a different thing and deliberately not an
+     * event: it has to be sent inside the request that asked for it, so that
+     * a failure reaches the person instead of the inbox they are staring at.
+     * See `DIRECT_MAIL_LABELS`.
+     */
+    await emitEvent(tx, {
+        type: "customer.registered",
+        dedupeKey: `customer:${row.id}`,
+        entityType: "customer",
+        entityId: row.id,
+        customerId: row.id,
+        payload: {
+            customerNumber: row.customerNumber,
+            name: row.name,
+            email: user.email,
+        },
     });
 
     return row;

@@ -9,7 +9,7 @@ import type {
 } from "@/server/legal/types";
 
 const linkClass =
-    "underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-white";
+    "underline decoration-border underline-offset-4 transition-colors hover:text-foreground";
 
 /**
  * `{{key}}`, `[label](href)` and `` `code` `` — nothing else. The syntax stays
@@ -59,7 +59,7 @@ export function renderLegalText(text: string, values: LegalValues) {
             );
         } else if (strong) {
             nodes.push(
-                <span key={key++} className="font-medium text-zinc-200">
+                <span key={key++} className="font-medium text-foreground">
                     {resolve(strong, values)}
                 </span>,
             );

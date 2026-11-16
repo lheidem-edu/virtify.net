@@ -39,7 +39,7 @@ export default function ContractForm({
             ) : null}
 
             {accounts.length === 0 ? (
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted-foreground">
                     Es gibt noch keine Konten, denen ein Vertrag zugeordnet
                     werden könnte.
                 </p>

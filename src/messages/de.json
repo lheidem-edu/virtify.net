@@ -1,0 +1,251 @@
+{
+    "common": {
+        "salutation": "Sehr geehrte Damen und Herren,",
+        "regards": "Mit freundlichen Grüßen",
+        "facts": "Eckdaten",
+        "questions": "Für Rückfragen stehen wir Ihnen selbstverständlich gerne zur Verfügung und danken Ihnen für die angenehme Zusammenarbeit."
+    },
+    "labels": {
+        "invoiceNumber": "Rechnungsnummer",
+        "creditNoteNumber": "Korrekturnummer",
+        "offerNumber": "Angebotsnummer",
+        "orderNumber": "Bestellnummer",
+        "amount": "Betrag",
+        "dueAt": "Fällig am",
+        "paidAt": "Eingegangen am",
+        "outstanding": "Noch offen",
+        "corrected": "Korrigiert",
+        "validUntil": "Gültig bis",
+        "invoice": "Rechnung",
+        "dunningFee": "Mahngebühr",
+        "subscription": "Abo",
+        "trialEnd": "Ende der Testphase",
+        "afterwards": "Danach",
+        "service": "Leistung",
+        "hostname": "Hostname",
+        "ticket": "Ticket",
+        "subject": "Betreff",
+        "period": "Zeitraum",
+        "customerNumber": "Kundennummer",
+        "document": "Dokument",
+        "effectiveFrom": "Gilt ab"
+    },
+    "mail": {
+        "welcome": {
+            "subject": "Willkommen bei {site}",
+            "heading": "Willkommen bei {site}",
+            "intro1": "Hallo {name},",
+            "intro2": "Ihr Konto bei {site} ist angelegt. Im Kundenbereich sehen Sie Ihre Bestellungen, Abos, Leistungen und Rechnungen an einer Stelle.",
+            "action": "Zum Kundenbereich",
+            "outro1": "Bitte ergänzen Sie dort Ihre Anschrift, sobald es Ihnen passt — wir brauchen sie, sobald ein Vertrag zustande kommt oder eine Rechnung gestellt wird.",
+            "outro2": "Diese Nachricht wurde automatisch versandt, weil zu dieser Adresse ein Konto angelegt wurde."
+        },
+        "orderConfirmed": {
+            "subject": "Bestellbestätigung {number}",
+            "heading": "Ihre Bestellung {number}",
+            "intro2": "vielen Dank für Ihre Bestellung über {amount}. Wir haben sie unter der Nummer {number} erfasst.",
+            "withInvoice": "Die zugehörige Rechnung {invoiceNumber} liegt in Ihrem Kundenbereich bereit.",
+            "action": "Bestellung ansehen",
+            "outro": "Sobald die Zahlung bei uns eingegangen ist, richten wir Ihre Leistungen ein und melden uns wieder."
+        },
+        "invoiceNotice": {
+            "subjectOrder": "Rechnung {number}",
+            "subjectRenewal": "Verlängerung — Rechnung {number}",
+            "subjectChange": "Tarifwechsel — Rechnung {number}",
+            "subjectFee": "Mahngebühr — Rechnung {number}",
+            "headingOrder": "Rechnung {number}",
+            "headingRenewal": "Ihre Verlängerung",
+            "headingChange": "Ihr Tarifwechsel",
+            "headingFee": "Mahngebühr",
+            "introOrder": "für Ihre Bestellung haben wir die Rechnung {number} über {amount} ausgestellt. Sie ist am {dueAt} fällig.",
+            "introRenewal": "für den nächsten Abrechnungszeitraum haben wir die Rechnung {number} über {amount} ausgestellt. Sie ist am {dueAt} fällig.",
+            "introChange": "für Ihren Tarifwechsel haben wir die Rechnung {number} über {amount} ausgestellt. Sie ist am {dueAt} fällig.",
+            "introFee": "für die Mahnung haben wir die Rechnung {number} über {amount} ausgestellt. Sie ist am {dueAt} fällig.",
+            "autoCharge": "Wir ziehen den Betrag an diesem Tag von Ihrem hinterlegten Zahlungsmittel ein; Sie müssen nichts weiter tun.",
+            "manualCharge": "Bitte gleichen Sie den Betrag bis dahin aus.",
+            "attached": "Die Rechnung liegt dieser Nachricht als PDF bei.",
+            "action": "Rechnung öffnen"
+        },
+        "paymentReceived": {
+            "subject": "Zahlungseingang zu Rechnung {number}",
+            "heading": "Zahlungseingang",
+            "settled": "wir haben Ihre Zahlung über {amount} zu Rechnung {number} erhalten. Die Rechnung ist damit ausgeglichen.",
+            "partial": "wir haben Ihre Zahlung über {amount} zu Rechnung {number} erhalten. Offen sind davon noch {outstanding}.",
+            "topup": "wir haben Ihre Zahlung über {amount} erhalten und Ihrem Guthaben gutgeschrieben.",
+            "action": "Rechnungen ansehen",
+            "actionCredit": "Guthaben ansehen"
+        },
+        "paymentActionRequired": {
+            "subject": "Bestätigung erforderlich — Rechnung {number}",
+            "heading": "Bestätigung erforderlich",
+            "intro2": "der Einzug von {amount} zu Rechnung {number} konnte nicht abgeschlossen werden: Ihre Bank verlangt dafür eine Bestätigung durch Sie. Bis dahin bleibt die Rechnung offen, und es wird nichts doppelt abgebucht.",
+            "action": "Zahlung abschließen",
+            "outro": "Ihre Rechnungen finden Sie jederzeit unter {url}."
+        },
+        "paymentFailed": {
+            "subject": "Zahlung fehlgeschlagen — Rechnung {number}",
+            "heading": "Zahlung fehlgeschlagen",
+            "intro2": "der Einzug von {amount} zu Rechnung {number} ist nicht gelungen. Es wurde nichts abgebucht, und die Rechnung bleibt offen.",
+            "reason": "Begründung des Zahlungsdienstleisters: {reason}",
+            "advice": "Bitte prüfen Sie Ihr hinterlegtes Zahlungsmittel oder gleichen Sie die Rechnung auf anderem Weg aus. Wir versuchen den Einzug in den nächsten Tagen erneut.",
+            "action": "Zahlungsmittel prüfen"
+        },
+        "dunning": {
+            "feeNotice": "Für die Mahnung berechnen wir eine Gebühr von {fee}; sie wird gesondert in Rechnung gestellt.",
+            "action": "Rechnung öffnen",
+            "reminder": {
+                "subject": "Zahlungserinnerung zu {number}",
+                "line1": "Die Rechnung {number} über {amount} war am {day} fällig und ist bei uns noch nicht eingegangen.",
+                "line2": "Falls sich das überschnitten hat, betrachte diese Nachricht bitte als gegenstandslos."
+            },
+            "mahnung": {
+                "subject": "Mahnung zu {number}",
+                "line1": "Die Rechnung {number} über {amount} war am {day} fällig und ist weiterhin offen.",
+                "line2": "Bitte gleiche den Betrag aus. Andernfalls müssen wir die Leistungen vorübergehend sperren."
+            },
+            "suspend": {
+                "subject": "Leistungen gesperrt — {number}",
+                "line1": "Die Rechnung {number} über {amount} ist seit dem {day} offen; die zugehörigen Leistungen sind jetzt gesperrt.",
+                "line2": "Sobald die Zahlung eingegangen ist, werden sie automatisch wieder freigeschaltet."
+            },
+            "terminate": {
+                "subject": "Abo beendet — {number}",
+                "line1": "Die Rechnung {number} über {amount} ist seit dem {day} offen. Das zugehörige Abo ist damit beendet und die Leistungen werden abgebaut.",
+                "line2": "Der offene Betrag bleibt bestehen."
+            }
+        },
+        "trialEnding": {
+            "subject": "Ihre Testphase endet am {day}",
+            "heading": "Ihre Testphase endet",
+            "intro1": "Die kostenlose Testphase für „{label}“ endet am {day}.",
+            "intro2": "Danach wird {amount} je Zeitraum berechnet. Wenn Sie nicht weitermachen möchten, kündigen Sie bitte vorher im Kundenbereich.",
+            "action": "Abo öffnen"
+        },
+        "serviceActivated": {
+            "subject": "{label} ist eingerichtet",
+            "heading": "Ihre Leistung ist eingerichtet",
+            "intro2": "„{label}“ ist eingerichtet und läuft. Im Kundenbereich finden Sie die Zugangsdaten, die IP-Adressen und die Konsole.",
+            "action": "Leistung öffnen",
+            "outro": "Das Passwort steht aus Sicherheitsgründen nicht in dieser Nachricht; Sie können es im Kundenbereich einsehen."
+        },
+        "serviceSuspended": {
+            "subject": "{label} wurde gesperrt",
+            "heading": "Ihre Leistung wurde gesperrt",
+            "introDunning": "„{label}“ wurde gesperrt, weil eine Rechnung dazu seit längerem offen ist. Sobald die Zahlung bei uns eingeht, schalten wir die Leistung automatisch wieder frei.",
+            "introSubscription": "„{label}“ wurde gesperrt, weil das zugehörige Abo pausiert ist. Sobald es fortgesetzt wird, läuft die Leistung wieder.",
+            "introManual": "„{label}“ wurde gesperrt.",
+            "action": "Offene Rechnungen ansehen",
+            "outro": "Ihre Daten bleiben während der Sperre erhalten."
+        },
+        "serviceTerminated": {
+            "subject": "{label} wurde abgebaut",
+            "heading": "Ihre Leistung wurde abgebaut",
+            "introDunning": "„{label}“ wurde abgebaut, weil die offene Rechnung trotz Mahnung nicht ausgeglichen wurde.",
+            "introSubscription": "„{label}“ wurde abgebaut, weil das zugehörige Abo beendet ist.",
+            "introManual": "„{label}“ wurde abgebaut.",
+            "action": "Zum Kundenbereich",
+            "outro": "Die Daten dieser Leistung sind damit gelöscht und können nicht wiederhergestellt werden."
+        },
+        "subscriptionEnded": {
+            "subject": "Abo beendet — {label}",
+            "heading": "Ihr Abo ist beendet",
+            "intro2": "das Abo „{label}“ ist zum {day} beendet. Es wird nichts weiter berechnet.",
+            "action": "Zum Kundenbereich",
+            "outro": "Ihre Rechnungen und Belege bleiben im Kundenbereich abrufbar."
+        },
+        "ticketReplied": {
+            "subject": "Antwort zu Ticket #{number}: {subject}",
+            "heading": "Antwort zu Ticket #{number}",
+            "intro2": "auf Ihre Anfrage „{subject}“ gibt es eine Antwort. Sie können sie im Kundenbereich lesen und dort direkt antworten.",
+            "action": "Ticket öffnen"
+        }
+    },
+    "portal": {
+        "nav": {
+            "account": "Konto",
+            "settings": "Einstellungen",
+            "overview": "Übersicht",
+            "orders": "Bestellungen",
+            "subscriptions": "Abos",
+            "services": "Leistungen",
+            "contracts": "Verträge",
+            "offers": "Angebote",
+            "invoices": "Rechnungen",
+            "paymentMethods": "Zahlungsmittel",
+            "credit": "Guthaben",
+            "tickets": "Tickets",
+            "profile": "Stammdaten",
+            "apiKeys": "API-Schlüssel",
+            "security": "Sicherheit",
+            "privacy": "Meine Daten",
+            "signOut": "Abmelden"
+        },
+        "theme": {
+            "label": "Darstellung",
+            "system": "System",
+            "light": "Hell",
+            "dark": "Dunkel"
+        },
+        "language": {
+            "label": "Sprache",
+            "saved": "Sprache geändert."
+        },
+        "dashboard": {
+            "title": "Übersicht",
+            "welcome": "Willkommen zurück.",
+            "welcomeNamed": "Willkommen zurück, {name}.",
+            "addressMissing": "Ihre Anschrift ist noch nicht vollständig. Wir brauchen sie, sobald ein Vertrag zustande kommt oder eine Rechnung gestellt wird.",
+            "addressAction": "Jetzt ergänzen",
+            "subscriptions": "Abos",
+            "subscriptionsActive": "{count, plural, =0 {Keines aktiv} one {# aktiv} other {# aktiv}}",
+            "subscriptionsHint": "{count, plural, =0 {Noch keine Abos} one {# insgesamt} other {# insgesamt}}",
+            "services": "Leistungen",
+            "servicesActive": "{count, plural, =0 {Keine aktiv} one {# aktiv} other {# aktiv}}",
+            "servicesHint": "{count, plural, =0 {Noch keine Leistungen} one {# insgesamt} other {# insgesamt}}",
+            "invoices": "Offene Rechnungen",
+            "invoicesOpen": "{count, plural, =0 {Nichts offen} one {# offen} other {# offen}}",
+            "invoicesHint": "{amount} ausstehend",
+            "invoicesNone": "Alles ausgeglichen",
+            "tickets": "Tickets",
+            "ticketsOpen": "{count, plural, =0 {Keine offen} one {# offen} other {# offen}}",
+            "ticketsHint": "Fragen und Störungen",
+            "credit": "Guthaben",
+            "creditHint": "Wird mit der nächsten Rechnung verrechnet",
+            "creditNone": "Kein Guthaben",
+            "attention": "Das braucht Ihre Aufmerksamkeit",
+            "overdue": "Rechnung {number} über {amount} ist seit dem {day} fällig.",
+            "actionRequired": "Für Rechnung {number} verlangt Ihre Bank eine Bestätigung.",
+            "suspended": "„{label}“ ist gesperrt.",
+            "trialEnds": "Die Testphase von „{label}“ endet am {day}.",
+            "nextRenewal": "Nächste Verlängerung",
+            "nextRenewalOn": "{label} am {day}",
+            "nothingDue": "Nichts fällig",
+            "recent": "Zuletzt passiert",
+            "empty": "Hier ist noch nichts passiert."
+        },
+        "privacy": {
+            "title": "Meine Daten",
+            "intro": "Nach Art. 15 und Art. 20 DSGVO können Sie eine Kopie aller Daten anfordern, die wir zu Ihrem Konto gespeichert haben. Das Archiv enthält eine maschinenlesbare JSON-Datei und alle Belege als PDF.",
+            "action": "Datenexport herunterladen",
+            "note": "Der Export wird beim Herunterladen erzeugt und enthält den aktuellen Stand. Jeder Export wird protokolliert.",
+            "deletion": "Löschung",
+            "deletionIntro": "Rechnungen und Belege unterliegen der gesetzlichen Aufbewahrungspflicht und können nicht gelöscht werden, solange sie läuft. Wenden Sie sich für eine Löschung Ihrer übrigen Daten bitte an den Support — wir anonymisieren Ihr Konto dann, sobald keine offenen Posten und keine laufenden Leistungen mehr bestehen."
+        },
+        "status": {
+            "trialing": "Testphase",
+            "active": "Aktiv",
+            "past_due": "Überfällig",
+            "paused": "Pausiert",
+            "cancelled": "Gekündigt",
+            "ended": "Beendet",
+            "pending": "In Vorbereitung",
+            "provisioning": "Wird eingerichtet",
+            "suspended": "Gesperrt",
+            "terminated": "Abgebaut",
+            "draft": "Entwurf",
+            "unpaid": "Offen",
+            "partial": "Teilweise bezahlt",
+            "paid": "Bezahlt"
+        }
+    }
+}

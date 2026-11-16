@@ -4,6 +4,7 @@ import { type db as defaultDb, schema } from "@/db";
 import type { Ticket, TicketPriority, TicketStatus } from "@/db/schema";
 import { createId } from "@/lib/ulid";
 import { type Actor, audit } from "@/server/audit";
+import { emitEvent } from "@/server/events/emit";
 import { defaultDepartment, departmentById } from "./departments";
 import { nextTicketNumber } from "./numbering";
 import { prepareBody } from "./quoting";
@@ -136,6 +137,27 @@ export async function createTicket(
                 subject,
                 department: department.name,
                 source: "portal",
+            },
+        });
+
+        /**
+         * Phase 9. No mail goes out on this today — a ticket opened in the
+         * portal is confirmed by the page the customer is looking at, and a
+         * mail-in is acknowledged by Phase 7's own path — but it is a fact,
+         * and Phase 10's webhooks and the portal's activity list want it.
+         * Keyed on the ticket, which is opened once.
+         */
+        await emitEvent(tx, {
+            type: "ticket.created",
+            dedupeKey: `ticket:${ticket.id}`,
+            entityType: "ticket",
+            entityId: ticket.id,
+            customerId: ticket.customerId,
+            payload: {
+                ticketId: ticket.id,
+                number: ticket.number,
+                subject,
+                origin: actor.type === "staff" ? "staff" : "portal",
             },
         });
 

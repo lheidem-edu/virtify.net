@@ -68,7 +68,7 @@ export default function ProfileForm({
     return (
         <form action={formAction} className="max-w-xl space-y-6">
             {state.status === "saved" ? (
-                <p className="rounded-lg border p-4 text-sm leading-6 text-zinc-300">
+                <p className="rounded-lg border p-4 text-sm leading-6 text-foreground">
                     Gespeichert.
                 </p>
             ) : null}

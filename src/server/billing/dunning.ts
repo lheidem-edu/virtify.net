@@ -1,4 +1,8 @@
 import type { DunningLevel } from "@/db/schema";
+import { DEFAULT_LOCALE, type Locale } from "@/i18n/locale";
+import { translator } from "@/i18n/messages";
+import { formatDateIn } from "@/lib/format";
+import type { MailText } from "@/server/mail/templates/types";
 import type { BillingPolicy } from "@/server/settings";
 
 /**
@@ -145,55 +149,41 @@ export function collectionDue(
 }
 
 /**
- * The wording of the dunning notice. German, because the customer reads it;
+ * The wording of the dunning notice, in the reader's language.
+ *
+ * Phase 9 moved the strings themselves into `src/messages/*.json` — the same
+ * catalogue the portal and every other mail read — and left this function as
+ * what it always was: the thing that decides *which* of the four messages a
+ * rung gets. One place picks, one place holds the words, and the mail
+ * template calls neither of them twice.
+ *
  * `§ 286 Abs. 3 BGB` is why the Mahnung names a date rather than asking.
  */
 export function dunningMessage(input: {
     level: DunningLevel;
     invoiceNumber: string;
-    amountCents: number;
+    /** Already formatted, in the reader's locale. */
     formatted: string;
     dueAt: Date;
+    locale?: Locale;
 }): { subject: string; lines: string[] } {
-    const day = new Intl.DateTimeFormat("de-DE", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        timeZone: "Europe/Berlin",
-    }).format(input.dueAt);
+    const locale = input.locale ?? DEFAULT_LOCALE;
+    // Cast to the loose signature for the same reason the mail templates
+    // use it: the key is built from the rung. See `MailText`.
+    const t = translator(locale, "mail") as unknown as MailText;
+    const day = formatDateIn(locale, input.dueAt);
 
-    switch (input.level) {
-        case "reminder":
-            return {
-                subject: `Zahlungserinnerung zu ${input.invoiceNumber}`,
-                lines: [
-                    `Die Rechnung ${input.invoiceNumber} über ${input.formatted} war am ${day} fällig und ist bei uns noch nicht eingegangen.`,
-                    "Falls sich das überschnitten hat, betrachte diese Nachricht bitte als gegenstandslos.",
-                ],
-            };
-        case "mahnung":
-            return {
-                subject: `Mahnung zu ${input.invoiceNumber}`,
-                lines: [
-                    `Die Rechnung ${input.invoiceNumber} über ${input.formatted} war am ${day} fällig und ist weiterhin offen.`,
-                    "Bitte gleiche den Betrag aus. Andernfalls müssen wir die Leistungen vorübergehend sperren.",
-                ],
-            };
-        case "suspend":
-            return {
-                subject: `Leistungen gesperrt — ${input.invoiceNumber}`,
-                lines: [
-                    `Die Rechnung ${input.invoiceNumber} über ${input.formatted} ist seit dem ${day} offen; die zugehörigen Leistungen sind jetzt gesperrt.`,
-                    "Sobald die Zahlung eingegangen ist, werden sie automatisch wieder freigeschaltet.",
-                ],
-            };
-        default:
-            return {
-                subject: `Abo beendet — ${input.invoiceNumber}`,
-                lines: [
-                    `Die Rechnung ${input.invoiceNumber} über ${input.formatted} ist seit dem ${day} offen. Das zugehörige Abo ist damit beendet und die Leistungen werden abgebaut.`,
-                    "Der offene Betrag bleibt bestehen.",
-                ],
-            };
-    }
+    const values = {
+        number: input.invoiceNumber,
+        amount: input.formatted,
+        day,
+    };
+
+    return {
+        subject: t(`dunning.${input.level}.subject`, values),
+        lines: [
+            t(`dunning.${input.level}.line1`, values),
+            t(`dunning.${input.level}.line2`),
+        ],
+    };
 }

@@ -16,12 +16,12 @@ export default async function Page() {
             <h1 className="text-3xl font-semibold tracking-tight">
                 Zu diesem Zugang gehört noch kein Kundenkonto
             </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-400">
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
                 Deine Anmeldung hat geklappt, aber wir finden kein Kundenkonto
                 dazu. Schreib uns kurz an{" "}
                 <a
                     href={`mailto:${operator.email}`}
-                    className="text-white underline decoration-zinc-600 underline-offset-4"
+                    className="text-foreground underline decoration-border underline-offset-4"
                 >
                     {operator.email}
                 </a>

@@ -4,8 +4,12 @@ import PageHeader from "@/components/shared/page-header";
 import StatusBadge from "@/components/shared/status-badge";
 import { db } from "@/db";
 import { formatDate, formatPrice } from "@/lib/format";
-import { requirePermission } from "@/server/auth/staff-session";
+import {
+    currentStaffCan,
+    requirePermission,
+} from "@/server/auth/staff-session";
 import { listInvoices } from "@/server/billing/invoices/repository";
+import { anonymizationBlockers } from "@/server/customers/gdpr";
 import {
     auditTrail,
     getCustomer,
@@ -20,6 +24,7 @@ import { creditBalanceCents, listCreditLedger } from "@/server/payments/apply";
 import { CreditAdjustmentForm } from "../../payments/payment-forms";
 import { saveCustomer } from "../actions";
 import CustomerForm from "../customer-form";
+import { AnonymizePanel, ExportPanel } from "./gdpr-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +36,7 @@ const TABS = [
     { id: "transactions", label: "Zahlungen" },
     { id: "tickets", label: "Tickets" },
     { id: "log", label: "Protokoll" },
+    { id: "dsgvo", label: "DSGVO" },
 ] as const;
 
 type Tab = (typeof TABS)[number]["id"];
@@ -85,6 +91,17 @@ export default async function Page({
         auditTrail(db, id),
         creditBalanceCents(db, id),
         listCreditLedger(db, id, 20),
+    ]);
+
+    /**
+     * Read even when the tab is not open: the panel has to be able to say
+     * *why* anonymisation is not possible, and the answer — an open invoice, a
+     * running Abo — is two indexed queries.
+     */
+    const [mayExport, mayAnonymize, blockers] = await Promise.all([
+        currentStaffCan("dsgvo.export"),
+        currentStaffCan("dsgvo.anonymize"),
+        anonymizationBlockers(db, id),
     ]);
 
     return (
@@ -189,7 +206,7 @@ export default async function Page({
                                 >
                                     <Link
                                         href={`/admin/contracts/${entry.id}`}
-                                        className="underline decoration-zinc-600 underline-offset-4"
+                                        className="underline decoration-border underline-offset-4"
                                     >
                                         {entry.title}
                                     </Link>
@@ -215,7 +232,7 @@ export default async function Page({
                                 >
                                     <Link
                                         href={`/admin/invoices/${entry.id}`}
-                                        className="underline decoration-zinc-600 underline-offset-4"
+                                        className="underline decoration-border underline-offset-4"
                                     >
                                         {entry.number ?? "Entwurf"}
                                     </Link>
@@ -308,6 +325,31 @@ export default async function Page({
                             Alle Zahlungen dieses Kontos
                         </Link>
                     </div>
+                ) : null}
+
+                {tab === "dsgvo" ? (
+                    mayExport || mayAnonymize ? (
+                        <div className="space-y-4">
+                            {mayExport ? (
+                                <ExportPanel
+                                    customerId={customer.id}
+                                    exportHref={`/admin/customers/${customer.id}/export`}
+                                />
+                            ) : null}
+                            {mayAnonymize ? (
+                                <AnonymizePanel
+                                    customerId={customer.id}
+                                    customerNumber={customer.customerNumber}
+                                    blockers={blockers}
+                                />
+                            ) : null}
+                        </div>
+                    ) : (
+                        <Empty>
+                            Für Auskunft und Anonymisierung fehlt die
+                            Berechtigung.
+                        </Empty>
+                    )
                 ) : null}
 
                 {tab === "tickets" ? (

@@ -26,6 +26,7 @@ export const ACCOUNT_SETTINGS_NAV = [
     { href: "/client/profile", label: "Stammdaten", icon: "user" },
     { href: "/client/api-keys", label: "API-Schlüssel", icon: "key" },
     { href: "/client/security", label: "Sicherheit", icon: "shield" },
+    { href: "/client/privacy", label: "Meine Daten", icon: "scale" },
 ] as const;
 
 export const ADMIN_NAV = [
@@ -46,6 +47,11 @@ export const ADMIN_NAV = [
     { href: "/admin/payments", label: "Zahlungen", icon: "credit-card" },
     { href: "/admin/tickets", label: "Tickets", icon: "life-buoy" },
     { href: "/admin/jobs", label: "Aufträge", icon: "timer" },
+    {
+        href: "/admin/notifications",
+        label: "Nachrichten",
+        icon: "mail",
+    },
     { href: "/admin/legal", label: "Rechtstexte", icon: "scale" },
     { href: "/admin/api-keys", label: "API-Schlüssel", icon: "key" },
     { href: "/admin/settings", label: "Einstellungen", icon: "settings" },

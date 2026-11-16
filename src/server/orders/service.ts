@@ -25,6 +25,7 @@ import {
 import { priceCartItem } from "@/server/cart/view";
 import { loadSellableProduct } from "@/server/catalog/lookup";
 import { nextNumber } from "@/server/documents/numbering";
+import { emitEvent } from "@/server/events/emit";
 import { currentLegalVersion } from "@/server/legal/repository";
 import {
     buildInvoiceLines,
@@ -619,12 +620,10 @@ async function placeOrderIn(
             actor,
         );
 
-        const finalized = await finalizeInvoiceIn(
-            tx,
-            draft.id,
-            actor,
-            context.finalizeOptions,
-        );
+        const finalized = await finalizeInvoiceIn(tx, draft.id, actor, {
+            ...context.finalizeOptions,
+            reason: "order",
+        });
 
         invoiceId = draft.id;
         invoiceNumber = finalized.number;
@@ -698,6 +697,34 @@ async function placeOrderIn(
         },
         ip: input.ip,
         userAgent: input.userAgent,
+    });
+
+    /**
+     * Phase 9. Inside the same transaction as everything above it, which is
+     * the only place it can be: this function's whole point is that the
+     * order, the subscriptions, the services and the first invoice are
+     * written together or not at all, and a confirmation queued *beside* the
+     * transaction would be a confirmation of an order that the cart-changed
+     * check two statements up can still roll back.
+     *
+     * The key is the order id, which is right because the cart is held
+     * `FOR UPDATE`: a double submit produces one order and therefore one
+     * confirmation.
+     */
+    await emitEvent(tx, {
+        type: "order.placed",
+        dedupeKey: `order:${orderId}`,
+        entityType: "order",
+        entityId: orderId,
+        customerId: customer.id,
+        occurredAt: at,
+        payload: {
+            orderNumber: number,
+            grossCents,
+            currency: customer.currency,
+            invoiceId,
+            invoiceNumber,
+        },
     });
 
     return {

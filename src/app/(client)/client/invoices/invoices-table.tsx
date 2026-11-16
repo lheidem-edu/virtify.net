@@ -111,19 +111,19 @@ function buildColumns(): ColumnDef<InvoiceRow, unknown>[] {
                 <div className="flex flex-wrap items-center justify-end gap-4">
                     <Link
                         href={`/client/invoices/${row.original.id}/pdf`}
-                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                     >
                         PDF
                     </Link>
                     <Link
                         href={`/client/invoices/${row.original.id}/xml`}
-                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                     >
                         XRechnung
                     </Link>
                     <Link
                         href={`/client/invoices/${row.original.id}`}
-                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                     >
                         {row.original.canPay ? "Bezahlen" : "Ansehen"}
                     </Link>

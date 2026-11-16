@@ -27,7 +27,7 @@ function ResetForm() {
                 title="Link ungültig"
                 intro="Dieser Link ist unvollständig oder abgelaufen. Bitte lass dir eine neue Einladung senden."
             >
-                <p className="text-sm leading-7 text-zinc-500">
+                <p className="text-sm leading-7 text-muted-foreground">
                     Aus Sicherheitsgründen sind diese Links nur begrenzt gültig.
                 </p>
             </AuthShell>

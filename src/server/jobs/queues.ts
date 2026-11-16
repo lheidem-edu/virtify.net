@@ -44,6 +44,19 @@ export const TICKET_SUBSCRIPTION_QUEUE = "tickets/subscriptions";
  */
 export const PROVISIONING_QUEUE = "provisioning/run";
 
+/**
+ * Phase 9. The queue that dispatches `domain_event` and drains `email_log`.
+ *
+ * **It carries no work of its own**, exactly like `provisioning/run`: a
+ * `pending` row in either table *is* the request. The web process holds no
+ * pg-boss instance (see `./worker.ts`), so a server action, a webhook or a
+ * billing pass cannot send a job — it writes the row inside the transaction
+ * that made the fact true, and this schedule only says "look now". That is
+ * what makes the operator's „jetzt senden" and the scheduled pass the same
+ * function against the same claim.
+ */
+export const MAIL_QUEUE = "mail/run";
+
 /** Every queue the worker creates at boot. pg-boss 12 requires it up front. */
 export const QUEUES = [
     {
@@ -127,6 +140,33 @@ export const QUEUES = [
         expireInSeconds: 1_800,
         deleteAfterSeconds: 7 * 86_400,
     },
+    {
+        name: MAIL_QUEUE,
+        /**
+         * One at a time. Two passes would not send anything twice — every row
+         * is claimed with a conditional update before it is rendered — but
+         * they would spend one relay's or one Graph tenant's quota racing
+         * each other to be told "already claimed".
+         */
+        policy: "singleton" as const,
+        /**
+         * **No retry.** Every message carries its own ladder on the row
+         * (`attempts`, `max_attempts`, `run_after`), because the right
+         * number of tries belongs to the message and not to the pass — and a
+         * queue-level retry would run a *second sweep* over the same table a
+         * minute later, which is what the next scheduled pass does anyway.
+         */
+        retryLimit: 0,
+        /**
+         * Generous: twenty-five messages, each of which may wait twenty
+         * seconds on an SMTP socket or be throttled by Graph with a
+         * `Retry-After`. A limit that expired mid-send would mark the job
+         * failed while a message was still going out — and a message whose
+         * claim goes stale becomes `unknown`, which needs a person.
+         */
+        expireInSeconds: 900,
+        deleteAfterSeconds: 7 * 86_400,
+    },
 ];
 
 /**
@@ -192,3 +232,15 @@ export const PROVISIONING_CRON = "* * * * *";
  * one reading per service per hour.
  */
 export const PROVISIONING_SYNC_MINUTE = 7;
+
+/**
+ * The mail pass, every minute. UTC, like the other two sweeps and for the
+ * same reason: "every minute" means the same thing in every zone, and naming
+ * one would only make the schedule skip or repeat an interval twice a year.
+ *
+ * Every minute rather than every five, because this is the one queue a
+ * *person* is waiting on: somebody who has just registered is looking at
+ * their inbox for a verification mail, and a customer who has just paid
+ * expects a receipt while the tab is still open.
+ */
+export const MAIL_CRON = "* * * * *";

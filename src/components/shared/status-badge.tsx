@@ -2,7 +2,7 @@ const TONE = {
     neutral: "border-border text-muted-foreground",
     positive: "border-emerald-500/40 text-emerald-400",
     warning: "border-amber-500/40 text-amber-400",
-    muted: "border-border text-zinc-600",
+    muted: "border-border text-muted-foreground",
 } as const;
 
 export default function StatusBadge({

@@ -49,6 +49,10 @@ export default function MessageBody({
                     sandbox=""
                     title="Nachricht"
                     srcDoc={`<!doctype html><meta charset="utf-8"><base target="_blank"><style>body{margin:0;font:14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#18181b;background:#fff;word-break:break-word;}img{max-width:100%;height:auto;}</style>${html}`}
+                    // White whatever the theme is: this frame holds somebody else's
+                    // mail HTML, which assumes a light background and sets its
+                    // own text colours against it. A dark surface under it
+                    // makes half the messages unreadable.
                     className="h-80 w-full rounded-md border bg-white"
                 />
             ) : (

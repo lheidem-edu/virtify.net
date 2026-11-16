@@ -5,13 +5,13 @@ import { isOpenInvoice } from "@/db/schema";
 import { subtract } from "@/lib/money";
 import type { Actor } from "@/server/audit";
 import { loadInvoice } from "@/server/billing/invoices/repository";
+import { emitEvent } from "@/server/events/emit";
 import { methodForInvoice } from "@/server/subscriptions/service";
 import { applyPayment } from "./apply";
 import { type GatewayId, gateway } from "./gateways";
 import { captureApprovedOrder } from "./gateways/paypal";
 import { stripeClient } from "./gateways/stripe";
 import type { CheckoutHandoff, PayableInvoice } from "./gateways/types";
-import { sendPaymentActionRequiredMail } from "./mail";
 import { defaultMethod } from "./methods";
 import {
     emitInvoicePaid,
@@ -605,6 +605,18 @@ async function askForAuthentication(input: {
             return false;
         }
 
+        /**
+         * The attempt and the notice about it, in one transaction. Phase 9
+         * replaced a direct `sendPaymentActionRequiredMail` here: the mail
+         * went out before the row it names was certain, and nothing recorded
+         * that it had gone — so a relay failure was a customer who never
+         * learned why their invoice stayed open.
+         *
+         * The key is the attempt, so the link in the mail is always the link
+         * this attempt created: a collection retried next week mints a new
+         * attempt, a new URL and a new notice, while the same attempt
+         * recorded twice sends once.
+         */
         await recordAttempt({
             invoiceId: input.invoice.id,
             customerId: input.customerId,
@@ -612,13 +624,22 @@ async function askForAuthentication(input: {
             providerRef: handoff.ref,
             amountCents: input.invoice.amountCents,
             note: "Bestätigung durch den Kunden (SCA) erforderlich",
-        });
-
-        await sendPaymentActionRequiredMail({
-            to: input.invoice.customerEmail,
-            invoiceNumber: input.invoice.number,
-            amountCents: input.invoice.amountCents,
-            url: handoff.url,
+            announce: async (tx, paymentId) => {
+                await emitEvent(tx, {
+                    type: "payment.action_required",
+                    dedupeKey: `payment:${paymentId}`,
+                    entityType: "payment",
+                    entityId: paymentId,
+                    customerId: input.customerId,
+                    payload: {
+                        amountCents: input.invoice.amountCents,
+                        currency: input.invoice.currency,
+                        invoiceId: input.invoice.id,
+                        invoiceNumber: input.invoice.number,
+                        url: handoff.url,
+                    },
+                });
+            },
         });
 
         return true;

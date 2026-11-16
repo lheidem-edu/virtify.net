@@ -14,6 +14,7 @@ import { pauseSpanMs, shiftInstant } from "@/server/billing/periods";
  * is being evaluated.
  */
 import { cancelUndeliveredRenewalsIn } from "@/server/billing/reversals";
+import { emitEvent } from "@/server/events/emit";
 import { loadSettings, type Settings } from "@/server/settings";
 import { assertTransition, type ServiceFollow, servicesFollow } from "./state";
 
@@ -169,7 +170,11 @@ export async function applyServiceFollow(
                 inArray(schema.service.status, from),
             ),
         )
-        .returning({ id: schema.service.id });
+        .returning({
+            id: schema.service.id,
+            customerId: schema.service.customerId,
+            label: schema.service.label,
+        });
 
     const moved = updated.map((row) => row.id);
 
@@ -191,6 +196,53 @@ export async function applyServiceFollow(
             follow,
             cause,
         });
+    }
+
+    /**
+     * Phase 9, off **the rows that moved** and never off the statuses they
+     * now have — the same loop-breaker the module calls above rely on. A
+     * notice that fired on the value would tell a customer their server was
+     * suspended once a minute for as long as the invoice stayed open.
+     *
+     * The key is `service:<id>:<cause>`, which is the module call's request
+     * key with the service in front of it: one cause moves several machines
+     * and each gets its own line, while the same cause reached twice is one
+     * notice per machine.
+     *
+     * Waking a suspended service deliberately sends nothing. The suspension
+     * notice already says "sobald die Zahlung eingeht, schalten wir
+     * automatisch wieder frei", the portal shows the service running, and a
+     * third mail in one dunning cycle is noise rather than news.
+     */
+    if (cause && (follow === "suspended" || follow === "terminated")) {
+        const type =
+            follow === "suspended" ? "service.suspended" : "service.terminated";
+        /**
+         * Which story the mail tells. The dunning rung's cause is prefixed
+         * (`dunning:<invoice>:suspend`, see `actOnDunningRung`); every other
+         * caller passes a subscription event id. Reading the prefix is
+         * narrow, but the alternative is threading a reason through
+         * `applyServiceFollow`'s six callers for a sentence in a mail.
+         */
+        const reason = cause.startsWith("dunning:")
+            ? "dunning"
+            : "subscription";
+
+        for (const row of updated) {
+            await emitEvent(tx, {
+                type,
+                dedupeKey: `service:${row.id}:${cause}`,
+                entityType: "service",
+                entityId: row.id,
+                customerId: row.customerId,
+                occurredAt: at,
+                payload: {
+                    serviceId: row.id,
+                    label: row.label,
+                    reason,
+                },
+            });
+        }
     }
 
     return moved;
@@ -477,7 +529,76 @@ export async function transitionSubscriptionIn(
         after: { status: input.to, reason: input.summary, servicesMoved },
     });
 
+    /**
+     * Phase 9, inside the transaction that wrote the status.
+     *
+     * The key is the **subscription event id** minted above, which is already
+     * the cause the module call is keyed on — so one status change is one
+     * suspension *and* one notice, and the timeline entry, the Proxmox task
+     * and the mail all name each other. An Abo ended, revived by a late
+     * payment and ended again is two events and two notices; the same
+     * transition reached twice inside one transaction is one of each.
+     *
+     * Only `ended` carries a mail today. `cancelled` deliberately does not:
+     * a cancellation is confirmed in Textform by
+     * `src/app/(marketing)/cancellation` at the moment the customer asks for
+     * it, and a second "Ihr Abo wurde gekündigt" arriving minutes later would
+     * read as a second cancellation. The event is still emitted, because
+     * Phase 10's webhooks and the portal's activity list want it.
+     */
+    if (input.to === "ended" || input.to === "cancelled") {
+        const label = await subscriptionLabel(tx, input.subscriptionId);
+
+        if (input.to === "ended") {
+            await emitEvent(tx, {
+                type: "subscription.ended",
+                dedupeKey: eventId,
+                entityType: "subscription",
+                entityId: input.subscriptionId,
+                customerId: row.customerId,
+                occurredAt: at,
+                payload: { label, endedAt: at.toISOString() },
+            });
+        } else {
+            await emitEvent(tx, {
+                type: "subscription.cancelled",
+                dedupeKey: eventId,
+                entityType: "subscription",
+                entityId: input.subscriptionId,
+                customerId: row.customerId,
+                occurredAt: at,
+                payload: {
+                    label,
+                    endsAt: row.currentPeriodEnd?.toISOString() ?? null,
+                    atPeriodEnd: row.cancelAtPeriodEnd,
+                },
+            });
+        }
+    }
+
     return { changed: true, from, to: input.to, servicesMoved };
+}
+
+/**
+ * What the customer calls this Abo: its first position's description.
+ *
+ * The same answer `endTrials` gives, and for the same reason — a subscription
+ * has no name of its own, and the first item's snapshot is what the customer
+ * ordered. Null-safe rather than throwing: an Abo with no items is a broken
+ * row, and a notice is not where that should surface.
+ */
+async function subscriptionLabel(
+    tx: Tx,
+    subscriptionId: string,
+): Promise<string> {
+    const [item] = await tx
+        .select({ description: schema.subscriptionItem.description })
+        .from(schema.subscriptionItem)
+        .where(eq(schema.subscriptionItem.subscriptionId, subscriptionId))
+        .orderBy(asc(schema.subscriptionItem.position))
+        .limit(1);
+
+    return item?.description ?? "Ihr Abo";
 }
 
 /** The same thing when the caller has no transaction of its own. */

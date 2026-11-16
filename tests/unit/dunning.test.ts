@@ -145,7 +145,6 @@ describe("what the customer is told", () => {
         const message = dunningMessage({
             level: "mahnung",
             invoiceNumber: "RE-2026-0042",
-            amountCents: 1999,
             formatted: "19,99 €",
             dueAt: new Date("2026-11-10T00:00:00.000Z"),
         });
@@ -162,7 +161,6 @@ describe("what the customer is told", () => {
                 dunningMessage({
                     level,
                     invoiceNumber: "RE-2026-0042",
-                    amountCents: 1999,
                     formatted: "19,99 €",
                     dueAt: new Date("2026-11-10T00:00:00.000Z"),
                 }).subject,
@@ -175,7 +173,6 @@ describe("what the customer is told", () => {
         const message = dunningMessage({
             level: "suspend",
             invoiceNumber: "RE-2026-0042",
-            amountCents: 1999,
             formatted: "19,99 €",
             dueAt: new Date("2026-11-10T00:00:00.000Z"),
         });

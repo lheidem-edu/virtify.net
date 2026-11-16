@@ -36,7 +36,7 @@ export default async function Page({
             </p>
             <Link
                 href="/admin"
-                className="mt-8 inline-block text-sm underline decoration-zinc-600 underline-offset-4 transition-colors hover:decoration-white"
+                className="mt-8 inline-block text-sm underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
             >
                 Zurück zur Übersicht
             </Link>

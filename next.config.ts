@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
 
 /**
  * The commit the running build was produced from. Shown in the footer so it is
@@ -76,4 +77,10 @@ const nextConfig: NextConfig = {
     },
 };
 
-export default nextConfig;
+/**
+ * next-intl, without i18n routing: there is no locale segment in any URL and
+ * no middleware (see `src/i18n/locale.ts`). The plugin's only job here is to
+ * point the server APIs at `src/i18n/request.ts`, which resolves the locale
+ * from the signed-in customer, then a cookie, then Accept-Language.
+ */
+export default createNextIntlPlugin()(nextConfig);

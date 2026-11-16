@@ -36,13 +36,13 @@ export default function Page() {
                 footer={
                     <Link
                         href="/client/login"
-                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-zinc-300"
+                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                     >
                         Zurück zur Anmeldung
                     </Link>
                 }
             >
-                <p className="text-sm leading-7 text-zinc-500">
+                <p className="text-sm leading-7 text-muted-foreground">
                     Der Link ist aus Sicherheitsgründen nur begrenzt gültig.
                 </p>
             </AuthShell>
@@ -56,7 +56,7 @@ export default function Page() {
             footer={
                 <Link
                     href="/client/login"
-                    className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-zinc-300"
+                    className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                 >
                     Zurück zur Anmeldung
                 </Link>

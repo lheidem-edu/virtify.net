@@ -315,3 +315,54 @@ export function formatBytes(bytes: number) {
 
     return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
+
+/**
+ * The same two formats, in the reader's language.
+ *
+ * Phase 9. The functions above stay `de-DE` and are not parameterised,
+ * because what they format is mostly a *document* — an invoice PDF, a
+ * contract, an offer — and those are German whatever language the portal is
+ * in (rule 13). These are for the surfaces that follow the reader: the
+ * portal and the transactional mail.
+ *
+ * `en-GB` rather than `en-US` for English: a German hoster's prices read
+ * "€19.99" and its dates "19/11/2026", which is what a European customer
+ * reading English expects. The time zone stays Berlin in both — an invoice
+ * due on the 30th is due on the 30th in Berlin, wherever it is read.
+ */
+const INTL_LOCALE: Record<string, string> = { de: "de-DE", en: "en-GB" };
+
+function intlLocale(locale: string) {
+    return INTL_LOCALE[locale] ?? "de-DE";
+}
+
+export function formatPriceIn(locale: string, cents: number, currency = "EUR") {
+    return new Intl.NumberFormat(intlLocale(locale), {
+        style: "currency",
+        currency,
+    }).format(cents / 100);
+}
+
+export function formatDateIn(locale: string, value: Date | null | undefined) {
+    return value
+        ? new Intl.DateTimeFormat(intlLocale(locale), {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              timeZone: "Europe/Berlin",
+          }).format(value)
+        : "—";
+}
+
+/** The long form a notice uses in prose: „19. November 2026". */
+export function formatLongDateIn(
+    locale: string,
+    value: Date | null | undefined,
+) {
+    return value
+        ? new Intl.DateTimeFormat(intlLocale(locale), {
+              dateStyle: "long",
+              timeZone: "Europe/Berlin",
+          }).format(value)
+        : "—";
+}

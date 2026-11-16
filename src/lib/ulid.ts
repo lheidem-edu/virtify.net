@@ -127,6 +127,8 @@ export const ID_PREFIX = {
     ipAddress: "ipaddress",
     provisioningTask: "provtask",
     provisioningResource: "provres",
+    domainEvent: "event",
+    emailLog: "email",
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIX)[keyof typeof ID_PREFIX];

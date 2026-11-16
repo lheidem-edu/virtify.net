@@ -83,13 +83,13 @@ export default async function Page() {
                                 <span className="flex gap-4">
                                     <Link
                                         href={`/client/credit-notes/${entry.id}/pdf`}
-                                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                                     >
                                         PDF
                                     </Link>
                                     <Link
                                         href={`/client/credit-notes/${entry.id}/xml`}
-                                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                                     >
                                         XRechnung
                                     </Link>

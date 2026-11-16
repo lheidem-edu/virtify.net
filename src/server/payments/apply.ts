@@ -5,6 +5,7 @@ import { isOpenInvoice, type PaymentProvider } from "@/db/schema";
 import { subtract } from "@/lib/money";
 import { createId } from "@/lib/ulid";
 import { type Actor, audit } from "@/server/audit";
+import { emitEvent } from "@/server/events/emit";
 import { receivedFrom, settlementFor } from "./settlement";
 
 /**
@@ -89,7 +90,6 @@ export type ApplyOutcome = {
     /** The provider said one figure and we had recorded another. */
     amountMismatch: { recorded: number; reported: number } | null;
     /** Where a receipt goes, when one is owed. */
-    receiptTo: string | null;
 };
 
 function nothing(known = false): ApplyOutcome {
@@ -107,7 +107,6 @@ function nothing(known = false): ApplyOutcome {
         creditedToBalanceCents: 0,
         unexpected: false,
         amountMismatch: null,
-        receiptTo: null,
     };
 }
 
@@ -245,6 +244,25 @@ export async function applyPaymentIn(
                 purpose: "topup",
                 amountCents,
                 ref: input.ref,
+            },
+        });
+
+        await emitEvent(tx, {
+            type: "payment.received",
+            dedupeKey: `payment:${paymentId}`,
+            entityType: "payment",
+            entityId: paymentId,
+            customerId,
+            occurredAt: at,
+            payload: {
+                amountCents,
+                currency: "EUR",
+                provider: input.gateway,
+                purpose: "topup",
+                invoiceId: null,
+                invoiceNumber: null,
+                outstandingCents: 0,
+                invoiceStatus: null,
             },
         });
 
@@ -392,6 +410,65 @@ async function settleAgainstInvoice(
         },
     });
 
+    /**
+     * Phase 9, and **inside this transaction on purpose**.
+     *
+     * `emitInvoicePaid` — the seam below this function — runs after the
+     * commit, and its own header has always said this is where an event bus
+     * goes. It is not: a process that dies between the commit and that seam
+     * loses the receipt, and the customer's money is settled with nobody
+     * told. The row written here cannot be lost, because it commits with the
+     * settlement or not at all.
+     *
+     * Keyed on the payment, which is what `applyPayment` already holds
+     * `FOR UPDATE` on the provider's reference — so a webhook delivered
+     * twice, a retried capture and a double-clicked button queue behind the
+     * first, find it done, and emit the same key.
+     */
+    await emitEvent(tx, {
+        type: "payment.received",
+        dedupeKey: `payment:${paymentId}`,
+        entityType: "payment",
+        entityId: paymentId,
+        customerId: invoice.customerId,
+        occurredAt: at,
+        payload: {
+            amountCents: context.amountCents,
+            currency: invoice.currency,
+            provider: context.gateway,
+            purpose: "invoice",
+            invoiceId,
+            invoiceNumber: invoice.number,
+            outstandingCents: settlement.outstandingCents,
+            invoiceStatus: status,
+        },
+    });
+
+    /**
+     * A separate fact from the receipt, and it has its own key: the invoice.
+     * It reaches `paid` once — this update is inside the transaction that
+     * holds the row — so a second settlement finds the status already there
+     * and the `on conflict` swallows the duplicate. It sends no mail today;
+     * it is what Phase 10's webhooks subscribe to, and what the portal's
+     * activity list reads.
+     */
+    if (status === "paid" && invoice.status !== "paid") {
+        await emitEvent(tx, {
+            type: "invoice.paid",
+            dedupeKey: `invoice:${invoiceId}`,
+            entityType: "invoice",
+            entityId: invoiceId,
+            customerId: invoice.customerId,
+            occurredAt: at,
+            payload: {
+                number: invoice.number ?? "",
+                grossCents: invoice.grossCents ?? 0,
+                currency: invoice.currency,
+                paidAt: at.toISOString(),
+            },
+        });
+    }
+
     return {
         known: true,
         changed: true,
@@ -406,17 +483,6 @@ async function settleAgainstInvoice(
         creditedToBalanceCents,
         unexpected,
         amountMismatch: context.amountMismatch,
-        /**
-         * A receipt is owed for a part payment too: the customer handed over
-         * money and is entitled to hear that it arrived — and, more to the
-         * point, to hear what is still open before the invoice goes overdue.
-         * The frozen address when the invoice has one, so the receipt follows
-         * the document rather than a since-changed account.
-         */
-        receiptTo: keepStatus
-            ? null
-            : (invoice.buyerEmail ??
-              (await ownerEmail(tx, invoice.customerId))),
     };
 }
 
@@ -586,27 +652,16 @@ export async function reverseChargeCredit(
     return amountCents;
 }
 
-/** The account's owner, for a receipt when the invoice froze no address. */
-async function ownerEmail(tx: Executor, customerId: string) {
-    const [row] = await tx
-        .select({ email: schema.customerContact.email })
-        .from(schema.customerContact)
-        .where(eq(schema.customerContact.customerId, customerId))
-        .orderBy(
-            sql`case when ${schema.customerContact.role} = 'owner' then 0 else 1 end`,
-            asc(schema.customerContact.id),
-        )
-        .limit(1);
-
-    return row?.email ?? null;
-}
-
 /**
  * The customer's balance: the ledger, added up. No column holds it, so it
  * cannot drift from the entries that explain it.
  */
 export async function creditBalanceCents(
-    executor: Executor,
+    /**
+     * Narrowed to `select`: the balance is a read, and the dashboard loader
+     * that asks for it is handed a reader rather than the database.
+     */
+    executor: Pick<Executor, "select">,
     customerId: string,
 ): Promise<number> {
     const [row] = await executor

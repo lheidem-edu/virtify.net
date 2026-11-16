@@ -26,11 +26,11 @@ export default function Page() {
                 <h2 className="max-w-4xl text-4xl leading-[1.08] font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
                     KVM-Instanzen
                 </h2>
-                <p className="mt-8 max-w-2xl text-lg text-zinc-300">
+                <p className="mt-8 max-w-2xl text-lg text-foreground">
                     Virtuelle Maschinen unter Proxmox VE, betrieben auf eigener
                     Hardware.
                 </p>
-                <p className="mt-4 max-w-2xl text-zinc-500">
+                <p className="mt-4 max-w-2xl text-muted-foreground">
                     Die Plattform befindet sich in Entwicklung. Instanzen
                     richten wir derzeit auf Anfrage ein.
                 </p>
@@ -42,13 +42,13 @@ export default function Page() {
                         key={property.label}
                         className="border-t p-6 first:border-t-0 sm:border-t-0 sm:border-l sm:p-10 sm:first:border-l-0"
                     >
-                        <p className="font-mono text-xs text-zinc-600">
+                        <p className="font-mono text-xs text-muted-foreground">
                             {property.label}
                         </p>
                         <h3 className="mt-6 text-sm font-medium tracking-tight">
                             {property.title}
                         </h3>
-                        <p className="mt-3 text-sm leading-6 text-zinc-500">
+                        <p className="mt-3 text-sm leading-6 text-muted-foreground">
                             {property.body}
                         </p>
                     </div>
@@ -66,7 +66,7 @@ export default function Page() {
                         priority={false}
                         className="h-8 w-auto sm:h-9"
                     />
-                    <p className="mt-8 text-sm leading-7 text-zinc-400">
+                    <p className="mt-8 text-sm leading-7 text-muted-foreground">
                         Unsere Server stehen im Rechenzentrum der NETMOUNTAINS
                         Group GmbH in Velbert. Gebäude, Stromversorgung, Kühlung
                         und Zutrittskontrolle liegen dort — Hardware, Hypervisor
@@ -76,7 +76,7 @@ export default function Page() {
                         href="https://netmountains.de"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mt-6 inline-block text-sm text-zinc-400 underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-white hover:decoration-white"
+                        className="mt-6 inline-block text-sm text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground hover:decoration-current"
                     >
                         netmountains.de
                     </a>

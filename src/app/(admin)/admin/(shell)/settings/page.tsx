@@ -28,7 +28,7 @@ export default async function Page() {
                 </p>
                 <Link
                     href="/admin/settings/tax"
-                    className="mt-4 inline-block text-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                    className="mt-4 inline-block text-sm underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                 >
                     Besteuerung verwalten
                 </Link>
@@ -46,7 +46,7 @@ export default async function Page() {
                 </p>
                 <Link
                     href="/admin/settings/payments"
-                    className="mt-4 inline-block text-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                    className="mt-4 inline-block text-sm underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                 >
                     Zahlungsarten verwalten
                 </Link>
@@ -64,7 +64,7 @@ export default async function Page() {
                 </p>
                 <Link
                     href="/admin/settings/mail"
-                    className="mt-4 inline-block text-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                    className="mt-4 inline-block text-sm underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                 >
                     Postfach verwalten
                 </Link>
@@ -81,7 +81,7 @@ export default async function Page() {
                 </p>
                 <Link
                     href="/admin/settings/provisioning"
-                    className="mt-4 inline-block text-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                    className="mt-4 inline-block text-sm underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                 >
                     Bereitstellung verwalten
                 </Link>

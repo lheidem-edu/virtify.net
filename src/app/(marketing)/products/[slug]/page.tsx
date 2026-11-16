@@ -118,10 +118,10 @@ export default async function Page({
     return (
         <>
             <section className="border-b px-6 py-16 md:px-10 md:py-20">
-                <p className="text-xs text-zinc-600">
+                <p className="text-xs text-muted-foreground">
                     <Link
                         href={`/products#${detail.group.slug}`}
-                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-zinc-300"
+                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                     >
                         {detail.group.name}
                     </Link>
@@ -130,12 +130,12 @@ export default async function Page({
                     {detail.product.name}
                 </h1>
                 {detail.product.tagline ? (
-                    <p className="mt-6 max-w-2xl text-lg text-zinc-300">
+                    <p className="mt-6 max-w-2xl text-lg text-foreground">
                         {detail.product.tagline}
                     </p>
                 ) : null}
                 {detail.product.description ? (
-                    <p className="mt-4 max-w-2xl leading-7 text-zinc-500">
+                    <p className="mt-4 max-w-2xl leading-7 text-muted-foreground">
                         {detail.product.description}
                     </p>
                 ) : null}

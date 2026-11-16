@@ -12,6 +12,7 @@ export * from "./contracts";
 export * from "./customers";
 export * from "./invoices";
 export * from "./legal";
+export * from "./notifications";
 export * from "./offers";
 export * from "./orders";
 export * from "./payments";

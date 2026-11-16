@@ -46,7 +46,7 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
         cell: ({ row }) => (
             <Link
                 href={`/admin/invoices/${row.original.id}`}
-                className="font-mono underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                className="font-mono underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
             >
                 {row.original.number ?? "Entwurf"}
             </Link>
@@ -130,7 +130,7 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
             <div className="flex flex-wrap items-center justify-end gap-3">
                 <Link
                     href={`/client/invoices/${row.original.id}/pdf`}
-                    className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                    className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                 >
                     PDF
                 </Link>
@@ -140,7 +140,7 @@ const columns: ColumnDef<AdminInvoiceRow, unknown>[] = [
                     <>
                         <Link
                             href={`/client/invoices/${row.original.id}/xml`}
-                            className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                            className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                         >
                             XML
                         </Link>

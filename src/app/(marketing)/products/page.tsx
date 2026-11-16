@@ -52,7 +52,7 @@ export default async function Page() {
                 <h1 className="max-w-4xl text-4xl leading-[1.08] font-semibold tracking-tight text-balance sm:text-5xl">
                     Produkte
                 </h1>
-                <p className="mt-8 max-w-2xl text-lg text-zinc-300">
+                <p className="mt-8 max-w-2xl text-lg text-foreground">
                     Was sich bei uns buchen lässt, mit den Preisen, die auch auf
                     der Rechnung stehen.
                 </p>
@@ -60,7 +60,7 @@ export default async function Page() {
 
             {listed.length === 0 ? (
                 <section className="px-6 py-16 md:px-10 md:py-20">
-                    <p className="text-sm text-zinc-500">
+                    <p className="text-sm text-muted-foreground">
                         Zurzeit ist nichts zur Bestellung freigegeben. Instanzen
                         richten wir auf Anfrage ein.
                     </p>
@@ -85,7 +85,7 @@ export default async function Page() {
                                 {group.name}
                             </h2>
                             {group.tagline ? (
-                                <p className="mt-3 max-w-2xl text-sm text-zinc-500">
+                                <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
                                     {group.tagline}
                                 </p>
                             ) : null}
@@ -102,13 +102,13 @@ export default async function Page() {
                                             <h3 className="text-sm font-medium tracking-tight">
                                                 <Link
                                                     href={`/products/${product.slug}`}
-                                                    className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:decoration-white"
+                                                    className="underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
                                                 >
                                                     {product.name}
                                                 </Link>
                                             </h3>
                                             {product.tagline ? (
-                                                <p className="mt-3 text-sm leading-6 text-zinc-500">
+                                                <p className="mt-3 text-sm leading-6 text-muted-foreground">
                                                     {product.tagline}
                                                 </p>
                                             ) : null}
@@ -119,7 +119,7 @@ export default async function Page() {
                                                         {formatPrice(
                                                             lowest.priceCents,
                                                         )}{" "}
-                                                        <span className="text-zinc-500">
+                                                        <span className="text-muted-foreground">
                                                             {
                                                                 CYCLE_LABEL[
                                                                     lowest.cycle
@@ -128,7 +128,7 @@ export default async function Page() {
                                                         </span>
                                                     </>
                                                 ) : (
-                                                    <span className="text-zinc-500">
+                                                    <span className="text-muted-foreground">
                                                         Preis auf Anfrage
                                                     </span>
                                                 )}

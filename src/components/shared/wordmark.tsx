@@ -16,7 +16,7 @@ export default function Wordmark({ name = site.name }: { name?: string }) {
     return (
         <>
             {stem}
-            <span className="text-zinc-500 transition-colors group-hover:text-zinc-300">
+            <span className="text-muted-foreground transition-colors group-hover:text-foreground">
                 {tld}
             </span>
         </>

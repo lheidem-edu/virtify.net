@@ -48,13 +48,13 @@ export default function CancellationForm({ siteName }: { siteName: string }) {
     return (
         <>
             <header className="border-b px-6 py-20 md:px-10 md:py-28">
-                <p className="text-xs tracking-[0.2em] text-zinc-500 uppercase">
+                <p className="text-xs tracking-[0.2em] text-muted-foreground uppercase">
                     Rechtliches
                 </p>
                 <h1 className="mt-6 max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
                     Vertrag kündigen
                 </h1>
-                <p className="mt-8 max-w-2xl text-sm leading-7 text-zinc-400">
+                <p className="mt-8 max-w-2xl text-sm leading-7 text-muted-foreground">
                     Hier kündigst du einen bestehenden Vertrag mit {siteName}.
                     Trage die Angaben zu deinem Vertrag ein und schließe den
                     Vorgang mit „Jetzt kündigen“ ab. Den Eingang bestätigen wir
@@ -68,13 +68,13 @@ export default function CancellationForm({ siteName }: { siteName: string }) {
                     <h2 className="text-sm font-medium tracking-tight">
                         Kündigung eingegangen
                     </h2>
-                    <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-400">
+                    <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
                         Wir haben deine Kündigung am {state.receivedAt} erhalten
                         und dir eine Eingangsbestätigung an die angegebene
                         Adresse geschickt. Bewahre den folgenden Text als
                         Nachweis auf.
                     </p>
-                    <pre className="mt-8 max-w-2xl overflow-x-auto rounded-lg border p-6 font-mono text-xs leading-6 text-zinc-200">
+                    <pre className="mt-8 max-w-2xl overflow-x-auto rounded-lg border p-6 font-mono text-xs leading-6 text-foreground">
                         {state.declaration}
                     </pre>
                     <Button
@@ -91,11 +91,11 @@ export default function CancellationForm({ siteName }: { siteName: string }) {
                 <section className="px-6 py-16 md:px-10 md:py-20">
                     {state.status === "error" ? (
                         <div className="mb-10 max-w-xl rounded-lg border p-6">
-                            <p className="text-sm leading-7 text-zinc-300">
+                            <p className="text-sm leading-7 text-foreground">
                                 {state.message}
                             </p>
                             {state.declaration ? (
-                                <pre className="mt-6 overflow-x-auto rounded-lg border p-4 font-mono text-xs leading-6 text-zinc-400">
+                                <pre className="mt-6 overflow-x-auto rounded-lg border p-4 font-mono text-xs leading-6 text-muted-foreground">
                                     {state.declaration}
                                 </pre>
                             ) : null}
@@ -193,7 +193,7 @@ export default function CancellationForm({ siteName }: { siteName: string }) {
                             {pending ? "Wird gesendet …" : "Jetzt kündigen"}
                         </Button>
 
-                        <p className="text-xs leading-5 text-zinc-600">
+                        <p className="text-xs leading-5 text-muted-foreground">
                             Mit dem Absenden übermittelst du die vorstehenden
                             Angaben an {siteName}. Sie werden ausschließlich zur
                             Bearbeitung der Kündigung verarbeitet.

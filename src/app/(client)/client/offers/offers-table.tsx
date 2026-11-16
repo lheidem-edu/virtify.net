@@ -76,7 +76,7 @@ const columns: ColumnDef<OfferRow, unknown>[] = [
             <div className="flex items-center justify-end gap-4">
                 <Link
                     href={`/client/offers/${row.original.id}/pdf`}
-                    className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                    className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                 >
                     PDF
                 </Link>

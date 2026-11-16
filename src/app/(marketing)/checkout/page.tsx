@@ -81,7 +81,7 @@ export default async function Page() {
                 <h1 className="max-w-4xl text-4xl leading-[1.08] font-semibold tracking-tight text-balance sm:text-5xl">
                     Kasse
                 </h1>
-                <p className="mt-8 max-w-2xl text-lg text-zinc-300">
+                <p className="mt-8 max-w-2xl text-lg text-foreground">
                     {account
                         ? "Rechnungsanschrift prüfen, bestätigen, bestellen."
                         : "Melden Sie sich an oder legen Sie ein Konto an — der Warenkorb bleibt liegen."}
@@ -116,7 +116,7 @@ export default async function Page() {
                                             ? `${entry.item.quantity} × `
                                             : ""}
                                         {entry.quote?.productName}
-                                        <span className="block text-xs text-zinc-500">
+                                        <span className="block text-xs text-muted-foreground">
                                             {CYCLE_LABEL[entry.item.cycle]}
                                         </span>
                                     </span>
@@ -140,7 +140,7 @@ export default async function Page() {
                             {priced.recurring.map((group) => (
                                 <div
                                     key={group.cycle}
-                                    className="flex items-baseline justify-between gap-4 text-zinc-500"
+                                    className="flex items-baseline justify-between gap-4 text-muted-foreground"
                                 >
                                     <dt>Danach {CYCLE_LABEL[group.cycle]}</dt>
                                     <dd className="tabular-nums">
@@ -150,7 +150,7 @@ export default async function Page() {
                             ))}
                         </dl>
 
-                        <p className="border-t pt-6 text-xs leading-5 text-zinc-500">
+                        <p className="border-t pt-6 text-xs leading-5 text-muted-foreground">
                             Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.{" "}
                             <Link
                                 href="/cart"

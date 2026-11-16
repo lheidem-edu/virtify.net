@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 const CARD = "rounded-lg border p-6";
 const LINK =
-    "underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground";
+    "underline decoration-border underline-offset-4 transition-colors hover:text-foreground";
 
 /**
  * The operator's first screen. Deliberately small: what needs attention

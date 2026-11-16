@@ -564,12 +564,10 @@ export async function applyChange(
                 actor,
             );
 
-            const finalized = await finalizeInvoiceIn(
-                tx,
-                draft.id,
-                actor,
-                finalizeOptions,
-            );
+            const finalized = await finalizeInvoiceIn(tx, draft.id, actor, {
+                ...finalizeOptions,
+                reason: "change",
+            });
 
             invoiceId = draft.id;
             invoiceNumber = finalized.number;

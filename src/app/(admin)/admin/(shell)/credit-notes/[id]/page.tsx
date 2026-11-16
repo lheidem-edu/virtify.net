@@ -29,7 +29,7 @@ import { ResendCreditNoteAction } from "./actions-client";
 export const dynamic = "force-dynamic";
 
 const LINK =
-    "underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground";
+    "underline decoration-border underline-offset-4 transition-colors hover:text-foreground";
 
 function Field({
     label,

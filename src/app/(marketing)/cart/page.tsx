@@ -45,7 +45,7 @@ export default async function Page() {
                 <h1 className="max-w-4xl text-4xl leading-[1.08] font-semibold tracking-tight text-balance sm:text-5xl">
                     Warenkorb
                 </h1>
-                <p className="mt-8 max-w-2xl text-lg text-zinc-300">
+                <p className="mt-8 max-w-2xl text-lg text-foreground">
                     Jeder Betrag hier wird beim Aufruf neu aus dem Katalog
                     gerechnet — von derselben Funktion, die ihn auf die Rechnung
                     schreibt.
@@ -55,7 +55,7 @@ export default async function Page() {
             <section className="px-6 py-16 md:px-10">
                 {!priced || priced.entries.length === 0 ? (
                     <div className="space-y-6">
-                        <p className="text-zinc-400">
+                        <p className="text-muted-foreground">
                             Es liegt nichts im Warenkorb.
                         </p>
                         <Button
@@ -124,7 +124,7 @@ export default async function Page() {
                                 {priced.recurring.map((group) => (
                                     <div
                                         key={group.cycle}
-                                        className="flex items-baseline justify-between gap-4 text-zinc-500"
+                                        className="flex items-baseline justify-between gap-4 text-muted-foreground"
                                     >
                                         <dt>
                                             Danach {CYCLE_LABEL[group.cycle]}
@@ -155,7 +155,7 @@ export default async function Page() {
                                 </Button>
                             </div>
 
-                            <p className="text-xs leading-5 text-zinc-500">
+                            <p className="text-xs leading-5 text-muted-foreground">
                                 Gemäß § 19 UStG wird keine Umsatzsteuer
                                 berechnet.
                             </p>

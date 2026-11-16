@@ -6,6 +6,7 @@ import type { PaymentProvider } from "@/db/schema";
 import { formatPrice } from "@/lib/format";
 import { createId } from "@/lib/ulid";
 import { notifyThresholds } from "@/server/billing/revenue-notify";
+import { emitEvent } from "@/server/events/emit";
 import {
     logMailError,
     mailFrom,
@@ -15,6 +16,9 @@ import {
 import { loadSettings } from "@/server/settings";
 import { reactivateAfterSettlement } from "@/server/subscriptions/service";
 import type { ApplyOutcome } from "./apply";
+
+/** A transaction handle, for the callback `recordAttempt` runs inside one. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Recording an attempt before it is made, and everything that has to happen
@@ -53,10 +57,18 @@ export async function recordAttempt(input: {
     purpose?: "invoice" | "topup";
     paymentMethodId?: string | null;
     note?: string | null;
+    /**
+     * Phase 9. Runs in the same transaction as the insert, with the id of the
+     * attempt it just wrote. For the caller that has something to say about
+     * the attempt — "your bank wants you to confirm this" — so that the
+     * notice and the row it names commit together: a notice about an attempt
+     * that was rolled back would hand the customer a link to nothing.
+     */
+    announce?: (tx: Tx, paymentId: string) => Promise<void>;
 }) {
     const id = createId("payment");
 
-    await db.insert(schema.payment).values({
+    const values = {
         id,
         invoiceId: input.invoiceId,
         customerId: input.customerId,
@@ -66,6 +78,19 @@ export async function recordAttempt(input: {
         purpose: input.purpose ?? "invoice",
         paymentMethodId: input.paymentMethodId ?? null,
         note: input.note ?? null,
+    };
+
+    if (!input.announce) {
+        await db.insert(schema.payment).values(values);
+
+        return id;
+    }
+
+    const announce = input.announce;
+
+    await db.transaction(async (tx) => {
+        await tx.insert(schema.payment).values(values);
+        await announce(tx, id);
     });
 
     return id;
@@ -99,7 +124,54 @@ export async function failPayment(input: {
         )
         .returning();
 
-    return attempt ?? null;
+    if (!attempt) {
+        return null;
+    }
+
+    /**
+     * Phase 9. The conditional update above **is** the claim — only a
+     * `pending` attempt becomes `failed`, so a provider that delivers the
+     * same failure twice moves one row and the second delivery returns
+     * nothing and emits nothing. The key is the attempt, which is why a
+     * collection retried tomorrow is a second notice and gets one: the old
+     * link is spent and the customer needs the new one.
+     */
+    await db.transaction(async (tx) => {
+        const [invoice] = attempt.invoiceId
+            ? await tx
+                  .select({
+                      number: schema.invoice.number,
+                      currency: schema.invoice.currency,
+                  })
+                  .from(schema.invoice)
+                  .where(eq(schema.invoice.id, attempt.invoiceId))
+                  .limit(1)
+            : [];
+
+        await emitEvent(tx, {
+            type: "payment.failed",
+            dedupeKey: `payment:${attempt.id}`,
+            entityType: "payment",
+            entityId: attempt.id,
+            customerId: attempt.customerId,
+            occurredAt: now,
+            payload: {
+                amountCents: attempt.amountCents ?? 0,
+                currency: invoice?.currency ?? "EUR",
+                invoiceId: attempt.invoiceId,
+                invoiceNumber: invoice?.number ?? null,
+                /**
+                 * The gateway's own words. A customer whose card was declined
+                 * for insufficient funds can act on that; "es hat nicht
+                 * geklappt" leaves them guessing — and the decline reason is
+                 * not a secret, it is what their own bank told the terminal.
+                 */
+                reason: input.message ?? null,
+            },
+        });
+    });
+
+    return attempt;
 }
 
 /** A debit that has been submitted but is not money yet — SEPA takes days. */
@@ -204,40 +276,19 @@ export async function emitInvoicePaid(
         }
     }
 
-    if (outcome.invoiceId && outcome.receiptTo) {
-        /**
-         * Imported at the point of use, and that is load-bearing rather than
-         * style: the receipt mail attaches the rendered invoice, so this
-         * module would otherwise drag `@react-pdf/renderer` into every
-         * process that can settle a payment — including the background
-         * worker, which is a plain Node process where that package's
-         * dependencies cannot be resolved at all (see
-         * `BillingRunContext.renderPdf`). The worker has to be able to
-         * *collect* money without being able to *draw* a document.
-         */
-        const { sendPaymentReceivedMail } = await import(
-            "@/server/documents/send"
-        );
-
-        const receipt = sendPaymentReceivedMail({
-            invoiceId: outcome.invoiceId,
-            to: outcome.receiptTo,
-            amountCents: outcome.amountCents,
-            paidAt: at,
-            outstandingCents: outcome.outstandingCents,
-        }).catch((error) => {
-            console.error("[payments] receipt mail failed:", error);
-        });
-
-        // A webhook holds the customer's redirect while this runs and the
-        // provider gives up after ten seconds, so the mail gets a few and
-        // then finishes on its own time. The payment is settled either way;
-        // a slow relay must not look like a failed webhook.
-        await Promise.race([
-            receipt,
-            new Promise((resolve) => setTimeout(resolve, 4_000)),
-        ]);
-    }
+    /**
+     * The receipt used to be sent from here, synchronously, racing a
+     * four-second timeout against the provider's webhook deadline. Phase 9
+     * took it out: `settleAgainstInvoice` now emits `payment.received`
+     * **inside** the transaction that books the money, and the outbox sends
+     * it within the minute — logged, keyed on the payment, retried on
+     * failure and resendable by the operator.
+     *
+     * That is strictly better in the way that matters here. The old path
+     * could lose a receipt in two places this one cannot: a process that
+     * died between the commit and this seam, and a relay that was slow
+     * enough to lose the race. Neither failure left a trace.
+     */
 
     if (outcome.unexpected) {
         await notifyUnexpectedPayment({

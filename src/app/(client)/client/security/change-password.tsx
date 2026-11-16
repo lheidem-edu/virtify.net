@@ -47,13 +47,13 @@ export default function ChangePassword() {
 
     return (
         <div className="max-w-xl">
-            <p className="text-sm leading-7 text-zinc-400">
+            <p className="text-sm leading-7 text-muted-foreground">
                 Nach einer Änderung werden alle anderen angemeldeten Geräte
                 abgemeldet.
             </p>
 
             {state.kind === "saved" ? (
-                <p className="mt-6 rounded-lg border p-4 text-sm leading-6 text-zinc-300">
+                <p className="mt-6 rounded-lg border p-4 text-sm leading-6 text-foreground">
                     Passwort geändert.
                 </p>
             ) : null}

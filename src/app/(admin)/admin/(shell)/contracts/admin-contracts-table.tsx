@@ -31,7 +31,7 @@ export type AdminContractRow = {
 };
 
 const linkClass =
-    "underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground";
+    "underline decoration-border underline-offset-4 transition-colors hover:text-foreground";
 
 const columns: ColumnDef<AdminContractRow, unknown>[] = [
     {

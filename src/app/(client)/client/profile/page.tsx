@@ -10,7 +10,7 @@ export default async function Page() {
                 <h1 className="text-3xl font-semibold tracking-tight">
                     Stammdaten
                 </h1>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-400">
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
                     Diese Angaben verwenden wir für Verträge und Rechnungen.
                     Deine E-Mail-Adresse änderst du unter Sicherheit.
                 </p>

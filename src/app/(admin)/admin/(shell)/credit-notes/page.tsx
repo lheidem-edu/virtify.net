@@ -17,7 +17,7 @@ import { ANY_CUSTOMER } from "@/server/documents/repository";
 export const dynamic = "force-dynamic";
 
 const LINK =
-    "underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground";
+    "underline decoration-border underline-offset-4 transition-colors hover:text-foreground";
 
 /**
  * Rechnungskorrekturen, on their own list because they are documents of their

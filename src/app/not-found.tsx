@@ -7,13 +7,13 @@ export default function NotFound() {
     return (
         <SiteChrome>
             <section className="grow px-6 py-24 md:px-10 md:py-36">
-                <p className="text-xs tracking-[0.2em] tabular-nums text-zinc-600">
+                <p className="text-xs tracking-[0.2em] tabular-nums text-muted-foreground">
                     404
                 </p>
                 <h2 className="mt-8 text-4xl font-semibold tracking-tight sm:text-5xl">
                     Seite nicht gefunden
                 </h2>
-                <p className="mt-6 max-w-md text-zinc-500">
+                <p className="mt-6 max-w-md text-muted-foreground">
                     Die angeforderte Seite existiert nicht oder wurde
                     verschoben.
                 </p>

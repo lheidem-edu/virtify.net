@@ -3,6 +3,7 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { type db as defaultDb, schema } from "@/db";
 import type { Ticket } from "@/db/schema";
 import { type Actor, audit } from "@/server/audit";
+import { emitEvent } from "@/server/events/emit";
 import { escapeHtml } from "@/server/mail";
 import { readAttachment } from "./attachments";
 import type { MailAddress, MailChannel } from "./channels/types";
@@ -307,6 +308,37 @@ export async function replyToTicket(
                     cc: cc.map((address) => address.email),
                     closed: Boolean(input.closeTicket),
                     internetMessageId,
+                },
+            });
+
+            /**
+             * Phase 9, inside the transaction that recorded the reply — so
+             * the notification cannot be about a message that rolled back.
+             *
+             * The key is the message row, which is written under a unique
+             * index on its Message-ID, so the row *is* the reply and a
+             * retried record is one notification.
+             *
+             * `notifiedEmails` is what keeps this from being a second copy of
+             * the answer: the reply has just gone out by mail to everyone in
+             * `to` and `cc`, and the notifier drops those addresses. What is
+             * left is a contact who may read the ticket in the portal but
+             * whose address the thread does not carry.
+             */
+            await emitEvent(tx, {
+                type: "ticket.replied",
+                dedupeKey: `ticketmessage:${message.id}`,
+                entityType: "ticket_message",
+                entityId: message.id,
+                customerId: ticket.customerId,
+                payload: {
+                    ticketId: ticket.id,
+                    number: ticket.number,
+                    subject: ticket.subject,
+                    author: "staff",
+                    notifiedEmails: [...to, ...cc].map(
+                        (address) => address.email,
+                    ),
                 },
             });
 

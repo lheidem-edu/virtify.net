@@ -2302,6 +2302,381 @@ writing the tests: `toHostLabel` normalised to NFKD *before* replacing the umlau
 - [ ] **Nothing cleans up `provisioning_task`.** The rows are small and the history is
       useful, but there is no pruning pass as there is for `mail_notification`.
 
+## Phase 9 — Kundenbereich, i18n, Benachrichtigungen · done
+
+`npm run typecheck`, `npm run lint`, `npm run test` (1142 tests), `npm run build` and
+`npm run openapi:generate` are green. Migration `0024`.
+
+**There is still no SMTP relay and no Microsoft 365 tenant for this installation, and
+none was gone looking for.** Everything below is written against `MailTransport`, the
+interface Phase 7 put over both, and tested against a fake that answers in the shapes a
+real one does — including the awkward ones (`tests/helpers/mail.ts`). With no transport
+configured the outbox leaves every message `pending` and **burns no attempt**, because
+"there is no relay" is not a property of the message.
+
+**This phase closes "a mail that was never sent leaves no trace."** Until now sixteen
+functions called `transport.sendMail` directly: nothing recorded that a notice was owed,
+nothing retried one that failed, and a relay that was down was a customer who simply
+never heard. There is one outbox now, and every message is a row before it is a send.
+
+### Two tables, because they answer two questions
+
+`domain_event` says **what happened**. It is written inside the transaction that made the
+fact true — `finalizeInvoiceIn` where the number is assigned, `settleAgainstInvoice` under
+the invoice's row lock, `actOnDunningRung` inside the claim, `placeOrder`'s single
+transaction, `applyServiceFollow` off the rows it actually moved. An event that exists
+describes something that committed, and a fact that committed has its event.
+
+`email_log` says **which mail should exist**. One event fans out to several — the billing
+contact and the technical contact, in two languages — and a mail can exist with no event
+at all, because a password reset is not a domain fact, it is a request.
+
+`emitEvent` and `queueMail` both take a **transaction** and only a transaction: the
+parameter type has no `transaction` method, so the only thing that can be passed is a
+handle already inside one. The audit helper is written the same way and for the same
+reason.
+
+### The bus may notify. It may not decide.
+
+An event bus is exactly the shape that grows a second `applyPayment` — a listener that
+settles, transitions or provisions is a second answer to a question that already has one,
+and the one that is wrong is the one somebody finds. So the rule is **structural**: a
+notifier in `src/server/events/notify.ts` is handed a handle narrowed to `select` and
+**returns** the mail it wants. It has nothing to settle a payment with, no way to move a
+subscription and no way to reach a machine. A notifier that ever genuinely needed to
+change something would be a sign the *emitter* is in the wrong place.
+
+### What each key speaks for
+
+Written out in full in `src/server/mail/templates/index.ts` and
+`src/server/events/catalog.ts`, in tables, because Phase 6 shipped a day-scoped claim
+taken by a customer-scoped pass and Phase 7 shipped a per-mailbox claim behind an
+installation-wide unique index, and both times the defect was this question answered
+carelessly. The three that are worth repeating here:
+
+- **`dunning:<dunning_action id>`.** The rung is already claimed under
+  `dunning_action (invoice_id, level)`, so that row *is* one rung, once. Keying on the
+  invoice and the level would spell the same claim twice and let the two disagree.
+- **`subscription:<id>:trial:<trial end, ISO>`.** The date is in the key because a trial
+  moved by a plan change is a *different* notice the customer has to hear about again —
+  the subscription id alone would silence the second one for ever. This replaced a
+  `select` for a timeline note with a particular summary, which is a lookup and not a
+  claim: two passes racing (the 03:00 cron and an operator's „jetzt abrechnen") would
+  both have found nothing and both have sent.
+- **`service:<id>:<cause>`**, which is the module call's own request key with the service
+  in front of it. One cause moves several machines and each gets its own line.
+
+`email_log (template, to_email, dedupe_key)` carries the **address**, so two contacts on
+one account are two rows under one cause and a fan-out interrupted halfway finishes
+without re-sending the half that went.
+
+### Both directions, for a mail
+
+The attempt is counted **at the claim**, not after the send: a process killed between
+claiming and recording would otherwise lose the count, and for mail "retried for ever"
+means "sent for ever". Then there are three ways a send can end, and they are three on
+purpose:
+
+| | state | runnable | why |
+|---|---|---|---|
+| it threw | `failed` | yes, with a backoff | A relay that accepted and then dropped the connection will produce a second copy. That is the residual risk and it is taken deliberately: a notification arriving twice is the lesser failure, and treating every network hiccup as "ask a human" is a queue that stops. |
+| it returned, the recording threw | `sending` → **`unknown`** | **no** | The customer may be holding that mail. This is Phase 8's expiring claim with the *opposite* resolution, because a mail has no provider-side id to ask about: there is no "does VM 101 exist" for a message. |
+| the ladder ran out | `abandoned` | no | Named by the failure that was the last one, rather than left `failed` for a sweep to read sixty times an hour and never act on. |
+
+**A resend is a new row.** A row with `sent_at` is the record of a mail that left the
+building and rewriting it loses that. „Erneut senden" claims the next number with a
+conditional update against the counter the page was rendered with — the same shape as
+`auto_reply_budget`'s increment, and there for the same reason — so a double-clicked
+button sends one mail and two deliberate resends a week apart are two rows.
+
+### One sender, and the one exception
+
+Everything event-driven goes through the outbox. The exception is `direct`
+(`src/server/mail/templates/direct.ts`): a verification link, a password reset, a staff
+invitation, and the document mails an operator triggers. Two reasons, both written into
+that module —
+
+- the failure has to reach the person **in the same request**, because telling somebody
+  "check your inbox" for a mail that was only queued is how an account gets stuck behind
+  a mail that never went;
+- it carries a document the sender has just **rendered**, and the outbox can fetch a
+  stored PDF but never render one. That is deliberate: it is what lets the worker send
+  mail at all, since `@react-pdf/renderer` cannot be imported in a plain Node process.
+
+Those send first and **record afterwards**, under the same key shape, so one table answers
+"what has this customer ever been sent". The verification mails are keyed on a
+**SHA-256 of the link**: a genuine "send it again" mints a new token and goes out, the
+same request replayed is recorded once, and nothing in a log column can be turned back
+into a working login.
+
+### What was taken away
+
+- **The receipt mail.** It used to be sent from `emitInvoicePaid`, synchronously, racing
+  a four-second timeout against the provider's webhook deadline. It is now
+  `payment.received`, emitted inside the transaction that books the money. The old path
+  could lose a receipt in two places this one cannot — a process that died between the
+  commit and that seam, and a relay slow enough to lose the race — and neither failure
+  left a trace.
+- **`sendRenewalNotice`.** „Ihre Verlängerung steht an" and „hier ist Rechnung 2026-0041"
+  are one message about one document; sending both is how a customer ends up unsure
+  whether they owe one amount or two. It is `invoice.issued` with `reason: "renewal"`.
+- **`sendDunningNotice`, `sendTrialEndingNotice`, `sendPaymentActionRequiredMail`** and
+  `src/server/billing/notices.ts` with them. `dunning_action.notified` now records **who
+  it was addressed to** and says so — `email_log` is the honest answer to whether a
+  message went out, and copying a delivery verdict into a second table is how two places
+  start disagreeing about one send.
+
+### i18n: German is the source, English is beside it
+
+`next-intl`, **without URL routing and without middleware**. Every link in every mail
+this installation has ever sent points at `/client/invoices/<id>`, the AGB in force name
+those paths, and `next.config.ts` already keeps `/account/*` alive for exactly that
+reason — a locale segment would either break them or need a second redirect layer for
+every one. So the locale is a property of the *reader*: the signed-in customer's
+`language`, then a `NEXT_LOCALE` cookie, then `Accept-Language`, then German. The
+switcher writes **both** the cookie and the account field, because writing only the
+cookie gives a customer a German invoice notice after they switched the portal to
+English, and writing only the column loses the choice for anyone not signed in. The
+column change is audited; the cookie is not, because it belongs to nobody but the browser
+holding it.
+
+One catalogue (`src/messages/{de,en}.json`) for the portal **and** the mail. The German
+is lifted verbatim from the senders that predate this phase — rule 13 says German is the
+product language, and the copy in force is not reworded on a whim. `dunningMessage()`
+keeps its job of deciding *which* of the four rungs says what and now reads the catalogue
+for the words, so there is one place that picks and one place that holds.
+
+`use-intl` is a dependency of its own and not reached through `next-intl`, which happens
+to depend on it: the mail renderer runs in the **worker**, a plain Node process, and
+`next-intl`'s root entry re-exports the React bindings and fails to load there.
+`use-intl/core` is the same library's framework-free entry and loads in both.
+
+**Scope.** The client portal and the transactional mail are DE/EN. The admin area stays
+German: the staff are German, it is a hundred files, and half a translation is worse than
+none.
+
+### Dark mode, which meant making light mode exist
+
+The root element carried a hardcoded `dark` since the scaffold and nothing selected the
+light tokens sitting in `tailwind.css`. There is a `system | light | dark` switch now,
+cookie-backed, with an inline `<head>` script that reconciles `system` with the machine
+**before the first paint** — inline and constant, reading the cookie itself rather than
+being handed a value, so nothing user-controlled is ever concatenated into it.
+
+**Dark stays the default**, including for a visitor with no cookie: it is what this site
+looks like, and "system" as the default would make the product's own appearance depend on
+a setting nobody chose with this site in mind.
+
+Making light mode real meant retiring 116 hardcoded `text-zinc-*`, `decoration-zinc-*`
+and `text-white` classes across the app onto the theme tokens, and giving `--color-line`
+— the hairline *everything* on this site is separated by — an ink-coloured counterpart
+under `:root:not(.dark)`. A hairline that stayed white would simply vanish on a white
+page, which is the one way to lose the entire structure of the site at once. Two
+`bg-white` survive on purpose and now say why: the GiroCode (a QR is dark-on-light or it
+is not a QR) and the ticket-message `<iframe>` (it holds somebody else's mail HTML, which
+sets its own colours against a light background).
+
+### DSGVO: the export is a bulk read, the deletion is a rewrite
+
+`exportCustomerData` returns everything one account has as a ZIP — `daten.json` plus every
+invoice and Rechnungskorrektur as the stored PDF. It is scoped exactly like every other
+query in the portal: **the route takes no id and cannot be given one** (`GET
+/client/privacy/export`), so whose data comes back is decided by `getCurrentCustomer()`
+and there is no parameter to tamper with, which is a stronger property than checking one.
+The admin's copy does take an id, so it is `dsgvo.export` and a **404 for an account that
+does not exist, never a 403**. Both are audited, because this is the shape of a leak.
+
+Left out, and said so in the manifest rather than quietly dropped: internal ticket notes
+and the staff notes on the account (Art. 15 Abs. 4 — the customer's data *and* somebody
+else's assessment), the encrypted service credentials, and the provider-side customer ids,
+which are ours.
+
+**Anonymisation is a rewrite of the personal fields that are not on a document.** What it
+keeps, and why — this is the list `FIELDS_KEPT` holds in code so the two cannot drift:
+
+| kept | why |
+|---|---|
+| the frozen buyer on every invoice and Korrektur (name, Anschrift, USt-IdNr., Adressat) | § 14 Abs. 4 UStG wants them *on the document*, § 147 AO and § 14b UStG want the document for ten years, and Art. 17 Abs. 3 lit. b DSGVO exempts exactly that. The triggers from migrations `0017`/`0018` would refuse the write anyway — the rule is enforced below the application. |
+| the rendered PDFs | They **are** the document. An invoice without a recipient is not an invoice. |
+| payments, Guthaben-Buchungen, Mahnvorgänge | Buchführung, and they carry no address of their own. |
+| tickets and their messages | Geschäftliche E-Mail-Korrespondenz is a Handelsbrief (§ 257 HGB), six years. The *sender address* is replaced; the text stays. |
+| the audit log | It is the record of who changed what — including the record that this anonymisation happened. |
+
+What it rewrites: name, company, Anschrift, Telefon, USt-IdNr. and every contact address
+on the account and on the logins; the Stripe and PayPal customer ids (a pointer to a copy
+of this person at a provider); the requester on every ticket. What it deletes: password
+hashes, sessions and two-factor secrets, because a session that outlives the credential
+*is* the credential. What it revokes: the account's API keys. The `user` rows themselves
+stay — `customer_contact` points at them and the audit log names them as actors (rule
+10). Anything still queued in `email_log` is cancelled, because a notification sent
+afterwards would be addressed to `anonymisiert.invalid`.
+
+**It refuses an account with an open invoice or a running Abo**, and names which: you
+cannot anonymise somebody you are still billing — the next renewal would raise an invoice
+to „Anonymisiert", dunning would chase an address that does not exist, and the services
+would keep running with nobody to tell. The operator types the customer number to
+confirm; it is the only irreversible button in the admin area and it does not get a
+checkbox.
+
+`dsgvo.export` and `dsgvo.anonymize` are their own permission domain rather than
+`customers.*`. The wildcard form is documented as the thing that keeps a role working
+across phases, and a role granted "alles rund um Kunden" last year must not silently gain
+the power to erase an account this year.
+
+### A ZIP, written by hand
+
+`src/lib/zip.ts`, store-only, about a hundred lines. The opposite call from the one taken
+for the QR code, and for a reason: a QR encoder means Reed–Solomon and mask selection, and
+getting it subtly wrong produces a code that scans *somewhere else* — unverifiable without
+a second implementation, on an artefact that asks for money. A ZIP container is a
+length-prefixed structure with a checksum the platform already computes (`zlib.crc32`),
+and it is verifiable three ways: by reading the central directory back (which is what a
+real reader follows, and therefore what a wrong offset breaks), by `unzip -t`, and by the
+fact that a wrong offset makes every reader refuse the file rather than quietly hand back
+the wrong bytes. Bit 11 of the general-purpose flags is asserted directly, in both
+headers — this reader and macOS's `unzip` both decode UTF-8 whatever the flag says, so
+dropping it would have passed both of them and failed on somebody's Windows Explorer.
+
+### Surfaces
+
+- **`/client`** — Abos, Leistungen, offene Rechnungen with their sum, offene Tickets,
+  Guthaben, and *above* them the things a customer can act on: an overdue invoice, a
+  suspended machine, a trial about to end. A dashboard that leads with four green numbers
+  buries the one line that matters. Everything on it goes through `loadDashboard`, which
+  asks `OPEN_INVOICE_STATUSES` and never a status literal, so it cannot disagree with the
+  dunning ladder about what „offen" means.
+- **`/client/privacy`** — the export, and the honest paragraph about what cannot be
+  deleted while the retention period runs.
+- **`/admin/notifications`** — every message with its state, its attempts, its transport
+  and its error; filters per state; „erneut senden"; and beside it the **event backlog**,
+  because a notification missing from the log may be an event that never dispatched and
+  without the second list there would be nothing to look at. „Jetzt senden" runs
+  `runMailPass`, the same function the worker's schedule does.
+- **`/admin/customers/<id>` → DSGVO** — the export and the anonymisation, with the
+  blockers named.
+
+### The queue
+
+`mail/run`, every minute, `singleton`, **`retryLimit: 0`**. Like `provisioning/run` it
+carries no payload: a `pending` row in `domain_event` or `email_log` *is* the request, the
+web process holds no pg-boss instance, and every message carries its own ladder on its own
+row. A queue-level retry would run a second sweep over the same table a minute later,
+which is what the next scheduled pass does anyway. Every minute rather than every five
+because this is the one queue a *person* is waiting on.
+
+Dispatch runs before send inside one pass, which is the cheap direction: a fact that became
+true a second ago already has its row by the time the outbox looks.
+
+### Tests (120 new, 1142 in all)
+
+- `tests/unit/zip.test.ts` — the round-trip through the central directory, per-member
+  CRCs, the UTF-8 flag in both headers, path traversal, the 65 535-entry limit, and
+  `unzip -t` where the system has it (loudly skipped where it does not).
+- `tests/unit/mail-templates.test.ts` — **every template in both languages with every
+  branch of every discriminator**, which is the check that replaces the key-level type
+  safety the templates give up by building keys from payload values. Concrete cents: a
+  part payment is not called „ausgeglichen", a Mahnung names the fee *that rung* raised
+  and a Zahlungserinnerung names none, 19,99 € renders as „19,99 €" and „€19.99".
+- `tests/unit/i18n.test.ts` — the two catalogues hold the same keys, nothing is empty, a
+  missing key **throws** rather than rendering its own path, and `Accept-Language` is
+  negotiated by quality rather than by order.
+- `tests/unit/theme.test.ts` — what the server renders before any script runs, and that
+  the inline script is a constant.
+- `tests/integration/notifications.test.ts` — a fact whose transaction rolls back leaves
+  no event; the same fact emitted twice is one row; one event is one mail however many
+  passes see it; an interrupted fan-out finishes without re-sending; a send that threw
+  gets a backoff and a fifth failure gives up; **a mail that was sent and not recorded
+  becomes `unknown` and is never retried**; no transport burns no attempt; a document that
+  is not in storage defers the mail *and* costs an attempt; a double-clicked resend sends
+  once; a trial end is announced once and a moved one again; a receipt follows the
+  invoice's frozen address and not today's contact; nothing is said to a closed account;
+  the technical contact gets no invoices; and a payment against a corrected document is
+  recorded but not confirmed.
+- `tests/integration/gdpr.test.ts` — the archive opens and holds one account's rows and
+  **none of the neighbour's**; the internal notes are not in it; a missing PDF is named
+  rather than silently absent; anonymisation refuses an open invoice and a running Abo
+  *by name*; it rewrites the person, kills the sessions, cancels the queue and leaves the
+  invoice's buyer snapshot byte for byte.
+
+### The mutation pass
+
+Thirty-three mutations, one per load-bearing assertion. Twenty-eight died on the first
+run. **Five survived, and each one was a test that could not fail:**
+
+1. *The `email_log` key loses the address.* Survived because the integration suite
+   migrates from `drizzle/*.sql` and the mutation was applied to the schema file. Re-run
+   against the migration: died. Worth knowing — a schema-file mutation proves nothing
+   about these tests.
+2. *Anonymisation stops refusing an open invoice.* The case ordered a product, so the
+   **running Abo** refused it instead and `rejects.toThrow(AnonymizationRefused)` passed
+   for the wrong reason. The Abo is ended first now and the *message* is asserted.
+3. *The ZIP drops the UTF-8 flag.* This reader and macOS's `unzip` both decode UTF-8
+   anyway. The flag itself is asserted now, in both headers.
+4. *The trial notice stops claiming.* The event's unique index still held the second
+   event, so the count was right — but the Abo's timeline grew a duplicate note and the
+   run's report said it told the customer twice. Both are asserted now.
+5. *The receipt ignores the invoice's frozen address*, *the ticket notice goes to
+   everyone the reply already reached*, and *a payment on a cancelled invoice is
+   confirmed.* Three rules with no test at all. They have one each now.
+
+### Decided here, open to being overruled
+
+- **No `react-email`.** The build plan names it. The repo already has one transactional
+  layout that all sixteen mails go through, table-based and Outlook-aware, and adding
+  react-email means either a second renderer for the same thing — the exact failure this
+  codebase's "one pricing function, one settlement" rule exists to prevent — or rewriting
+  every existing mail for no gain in a phase that already carries an event bus, an
+  outbox, i18n and a DSGVO export. The template catalogue is built on `renderEmail`.
+- **No locale in the URL**, and therefore no middleware. See above.
+- **The admin area stays German.**
+- **A resend of a `direct` mail is refused** rather than queued. `recordMail` stores no
+  payload — the caller rendered the message and this table has nothing to re-render it
+  from — and for a document mail the right repeat is the admin action that renders the
+  document again. One document-sending path, not two.
+- **A resumption sends nothing.** The suspension notice already says „sobald die Zahlung
+  eingeht, schalten wir automatisch wieder frei" and the portal shows the service running;
+  a third mail in one dunning cycle is noise rather than news.
+- **A cancellation sends nothing from the bus.** It is confirmed in Textform by
+  `(marketing)/cancellation` at the moment the customer asks, and a second „Ihr Abo wurde
+  gekündigt" minutes later would read as a second cancellation. The event is still
+  emitted, for Phase 10's webhooks.
+- **The HTML body is not kept.** `email_log` keeps the subject and the **text part as
+  delivered**; the admin page re-renders the HTML from the payload for a preview and says
+  it may differ. Keeping every body would make this table a second megabyte-scale document
+  store, and a notification is not an invoice.
+- **One clock per pass.** The selection, the claim, the backoff and the record all come
+  from the same instant. Mixing an injected `now` into the selection and the real clock
+  into the backoff gives a row a `run_after` the sweep's own query can never reach.
+
+### Still open in this phase
+
+- [ ] **Nothing escalates.** A message stuck at `unknown`, an event at `abandoned` and a
+      row whose ladder ran out are all visible on `/admin/notifications` and none of them
+      sends anybody a warning. The same gap Phase 8 left for a failed create.
+- [ ] **Nothing prunes `email_log` or `domain_event`.** The rows are small and the history
+      is the point, but `mail_notification` has a pruning pass and these do not.
+- [ ] **There is no admin preview of a queued message.** The page shows the subject and
+      the stored text part; it does not yet re-render the HTML, which is the one thing the
+      payload was kept for.
+- [ ] **A send that times out mid-transaction is retried.** A relay that accepted the
+      message and then dropped the connection produces a second copy. nodemailer does not
+      distinguish "timed out before DATA" from "timed out after", so neither does this.
+      The trade is stated above; `unknown` is reserved for the case we *can* detect.
+- [ ] **The marketing storefront is DE only.** The portal and the mail are DE/EN; the
+      public pages, the cart and the checkout are not, so an English-speaking customer
+      reads German until they are signed in.
+- [ ] **Light mode has had no design pass.** Every hardcoded colour is now a token and the
+      hairline exists in both, but nobody has looked at the result on a white page with an
+      eye for it. Dark is the default and the one that was designed.
+- [ ] **The export is built in memory.** One JSON document and a customer's PDFs is a few
+      megabytes; an account with thousands of invoices would want a stream, and
+      `assertZipLimits` makes that loud rather than slow.
+- [ ] **Anonymisation does not reach the ticket *attachments*.** The message text is kept
+      as a Handelsbrief and the sender is rewritten, but a PDF somebody attached may carry
+      their name and nothing opens it.
+- [ ] **`customer.language` is not offered at sign-up.** It defaults to `de` and is
+      changed in the portal afterwards, so the welcome mail is always German.
+
 ## Phases 5–11
 
 | Phase | State | Notes |
@@ -2310,15 +2685,15 @@ writing the tests: `toHostLabel` normalised to NFKD *before* replacing the umlau
 | 6 Subscriptions, dunning | done | See above. The older `contract` table still exists beside `subscription` and is created by hand; nothing in the recurring run touches it. |
 | 7 Ticketing (M365 Graph) | done | See above. No tenant credentials exist yet; the channel reports itself unconfigured and every job that would talk to Microsoft does nothing. |
 | 8 Provisioning (Proxmox) | done | See above. No cluster exists yet; with no server configured every create aborts before anything is asked of a hypervisor, and the next pass asks again. |
-| 9 Client portal polish, i18n | not started | German only, no i18n layer, no `email_templates`. |
+| 9 Client portal polish, i18n | done | See above. No relay and no tenant exist yet; every message is written as a row and waits, and nothing burns an attempt while there is no way out. |
 | 10 Reports, webhooks, API | not started | |
 | 11 Hardening, deploy | not started | |
 
 ## Carried over from before the conversion
 
 - **Timestamps are `timestamp`, not `timestamptz`** (58 columns before Phase 7, 91 after,
-  **111 after Phase 8** — migrations `0022` and `0023` followed the existing pattern rather
-  than deviating from it), against hard rule 9. It is no longer only a latent risk: a `Date`
+  **111 after Phase 8, 121 after Phase 9** — migrations `0022`, `0023` and `0024` followed
+  the existing pattern rather than deviating from it), against hard rule 9. It is no longer only a latent risk: a `Date`
   bound into a hand-written `sql` fragment is serialized with the server's local offset and
   Postgres drops it, which is how `enqueueTask` came to push every re-opened task an hour
   into the future. Drizzle's typed column comparisons are unaffected; raw fragments must

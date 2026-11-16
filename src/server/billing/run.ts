@@ -36,6 +36,7 @@ import {
 import { periodAfter } from "@/server/billing/periods";
 import type { QuoteSelection } from "@/server/billing/pricing";
 import { renewalCoupon, renewalLines } from "@/server/billing/renewal";
+import { emitEvent } from "@/server/events/emit";
 import { creditBalanceCents, payFromCredit } from "@/server/payments/apply";
 import { collectIssuedInvoice } from "@/server/payments/collect";
 import { emitInvoicePaid } from "@/server/payments/settle";
@@ -53,11 +54,6 @@ import {
 } from "@/server/subscriptions/service";
 import { BILLABLE_STATUSES, canTransition } from "@/server/subscriptions/state";
 import { collectionDue, DUNNING_LABEL, dunningDue } from "./dunning";
-import {
-    sendDunningNotice,
-    sendRenewalNotice,
-    sendTrialEndingNotice,
-} from "./notices";
 
 /**
  * `billing:run` — the daily pass, and the first thing in this project that
@@ -531,26 +527,60 @@ export async function endTrials(
 
     for (const row of soon) {
         try {
-            const sent = await db.transaction(async (tx) => {
-                const [already] = await tx
-                    .select({ id: schema.subscriptionEvent.id })
-                    .from(schema.subscriptionEvent)
-                    .where(
-                        and(
-                            eq(schema.subscriptionEvent.subscriptionId, row.id),
-                            eq(schema.subscriptionEvent.kind, "note"),
-                            eq(
-                                schema.subscriptionEvent.summary,
-                                "Hinweis auf das Ende der Testphase verschickt.",
-                            ),
-                        ),
-                    )
-                    .limit(1);
+            if (!row.trialEndsAt) {
+                continue;
+            }
 
-                if (already) {
+            /**
+             * Read outside the transaction: the amount and the label are the
+             * Abo's own snapshot and nothing in here changes them, so there
+             * is no reason to hold a transaction open across the read.
+             */
+            const items = await db
+                .select()
+                .from(schema.subscriptionItem)
+                .where(eq(schema.subscriptionItem.subscriptionId, row.id))
+                .orderBy(asc(schema.subscriptionItem.position));
+
+            const trialEndsAt = row.trialEndsAt;
+
+            const emitted = await db.transaction(async (tx) => {
+                /**
+                 * **The emit is the claim.**
+                 *
+                 * This used to be a `select` for a note with a particular
+                 * summary, which is a lookup and not a claim: two passes
+                 * racing — the 03:00 cron and an operator's „jetzt
+                 * abrechnen" — would both find nothing and both send. The
+                 * unique index on `domain_event (type, dedupe_key)` is the
+                 * answer, and the key carries the *trial end date*: the same
+                 * end seen on two passes is one notice, while an end moved
+                 * by a plan change is a different one the customer has to
+                 * hear about again.
+                 */
+                const id = await emitEvent(tx, {
+                    type: "subscription.trial_ending",
+                    dedupeKey: `subscription:${row.id}:trial:${trialEndsAt.toISOString()}`,
+                    entityType: "subscription",
+                    entityId: row.id,
+                    customerId: row.customerId,
+                    occurredAt: now,
+                    payload: {
+                        label: items[0]?.description ?? "Ihr Abo",
+                        amountCents: add(
+                            ...items.map((item) => item.recurringGrossCents),
+                        ),
+                        currency: row.currency,
+                        chargeAt: trialEndsAt.toISOString(),
+                    },
+                });
+
+                if (!id) {
                     return false;
                 }
 
+                // The customer-visible timeline entry, written only by the
+                // pass that won the claim.
                 await recordEvent(tx, {
                     subscriptionId: row.id,
                     kind: "note",
@@ -562,27 +592,8 @@ export async function endTrials(
                 return true;
             });
 
-            if (!sent) {
+            if (!emitted) {
                 continue;
-            }
-
-            const to = await contactEmail(db, row.customerId);
-            const items = await db
-                .select()
-                .from(schema.subscriptionItem)
-                .where(eq(schema.subscriptionItem.subscriptionId, row.id))
-                .orderBy(asc(schema.subscriptionItem.position));
-
-            if (to && row.trialEndsAt) {
-                await sendTrialEndingNotice({
-                    to,
-                    subscriptionId: row.id,
-                    label: items[0]?.description ?? "Ihr Abo",
-                    amountCents: add(
-                        ...items.map((item) => item.recurringGrossCents),
-                    ),
-                    chargeAt: row.trialEndsAt,
-                });
             }
 
             report.trialNoticesSent += 1;
@@ -734,18 +745,16 @@ export async function issueRenewals(
 
             report.creditAppliedCents = add(report.creditAppliedCents, applied);
 
-            const to = await contactEmail(db, issued.customerId);
-
-            if (to) {
-                await sendRenewalNotice({
-                    to,
-                    invoiceId: issued.invoiceId,
-                    invoiceNumber: issued.number,
-                    amountCents: issued.grossCents,
-                    dueAt: issued.dueAt,
-                    autoCharge: issued.autoCharge,
-                });
-            }
+            /**
+             * The renewal notice is `invoice.issued` with `reason: "renewal"`,
+             * emitted by `finalizeInvoiceIn` inside the transaction that gave
+             * the invoice its number — so there is nothing to send from here.
+             *
+             * It is one notice and not two on purpose: "die Verlängerung
+             * steht an" and "hier ist Rechnung 2026-0041" are the same
+             * message about the same document, and sending both is how a
+             * customer ends up unsure whether they owe one amount or two.
+             */
         } catch (error) {
             note(report, "renewal", key, error);
         }
@@ -912,6 +921,7 @@ async function issueRenewalGroup(
             // day the period starts — which is also the day the retry ladder
             // and dunning are reckoned from.
             dueAt,
+            reason: "renewal",
         });
 
         for (const link of links) {
@@ -1658,28 +1668,28 @@ export async function runDunning(
                 report.servicesSuspended += acted.servicesSuspended;
                 report.subscriptionsEnded += acted.subscriptionsEnded;
 
+                /**
+                 * The notice itself is queued inside the rung's transaction
+                 * (`dunning.reached`), so there is nothing to send from here
+                 * any more. What is recorded here is **who it was addressed
+                 * to** — the field the operator reads on the invoice to
+                 * answer "has this person been chased".
+                 *
+                 * It says "queued", not "delivered", and deliberately so:
+                 * `email_log` is the honest answer to whether a message went
+                 * out, including whether it failed and how often it has been
+                 * tried, and copying a delivery verdict into a second table
+                 * is how two places start disagreeing about one send.
+                 */
                 if (acted.to) {
                     const email =
                         invoice.buyerEmail ??
                         (await contactEmail(db, invoice.customerId));
 
                     if (email) {
-                        const notified = await sendDunningNotice({
-                            to: email,
-                            level: rung.level,
-                            invoiceId: invoice.id,
-                            invoiceNumber: invoice.number,
-                            amountCents: outstanding,
-                            dueAt: invoice.dueAt,
-                            feeCents: acted.feeCents || undefined,
-                        });
-
                         await db
                             .update(schema.dunningAction)
-                            .set({
-                                notified: notified ? email : "nicht zustellbar",
-                                updatedAt: new Date(),
-                            })
+                            .set({ notified: email, updatedAt: new Date() })
                             .where(eq(schema.dunningAction.id, acted.id));
                     }
                 }
@@ -1897,6 +1907,39 @@ async function actOnDunningRung(
             },
         });
 
+        /**
+         * Phase 9, inside the rung's own transaction.
+         *
+         * The key is the `dunning_action` row, which the `on conflict do
+         * nothing` above already claimed under `(invoice_id, level)` — so
+         * that row *is* one rung, once, and the notice follows it rather
+         * than spelling the same claim out a second time. Keying on the
+         * invoice and the level would be two answers to one question, and
+         * the one that drifted would be the one that mailed twice.
+         *
+         * The fee is in the payload rather than looked up at render time: it
+         * is raised a few statements above and the notice has to name the
+         * figure *this* rung charged, not whatever the setting says next
+         * month.
+         */
+        await emitEvent(tx, {
+            type: "dunning.reached",
+            dedupeKey: `dunning:${id}`,
+            entityType: "dunning_action",
+            entityId: id,
+            customerId: invoice.customerId,
+            occurredAt: now,
+            payload: {
+                level: input.level,
+                invoiceId: invoice.id,
+                invoiceNumber: invoice.number ?? "",
+                outstandingCents: outstanding,
+                currency: invoice.currency,
+                dueAt: input.invoice.dueAt.toISOString(),
+                feeCents,
+            },
+        });
+
         return {
             id,
             to: true,
@@ -2007,12 +2050,10 @@ async function raiseDunningFee(
         context.actor,
     );
 
-    const finalized = await finalizeInvoiceIn(
-        tx,
-        draft.id,
-        context.actor,
-        finalizeOptions,
-    );
+    const finalized = await finalizeInvoiceIn(tx, draft.id, context.actor, {
+        ...finalizeOptions,
+        reason: "fee",
+    });
 
     return { invoiceId: draft.id, feeCents: finalized.totals.grossCents };
 }

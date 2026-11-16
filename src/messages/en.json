@@ -1,0 +1,251 @@
+{
+    "common": {
+        "salutation": "Dear Sir or Madam,",
+        "regards": "Kind regards",
+        "facts": "Details",
+        "questions": "If you have any questions we are of course happy to help, and we thank you for your custom."
+    },
+    "labels": {
+        "invoiceNumber": "Invoice number",
+        "creditNoteNumber": "Credit note number",
+        "offerNumber": "Quote number",
+        "orderNumber": "Order number",
+        "amount": "Amount",
+        "dueAt": "Due on",
+        "paidAt": "Received on",
+        "outstanding": "Still outstanding",
+        "corrected": "Corrects",
+        "validUntil": "Valid until",
+        "invoice": "Invoice",
+        "dunningFee": "Late fee",
+        "subscription": "Subscription",
+        "trialEnd": "End of trial",
+        "afterwards": "Afterwards",
+        "service": "Service",
+        "hostname": "Hostname",
+        "ticket": "Ticket",
+        "subject": "Subject",
+        "period": "Period",
+        "customerNumber": "Customer number",
+        "document": "Document",
+        "effectiveFrom": "Effective from"
+    },
+    "mail": {
+        "welcome": {
+            "subject": "Welcome to {site}",
+            "heading": "Welcome to {site}",
+            "intro1": "Hello {name},",
+            "intro2": "your account at {site} has been created. The client area shows your orders, subscriptions, services and invoices in one place.",
+            "action": "Go to the client area",
+            "outro1": "Please complete your address there whenever it suits you — we need it as soon as a contract is concluded or an invoice is issued.",
+            "outro2": "This message was sent automatically because an account was created for this address."
+        },
+        "orderConfirmed": {
+            "subject": "Order confirmation {number}",
+            "heading": "Your order {number}",
+            "intro2": "thank you for your order of {amount}. We have recorded it under the number {number}.",
+            "withInvoice": "The corresponding invoice {invoiceNumber} is ready in your client area.",
+            "action": "View order",
+            "outro": "As soon as your payment reaches us we will set up your services and be in touch again."
+        },
+        "invoiceNotice": {
+            "subjectOrder": "Invoice {number}",
+            "subjectRenewal": "Renewal — invoice {number}",
+            "subjectChange": "Plan change — invoice {number}",
+            "subjectFee": "Late fee — invoice {number}",
+            "headingOrder": "Invoice {number}",
+            "headingRenewal": "Your renewal",
+            "headingChange": "Your plan change",
+            "headingFee": "Late fee",
+            "introOrder": "we have issued invoice {number} for {amount} for your order. It is due on {dueAt}.",
+            "introRenewal": "we have issued invoice {number} for {amount} for the next billing period. It is due on {dueAt}.",
+            "introChange": "we have issued invoice {number} for {amount} for your plan change. It is due on {dueAt}.",
+            "introFee": "we have issued invoice {number} for {amount} for the reminder fee. It is due on {dueAt}.",
+            "autoCharge": "We will collect the amount from your stored payment method on that day; there is nothing further for you to do.",
+            "manualCharge": "Please settle the amount by then.",
+            "attached": "The invoice is attached to this message as a PDF.",
+            "action": "Open invoice"
+        },
+        "paymentReceived": {
+            "subject": "Payment received for invoice {number}",
+            "heading": "Payment received",
+            "settled": "we have received your payment of {amount} for invoice {number}. The invoice is now settled.",
+            "partial": "we have received your payment of {amount} for invoice {number}. {outstanding} of it is still outstanding.",
+            "topup": "we have received your payment of {amount} and credited it to your account balance.",
+            "action": "View invoices",
+            "actionCredit": "View balance"
+        },
+        "paymentActionRequired": {
+            "subject": "Confirmation required — invoice {number}",
+            "heading": "Confirmation required",
+            "intro2": "the collection of {amount} for invoice {number} could not be completed: your bank requires you to confirm it. Until then the invoice stays open, and nothing will be charged twice.",
+            "action": "Complete payment",
+            "outro": "You can find your invoices at any time at {url}."
+        },
+        "paymentFailed": {
+            "subject": "Payment failed — invoice {number}",
+            "heading": "Payment failed",
+            "intro2": "the collection of {amount} for invoice {number} did not succeed. Nothing was charged, and the invoice remains open.",
+            "reason": "Reason given by the payment provider: {reason}",
+            "advice": "Please check your stored payment method or settle the invoice another way. We will try the collection again over the coming days.",
+            "action": "Check payment methods"
+        },
+        "dunning": {
+            "feeNotice": "We charge a fee of {fee} for the reminder; it will be invoiced separately.",
+            "action": "Open invoice",
+            "reminder": {
+                "subject": "Payment reminder for {number}",
+                "line1": "Invoice {number} for {amount} was due on {day} and has not yet reached us.",
+                "line2": "If this has crossed with your payment, please disregard this message."
+            },
+            "mahnung": {
+                "subject": "Reminder for {number}",
+                "line1": "Invoice {number} for {amount} was due on {day} and is still outstanding.",
+                "line2": "Please settle the amount. Otherwise we will have to suspend the services temporarily."
+            },
+            "suspend": {
+                "subject": "Services suspended — {number}",
+                "line1": "Invoice {number} for {amount} has been outstanding since {day}; the associated services are now suspended.",
+                "line2": "They will be unblocked automatically as soon as the payment arrives."
+            },
+            "terminate": {
+                "subject": "Subscription ended — {number}",
+                "line1": "Invoice {number} for {amount} has been outstanding since {day}. The associated subscription has therefore ended and the services are being torn down.",
+                "line2": "The outstanding amount remains payable."
+            }
+        },
+        "trialEnding": {
+            "subject": "Your trial ends on {day}",
+            "heading": "Your trial is ending",
+            "intro1": "The free trial for “{label}” ends on {day}.",
+            "intro2": "After that {amount} will be charged per period. If you do not wish to continue, please cancel in the client area before then.",
+            "action": "Open subscription"
+        },
+        "serviceActivated": {
+            "subject": "{label} is ready",
+            "heading": "Your service is ready",
+            "intro2": "“{label}” has been set up and is running. The client area holds the credentials, the IP addresses and the console.",
+            "action": "Open service",
+            "outro": "For security reasons the password is not included in this message; you can view it in the client area."
+        },
+        "serviceSuspended": {
+            "subject": "{label} has been suspended",
+            "heading": "Your service has been suspended",
+            "introDunning": "“{label}” has been suspended because an invoice for it has been outstanding for some time. As soon as the payment reaches us we will unblock the service automatically.",
+            "introSubscription": "“{label}” has been suspended because the associated subscription is paused. It will run again as soon as the subscription is resumed.",
+            "introManual": "“{label}” has been suspended.",
+            "action": "View outstanding invoices",
+            "outro": "Your data is retained while the service is suspended."
+        },
+        "serviceTerminated": {
+            "subject": "{label} has been torn down",
+            "heading": "Your service has been torn down",
+            "introDunning": "“{label}” has been torn down because the outstanding invoice was not settled despite a reminder.",
+            "introSubscription": "“{label}” has been torn down because the associated subscription has ended.",
+            "introManual": "“{label}” has been torn down.",
+            "action": "Go to the client area",
+            "outro": "The data on this service has been deleted and cannot be restored."
+        },
+        "subscriptionEnded": {
+            "subject": "Subscription ended — {label}",
+            "heading": "Your subscription has ended",
+            "intro2": "the subscription “{label}” ended on {day}. Nothing further will be charged.",
+            "action": "Go to the client area",
+            "outro": "Your invoices and receipts remain available in the client area."
+        },
+        "ticketReplied": {
+            "subject": "Reply to ticket #{number}: {subject}",
+            "heading": "Reply to ticket #{number}",
+            "intro2": "there is a reply to your request “{subject}”. You can read it in the client area and reply there directly.",
+            "action": "Open ticket"
+        }
+    },
+    "portal": {
+        "nav": {
+            "account": "Account",
+            "settings": "Settings",
+            "overview": "Overview",
+            "orders": "Orders",
+            "subscriptions": "Subscriptions",
+            "services": "Services",
+            "contracts": "Contracts",
+            "offers": "Quotes",
+            "invoices": "Invoices",
+            "paymentMethods": "Payment methods",
+            "credit": "Balance",
+            "tickets": "Tickets",
+            "profile": "Master data",
+            "apiKeys": "API keys",
+            "security": "Security",
+            "privacy": "My data",
+            "signOut": "Sign out"
+        },
+        "theme": {
+            "label": "Appearance",
+            "system": "System",
+            "light": "Light",
+            "dark": "Dark"
+        },
+        "language": {
+            "label": "Language",
+            "saved": "Language changed."
+        },
+        "dashboard": {
+            "title": "Overview",
+            "welcome": "Welcome back.",
+            "welcomeNamed": "Welcome back, {name}.",
+            "addressMissing": "Your address is not complete yet. We need it as soon as a contract is concluded or an invoice is issued.",
+            "addressAction": "Complete it now",
+            "subscriptions": "Subscriptions",
+            "subscriptionsActive": "{count, plural, =0 {None active} one {# active} other {# active}}",
+            "subscriptionsHint": "{count, plural, =0 {No subscriptions yet} one {# in total} other {# in total}}",
+            "services": "Services",
+            "servicesActive": "{count, plural, =0 {None active} one {# active} other {# active}}",
+            "servicesHint": "{count, plural, =0 {No services yet} one {# in total} other {# in total}}",
+            "invoices": "Open invoices",
+            "invoicesOpen": "{count, plural, =0 {Nothing open} one {# open} other {# open}}",
+            "invoicesHint": "{amount} outstanding",
+            "invoicesNone": "All settled",
+            "tickets": "Tickets",
+            "ticketsOpen": "{count, plural, =0 {None open} one {# open} other {# open}}",
+            "ticketsHint": "Questions and faults",
+            "credit": "Balance",
+            "creditHint": "Offset against your next invoice",
+            "creditNone": "No balance",
+            "attention": "This needs your attention",
+            "overdue": "Invoice {number} for {amount} has been due since {day}.",
+            "actionRequired": "Your bank requires confirmation for invoice {number}.",
+            "suspended": "“{label}” is suspended.",
+            "trialEnds": "The trial for “{label}” ends on {day}.",
+            "nextRenewal": "Next renewal",
+            "nextRenewalOn": "{label} on {day}",
+            "nothingDue": "Nothing due",
+            "recent": "Recent activity",
+            "empty": "Nothing has happened here yet."
+        },
+        "privacy": {
+            "title": "My data",
+            "intro": "Under Art. 15 and Art. 20 GDPR you can request a copy of all the data we hold about your account. The archive contains a machine-readable JSON file and every document as a PDF.",
+            "action": "Download data export",
+            "note": "The export is produced as you download it and reflects the current state. Every export is logged.",
+            "deletion": "Deletion",
+            "deletionIntro": "Invoices and receipts are subject to the statutory retention period and cannot be deleted while it runs. For deletion of your remaining data please contact support — we will then anonymise your account as soon as there are no outstanding items and no running services."
+        },
+        "status": {
+            "trialing": "Trial",
+            "active": "Active",
+            "past_due": "Overdue",
+            "paused": "Paused",
+            "cancelled": "Cancelled",
+            "ended": "Ended",
+            "pending": "Preparing",
+            "provisioning": "Being set up",
+            "suspended": "Suspended",
+            "terminated": "Torn down",
+            "draft": "Draft",
+            "unpaid": "Open",
+            "partial": "Partly paid",
+            "paid": "Paid"
+        }
+    }
+}

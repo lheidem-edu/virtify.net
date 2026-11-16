@@ -155,7 +155,7 @@ export default function CheckoutForm({
                         />
                         <span>
                             {option.label}
-                            <span className="block text-xs text-zinc-500">
+                            <span className="block text-xs text-muted-foreground">
                                 {option.hint}
                             </span>
                         </span>
@@ -170,7 +170,7 @@ export default function CheckoutForm({
                     />
                     <span>
                         Wiederkehrende Beträge automatisch einziehen
-                        <span className="block text-xs text-zinc-500">
+                        <span className="block text-xs text-muted-foreground">
                             Gilt, sobald ein Zahlungsmittel hinterlegt ist — das
                             richten Sie nach der Bestellung im Kundenbereich
                             ein. Die erste Rechnung bezahlen Sie so, wie Sie es
@@ -201,7 +201,7 @@ export default function CheckoutForm({
                             Allgemeinen Geschäftsbedingungen
                         </Link>{" "}
                         gelesen und akzeptiere sie.
-                        <span className="block text-xs text-zinc-500">
+                        <span className="block text-xs text-muted-foreground">
                             {termsLabel}
                         </span>
                     </span>
@@ -237,7 +237,7 @@ export default function CheckoutForm({
                             <span>
                                 Ich verlange ausdrücklich, dass vor Ablauf der
                                 Widerrufsfrist mit der Leistung begonnen wird.
-                                <span className="block text-xs text-zinc-500">
+                                <span className="block text-xs text-muted-foreground">
                                     Bei einem Widerruf schulde ich Wertersatz
                                     für das bis dahin Geleistete (§ 357 Abs. 8
                                     BGB).
@@ -246,7 +246,7 @@ export default function CheckoutForm({
                         </label>
                     </>
                 ) : (
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-muted-foreground">
                         Unternehmern steht kein Widerrufsrecht zu (§ 312g i. V.
                         m. § 13 BGB).
                     </p>

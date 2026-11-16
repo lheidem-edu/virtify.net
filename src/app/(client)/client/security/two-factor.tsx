@@ -101,24 +101,24 @@ export default function TwoFactor({ enabled }: { enabled: boolean }) {
     if (setup) {
         return (
             <div className="max-w-xl">
-                <p className="text-sm leading-7 text-zinc-400">
+                <p className="text-sm leading-7 text-muted-foreground">
                     Füge das Konto in deiner Authenticator-App hinzu und
                     bestätige anschließend mit einem Code.
                 </p>
 
-                <p className="mt-6 text-sm text-zinc-500">
+                <p className="mt-6 text-sm text-muted-foreground">
                     Einrichtungsschlüssel:
                 </p>
-                <pre className="mt-2 overflow-x-auto rounded-lg border p-4 font-mono text-xs leading-6 text-zinc-200">
+                <pre className="mt-2 overflow-x-auto rounded-lg border p-4 font-mono text-xs leading-6 text-foreground">
                     {setup.uri}
                 </pre>
 
-                <p className="mt-8 text-sm text-zinc-500">
+                <p className="mt-8 text-sm text-muted-foreground">
                     Wiederherstellungscodes — jeder ist einmal gültig. Bewahre
                     sie getrennt von deinem Gerät auf; ohne sie kommst du bei
                     Verlust des Geräts nicht mehr in dein Konto.
                 </p>
-                <pre className="mt-2 overflow-x-auto rounded-lg border p-4 font-mono text-xs leading-6 text-zinc-200">
+                <pre className="mt-2 overflow-x-auto rounded-lg border p-4 font-mono text-xs leading-6 text-foreground">
                     {setup.backupCodes.join("\n")}
                 </pre>
 
@@ -147,7 +147,7 @@ export default function TwoFactor({ enabled }: { enabled: boolean }) {
     if (enabled) {
         return (
             <div className="max-w-xl">
-                <p className="text-sm leading-7 text-zinc-400">
+                <p className="text-sm leading-7 text-muted-foreground">
                     Zwei-Faktor-Authentifizierung ist aktiv. Beim Anmelden
                     fragen wir zusätzlich einen Code aus deiner
                     Authenticator-App ab.
@@ -181,7 +181,7 @@ export default function TwoFactor({ enabled }: { enabled: boolean }) {
 
     return (
         <div className="max-w-xl">
-            <p className="text-sm leading-7 text-zinc-400">
+            <p className="text-sm leading-7 text-muted-foreground">
                 Schütze dein Konto zusätzlich mit einem zeitbasierten Code aus
                 einer Authenticator-App.
             </p>

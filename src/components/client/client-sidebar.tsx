@@ -11,6 +11,7 @@ import {
     Receipt,
     Repeat,
     Scale,
+    Server,
     Settings,
     Shield,
     ShoppingCart,
@@ -21,7 +22,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
+import {
+    LanguageSwitcher,
+    ThemeSwitcher,
+} from "@/components/client/preferences";
 import {
     ACCOUNT_NAV,
     ACCOUNT_SETTINGS_NAV,
@@ -41,7 +47,9 @@ import {
     SidebarMenuItem,
     SidebarRail,
 } from "@/components/ui/sidebar";
+import type { Locale } from "@/i18n/locale";
 import { authClient } from "@/lib/auth-client";
+import type { Theme } from "@/lib/theme";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     "layout-dashboard": LayoutDashboard,
@@ -60,16 +68,25 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     repeat: Repeat,
     wallet: Wallet,
     "life-buoy": LifeBuoy,
+    server: Server,
 };
 
 function NavGroup({
     label,
     entries,
     pathname,
+    labelFor,
 }: {
     label: string;
     entries: readonly NavEntry[];
     pathname: string;
+    /**
+     * The nav structure is shared with the admin shell and its labels are
+     * German constants; in the portal they go through the catalogue instead,
+     * keyed on the last segment of the href. Falling back to the constant
+     * keeps a new entry working before its key exists.
+     */
+    labelFor: (entry: NavEntry) => string;
 }) {
     return (
         <SidebarGroup>
@@ -78,6 +95,7 @@ function NavGroup({
                 <SidebarMenu>
                     {entries.map((entry) => {
                         const Icon = ICONS[entry.icon] ?? FileText;
+                        const text = labelFor(entry);
                         // Exact match for the index route, prefix match for
                         // the rest, so a detail page keeps its parent lit.
                         const active =
@@ -89,11 +107,11 @@ function NavGroup({
                             <SidebarMenuItem key={entry.href}>
                                 <SidebarMenuButton
                                     isActive={active}
-                                    tooltip={entry.label}
+                                    tooltip={text}
                                     render={<Link href={entry.href} />}
                                 >
                                     <Icon />
-                                    <span>{entry.label}</span>
+                                    <span>{text}</span>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
                         );
@@ -104,10 +122,42 @@ function NavGroup({
     );
 }
 
-export default function ClientSidebar({ email }: { email: string }) {
+const NAV_KEY: Record<string, string> = {
+    "/client": "overview",
+    "/client/orders": "orders",
+    "/client/subscriptions": "subscriptions",
+    "/client/services": "services",
+    "/client/contracts": "contracts",
+    "/client/offers": "offers",
+    "/client/invoices": "invoices",
+    "/client/payment-methods": "paymentMethods",
+    "/client/credit": "credit",
+    "/client/tickets": "tickets",
+    "/client/profile": "profile",
+    "/client/api-keys": "apiKeys",
+    "/client/security": "security",
+    "/client/privacy": "privacy",
+};
+
+export default function ClientSidebar({
+    email,
+    locale,
+    theme,
+}: {
+    email: string;
+    locale: Locale;
+    theme: Theme;
+}) {
     const pathname = usePathname();
     const router = useRouter();
     const [signingOut, setSigningOut] = useState(false);
+    const t = useTranslations("portal.nav");
+
+    const labelFor = (entry: NavEntry) => {
+        const key = NAV_KEY[entry.href];
+
+        return key ? t(key as never) : entry.label;
+    };
 
     return (
         <Sidebar collapsible="icon">
@@ -127,18 +177,23 @@ export default function ClientSidebar({ email }: { email: string }) {
 
             <SidebarContent>
                 <NavGroup
-                    label="Konto"
+                    label={t("account")}
                     entries={ACCOUNT_NAV}
                     pathname={pathname}
+                    labelFor={labelFor}
                 />
                 <NavGroup
-                    label="Einstellungen"
+                    label={t("settings")}
                     entries={ACCOUNT_SETTINGS_NAV}
                     pathname={pathname}
+                    labelFor={labelFor}
                 />
             </SidebarContent>
 
             <SidebarFooter className="border-t">
+                <LanguageSwitcher current={locale} />
+                <ThemeSwitcher current={theme} />
+
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton
@@ -151,7 +206,7 @@ export default function ClientSidebar({ email }: { email: string }) {
                     </SidebarMenuItem>
                     <SidebarMenuItem>
                         <SidebarMenuButton
-                            tooltip="Abmelden"
+                            tooltip={t("signOut")}
                             disabled={signingOut}
                             onClick={async () => {
                                 setSigningOut(true);
@@ -161,7 +216,7 @@ export default function ClientSidebar({ email }: { email: string }) {
                             }}
                         >
                             <LogOut />
-                            <span>Abmelden</span>
+                            <span>{t("signOut")}</span>
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                 </SidebarMenu>

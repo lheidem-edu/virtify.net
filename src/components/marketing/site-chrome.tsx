@@ -22,7 +22,7 @@ async function SiteHeader() {
                 <nav className="flex items-center gap-4">
                     <Link
                         href="/products"
-                        className="text-sm text-zinc-400 transition-colors hover:text-white"
+                        className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
                         Produkte
                     </Link>
@@ -32,7 +32,7 @@ async function SiteHeader() {
                         badge. */}
                     <Link
                         href="/cart"
-                        className="text-sm text-zinc-400 transition-colors hover:text-white"
+                        className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
                         Warenkorb
                     </Link>
@@ -64,7 +64,7 @@ async function SiteFooter() {
                         <h2 className="text-sm font-medium tracking-tight">
                             <Wordmark name={site.name} />
                         </h2>
-                        <p className="max-w-xs text-sm text-zinc-500">
+                        <p className="max-w-xs text-sm text-muted-foreground">
                             {site.tagline}
                         </p>
                     </div>
@@ -73,7 +73,7 @@ async function SiteFooter() {
                         <h2 className="text-sm font-medium tracking-tight">
                             Kontakt
                         </h2>
-                        <p className="text-sm text-zinc-500">
+                        <p className="text-sm text-muted-foreground">
                             {operator.name}
                             <br />
                             {operator.street}
@@ -82,7 +82,7 @@ async function SiteFooter() {
                         </p>
                         <a
                             href={`mailto:${operator.email}`}
-                            className="block text-sm text-zinc-400 transition-colors hover:text-white"
+                            className="block text-sm text-muted-foreground transition-colors hover:text-foreground"
                         >
                             {operator.email}
                         </a>
@@ -119,7 +119,7 @@ async function SiteFooter() {
                 </div>
 
                 <div className="border-t px-6 py-6 md:px-10">
-                    <p className="font-mono text-xs text-zinc-600">
+                    <p className="font-mono text-xs text-muted-foreground">
                         commit {commit}
                     </p>
                 </div>

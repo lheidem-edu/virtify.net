@@ -41,6 +41,18 @@ export const PERMISSIONS = {
     "tickets.write": "Tickets anlegen, zuweisen, zusammenführen und schließen",
     "tickets.manage":
         "Abteilungen, Postfach-Anbindung und Textbausteine verwalten",
+    "notifications.read": "Versandte Benachrichtigungen und Ereignisse ansehen",
+    "notifications.send":
+        "Benachrichtigungen erneut versenden und den Versand auslösen",
+    /**
+     * Their own domain, not `customers.*`, and that is deliberate: the
+     * wildcard form `customers.*` is documented as the thing that keeps a role
+     * working across phases, and a role granted "alles rund um Kunden" last
+     * year must not silently gain the power to anonymise an account this year.
+     * An irreversible action asks to be granted on purpose.
+     */
+    "dsgvo.export": "Datenauskunft zu einem Konto erzeugen",
+    "dsgvo.anonymize": "Ein Konto anonymisieren (nicht umkehrbar)",
     "legal.write": "Rechtstexte bearbeiten und veröffentlichen",
     "settings.write": "Einstellungen des Portals ändern",
     "staff.manage": "Mitarbeiter einladen und entfernen",

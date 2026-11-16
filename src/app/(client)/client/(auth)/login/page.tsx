@@ -88,7 +88,7 @@ export default function Page() {
                             Noch kein Konto?{" "}
                             <Link
                                 href="/client/register"
-                                className="text-white underline decoration-zinc-600 underline-offset-4 transition-colors hover:decoration-white"
+                                className="text-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
                             >
                                 Registrieren
                             </Link>
@@ -96,7 +96,7 @@ export default function Page() {
                         <p className="mt-2">
                             <Link
                                 href="/client/forgot-password"
-                                className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-zinc-300"
+                                className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                             >
                                 Passwort vergessen?
                             </Link>

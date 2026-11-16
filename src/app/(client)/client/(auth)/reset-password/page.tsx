@@ -25,13 +25,13 @@ function ResetForm() {
                 footer={
                     <Link
                         href="/client/forgot-password"
-                        className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-zinc-300"
+                        className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                     >
                         Neuen Link anfordern
                     </Link>
                 }
             >
-                <p className="text-sm leading-7 text-zinc-500">
+                <p className="text-sm leading-7 text-muted-foreground">
                     Aus Sicherheitsgründen sind Links zum Zurücksetzen nur
                     begrenzt gültig.
                 </p>

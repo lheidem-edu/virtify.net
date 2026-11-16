@@ -10,6 +10,7 @@ import {
     freezeBuyer,
     loadBuyer,
 } from "@/server/documents/repository";
+import { emitEvent } from "@/server/events/emit";
 import { resettleInvoice } from "@/server/payments/apply";
 import { loadSettings, type Settings } from "@/server/settings";
 import { TaxDeterminationError } from "@/server/tax/types";
@@ -357,7 +358,17 @@ export type FinalizeOptions = {
      * dunning is reckoned from this date.
      */
     dueAt?: Date;
+    /**
+     * Why this invoice exists, which decides which of the four notices the
+     * customer gets (Phase 9). Defaults to `manual`, the right answer for an
+     * operator raising one by hand — and the right default for a caller that
+     * does not say, since an invoice nobody can explain is a plain invoice.
+     */
+    reason?: InvoiceReason;
 };
+
+/** What the notice calls it. Snapshotted into the event, not the invoice. */
+export type InvoiceReason = "order" | "renewal" | "change" | "fee" | "manual";
 
 /**
  * The point of no return.
@@ -395,6 +406,7 @@ export type ResolvedFinalizeOptions = {
     termDays: number;
     /** Wins over `termDays` where the caller named one. */
     dueAt?: Date | null;
+    reason: InvoiceReason;
 };
 
 /**
@@ -412,6 +424,7 @@ export async function resolveFinalizeOptions(
         settings,
         termDays: options.paymentTermDays ?? settings.policy.paymentTermDays,
         dueAt: options.dueAt ?? null,
+        reason: options.reason ?? "manual",
     };
 }
 
@@ -547,6 +560,31 @@ export async function finalizeInvoiceIn(
             netCents: totals.netCents,
             taxCents: totals.taxCents,
             grossCents: totals.grossCents,
+        },
+    });
+
+    /**
+     * Phase 9. Emitted **here**, inside the transaction that gave the invoice
+     * its number, and not by the caller afterwards: the number is the thing
+     * that makes the invoice exist (rule 3), and a notice queued beside this
+     * transaction would be a notice about a document that could still roll
+     * back. The key is the invoice id, which is right because an invoice is
+     * finalized once and never again — so however many callers reach this,
+     * and however often one is retried, there is one notice.
+     */
+    await emitEvent(tx, {
+        type: "invoice.issued",
+        dedupeKey: `invoice:${invoiceId}`,
+        entityType: "invoice",
+        entityId: invoiceId,
+        customerId: row.customerId,
+        occurredAt: at,
+        payload: {
+            number,
+            grossCents: totals.grossCents,
+            currency: finalized.currency,
+            dueAt: dueAt.toISOString(),
+            reason: resolved.reason,
         },
     });
 

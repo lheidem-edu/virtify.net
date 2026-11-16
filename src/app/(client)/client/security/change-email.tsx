@@ -30,15 +30,15 @@ export default function ChangeEmail({ current }: { current: string }) {
 
     return (
         <div className="max-w-xl">
-            <p className="text-sm leading-7 text-zinc-400">
+            <p className="text-sm leading-7 text-muted-foreground">
                 Aktuell:{" "}
-                <span className="font-mono text-zinc-200">{current}</span>. Eine
-                neue Adresse wird erst nach Bestätigung über den zugesandten
-                Link wirksam.
+                <span className="font-mono text-foreground">{current}</span>.
+                Eine neue Adresse wird erst nach Bestätigung über den
+                zugesandten Link wirksam.
             </p>
 
             {state.kind === "sent" ? (
-                <p className="mt-6 rounded-lg border p-4 text-sm leading-6 text-zinc-300">
+                <p className="mt-6 rounded-lg border p-4 text-sm leading-6 text-foreground">
                     Wir haben eine Bestätigung an {state.to} geschickt. Bis zum
                     Klick auf den Link gilt deine bisherige Adresse weiter.
                 </p>

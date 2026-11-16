@@ -45,10 +45,10 @@ export default function AuthShell({
                     </div>
                 ) : null}
 
-                <div className="mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-6 text-xs text-zinc-600">
+                <div className="mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-6 text-xs text-muted-foreground">
                     <Link
                         href="/"
-                        className="transition-colors hover:text-zinc-400"
+                        className="transition-colors hover:text-foreground"
                     >
                         Zur Website
                     </Link>
@@ -56,7 +56,7 @@ export default function AuthShell({
                         <Link
                             key={entry.href}
                             href={entry.href}
-                            className="transition-colors hover:text-zinc-400"
+                            className="transition-colors hover:text-foreground"
                         >
                             {entry.label}
                         </Link>

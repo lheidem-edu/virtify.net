@@ -12,7 +12,7 @@ export default async function Page() {
                 <h1 className="text-3xl font-semibold tracking-tight">
                     Sicherheit
                 </h1>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-400">
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
                     E-Mail-Adresse, Passwort und Zwei-Faktor-Authentifizierung.
                 </p>
             </section>
@@ -42,7 +42,7 @@ export default async function Page() {
                 <h2 className="self-start text-sm font-medium tracking-tight">
                     Konto löschen
                 </h2>
-                <p className="max-w-xl text-sm leading-7 text-zinc-400">
+                <p className="max-w-xl text-sm leading-7 text-muted-foreground">
                     Eine Löschung nehmen wir auf Anfrage vor. Schreib uns dazu
                     aus dem Postfach deiner hinterlegten Adresse. Solange ein
                     Vertrag läuft, ist eine Löschung nicht möglich; darüber

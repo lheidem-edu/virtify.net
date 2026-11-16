@@ -37,6 +37,9 @@ The build is planned in phases: see `docs/BUILD_PLAN.md`, state in `docs/PROGRES
   installation and none is to be gone looking for** — see `docs/proxmox-setup.md` for what
   an administrator has to do in the cluster, including why the restricted token it asks for
   is also the reason suspension does not rely on `lock`
+- i18n: **next-intl** for the portal, **use-intl/core** for the mail renderer (the worker
+  is a plain Node process and `next-intl`'s root entry reaches React); one catalogue in
+  `src/messages/{de,en}.json`, German the source, no locale in any URL
 - Mail and ticketing: one `MailTransport` interface (`src/server/mail/transport.ts`) over
   nodemailer/SMTP and **Microsoft Graph**, picked by a setting rather than an environment
   variable; `src/server/tickets` with a pluggable `MailChannel`, first channel Graph, over
@@ -58,6 +61,9 @@ The build is planned in phases: see `docs/BUILD_PLAN.md`, state in `docs/PROGRES
 | `react-hook-form` | server actions + `useActionState` | No client form library in the repo; forms post to server actions. |
 | Middleware for `/admin/**`, `/client/**` | layout + guard helpers | The guards already refuse server-side against the database on every request. Middleware could only check that a cookie is present. |
 | Postgres 17 | Postgres 18 | Dev container already runs 18. |
+| `react-email` for the mail templates | the existing `renderEmail` layout | All sixteen mails already go through one table-based, Outlook-aware layout. A second renderer for the same thing is the failure "one pricing function, one settlement" exists to prevent. |
+| `next-intl` with a locale in the URL | locale from the reader, no middleware | Every mail ever sent links to `/client/invoices/<id>` and the AGB in force name those paths. The locale is the signed-in customer's `language`, then a cookie, then `Accept-Language`, then German. |
+| a ZIP dependency for the DSGVO export | `src/lib/zip.ts`, store-only, by hand | A ZIP container is length-prefixed with a checksum the platform computes, and it is verifiable by reading the central directory back. Unlike a QR encoder, a wrong byte makes a reader *refuse* the file rather than quietly return the wrong one. |
 
 ## Project layout
 
@@ -78,7 +84,8 @@ src/
     catalog/  billing/  tax/  storage/  jobs/  openapi/
     provisioning/        # the registry, the task runner, the IP pools
     provisioning/proxmox/ # the first real module: api, nodes, cloud-init, sanitize
-    mail/                # the transactional layout + MailTransport (smtp | graph)
+    mail/                # the layout, the transport, the outbox and the templates
+  events/              # the bus: the catalogue, the emitter, the dispatcher, the notifiers
     tickets/             # the domain, and channels/ with the Graph implementation
   subscriptions/       # the state machine, plan changes, the guards around both
     payments/gateways/   # stripe, paypal, banktransfer — one interface, three bodies
@@ -299,6 +306,61 @@ switched onto a Supportvertrag stopped being suspendable, terminable or even rea
 the same instant, and kept running with its address held when the Abo ended. `previewChange`
 refuses it, so the customer is told before they agree.
 
+One notification, one row: `queueMail()` in `src/server/mail/outbox.ts` is the only way
+an automatic mail leaves this installation, and `emitEvent()` in
+`src/server/events/emit.ts` is the only way a fact reaches it. Both take a **transaction
+and only a transaction** — the parameter type has no `transaction` method — because an
+event emitted beside the write it describes is a fact that can roll back while its
+notification goes out. So the emit sits where the fact becomes true: inside
+`finalizeInvoiceIn` where the number is assigned, inside `settleAgainstInvoice` under the
+invoice's row lock, inside the `dunning_action` claim, inside `placeOrder`'s single
+transaction, and off the rows `applyServiceFollow` actually moved.
+
+**The bus may notify. It may not decide.** An event bus is exactly the shape that grows a
+second `applyPayment` — a listener that settles, transitions or provisions is a second
+answer to a question that already has one. The rule is structural rather than written
+down: a notifier in `src/server/events/notify.ts` is handed a database handle narrowed to
+`select` and **returns** the mail it wants. It has nothing to write with. A notifier that
+genuinely needs to change something is a sign the *emitter* is in the wrong place.
+
+**A mail is keyed on the thing that caused it**, under
+`email_log (template, to_email, dedupe_key)`, and every key is written out in a table in
+`src/server/mail/templates/index.ts`. The address is in the index because one event fans
+out to several contacts and an interrupted fan-out has to finish without re-sending the
+half that went. `dunning:<dunning_action id>` rather than the invoice plus the level,
+because that row already *is* one rung once and spelling a claim twice lets the two
+disagree; `subscription:<id>:trial:<end, ISO>` with the date in it, because a trial moved
+by a plan change is a notice the customer has to hear again.
+
+**A mail has three endings and they are three on purpose.** The attempt is counted at the
+*claim*, not after the send. A send that **threw** is `failed` with a backoff and is
+retried — a relay that accepted and then dropped the connection produces a second copy,
+and that is the trade: a notification arriving twice is the lesser failure. A send that
+**returned while its recording threw** is left `sending` and becomes **`unknown`, never
+`pending`**: the customer may be holding it, and unlike Phase 8 there is no provider-side
+id to ask — no "does VM 101 exist" for a message. A ladder that ran out is `abandoned`,
+named by the failure that was the last one, rather than left `failed` for a sweep to read
+sixty times an hour and never act on. **A resend is a new row**, claimed with a
+conditional update on the original's counter, because a row with `sent_at` is the record
+of a mail that left the building.
+
+A mail whose failure the *user* must see in the same request — a verification link, a
+password reset — sends directly and **records afterwards** (`recordMail`), under the same
+key shape, so one table answers "what has this customer ever been sent". Those keys hash
+the token in the link: `email_log` is readable by anyone with `notifications.read`, and a
+verification token in a log column is a login. The outbox can *fetch* a stored PDF and
+never render one, which is what lets the worker send mail at all.
+
+**A deletion that cannot happen is a rewrite.** Rule 10 and rule 3 (triggers, not
+convention) mean a finalized invoice keeps its buyer, so `anonymizeCustomer` in
+`src/server/customers/gdpr.ts` rewrites every personal field that is **not** on a
+document and leaves every one that is — with `FIELDS_KEPT` naming each and why, in code,
+so the module and `docs/PROGRESS.md` cannot drift. It refuses an account with an open
+invoice or a running Abo, because you cannot anonymise somebody you are still billing.
+A DSGVO export is a bulk credential-shaped read of one person's whole record: the
+portal's route **takes no id and cannot be given one**, the admin's takes one and answers
+404 rather than 403, and both are audited.
+
 Anything from a customer's order form that reaches a cloud-init payload, a hostname or a
 Proxmox parameter is attacker-controlled input. `src/server/provisioning/proxmox/sanitize.ts`
 is the gate in front of it and `URLSearchParams` in `proxmox/api.ts` is the encoding — in
@@ -398,7 +460,11 @@ Server actions and `/api/v1` routes call the **same** service functions.
     error responses and its auth requirement. An endpoint without docs is not done.
 12. **No new dependencies without saying why.**
 13. **German is the product language.** User-facing copy, invoice wording and legal texts are
-    German; code, comments and commit messages are English.
+    German; code, comments and commit messages are English. English stands *beside* German
+    in the client portal and the transactional mail (`src/messages/{de,en}.json`, German the
+    source — existing copy is lifted verbatim, never reworded to fit a key). Documents stay
+    German whatever the reader's locale, and so does the admin area. A missing key throws
+    rather than rendering its own path, because a late mail is better than a wrong one.
 
 ## Tax (pluggable, Kleinunternehmer now)
 
@@ -431,9 +497,10 @@ npm run db:up | db:generate | db:migrate | db:reset
 npm run test | test:watch               # Vitest
 npm run lint | format | typecheck
 npm run worker                          # pg-boss: the daily billing run, the five-minute
-                                        # mail sweep, the hourly Graph subscription
-                                        # renewal and the minute-by-minute provisioning
-                                        # sweep; its own process
+                                        # ticket sweep, the hourly Graph subscription
+                                        # renewal, the minute-by-minute provisioning
+                                        # sweep and the minute-by-minute notification
+                                        # pass; its own process
 npm run openapi:generate                # writes public/openapi.json (also served live)
 npm run seed -- "Name" mail@example.net # Super Admin role + employee + 3 demo customers
 npm run staff:add -- "Name" mail@…      # the first employee, when there is none to invite from

@@ -82,20 +82,20 @@ export default function SetupForm() {
                 </p>
 
                 <div>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-muted-foreground">
                         Einrichtungsschlüssel
                     </p>
-                    <pre className="mt-2 overflow-x-auto rounded-lg border p-3 font-mono text-[10px] leading-5 text-zinc-200">
+                    <pre className="mt-2 overflow-x-auto rounded-lg border p-3 font-mono text-[10px] leading-5 text-foreground">
                         {setup.uri}
                     </pre>
                 </div>
 
                 <div>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-muted-foreground">
                         Wiederherstellungscodes — jeder einmal gültig. Ohne sie
                         kommst du bei Verlust des Geräts nicht mehr hinein.
                     </p>
-                    <pre className="mt-2 overflow-x-auto rounded-lg border p-3 font-mono text-xs leading-5 text-zinc-200">
+                    <pre className="mt-2 overflow-x-auto rounded-lg border p-3 font-mono text-xs leading-5 text-foreground">
                         {setup.backupCodes.join("\n")}
                     </pre>
                 </div>

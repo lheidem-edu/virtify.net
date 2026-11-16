@@ -30,7 +30,7 @@ const columns: ColumnDef<AdminOfferRow, unknown>[] = [
         cell: ({ row }) => (
             <Link
                 href={`/admin/offers/${row.original.id}`}
-                className="font-mono underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                className="font-mono underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
             >
                 {row.original.number}
             </Link>
@@ -74,7 +74,7 @@ const columns: ColumnDef<AdminOfferRow, unknown>[] = [
             <div className="flex items-center justify-end gap-3">
                 <Link
                     href={`/client/offers/${row.original.id}/pdf`}
-                    className="underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-foreground"
+                    className="underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
                 >
                     PDF
                 </Link>

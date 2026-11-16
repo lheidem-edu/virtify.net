@@ -8,6 +8,7 @@ import {
     LayoutDashboard,
     LifeBuoy,
     LogOut,
+    Mail,
     Package,
     Receipt,
     ReceiptText,
@@ -63,6 +64,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
     "shopping-cart": ShoppingCart,
     repeat: Repeat,
     timer: Timer,
+    mail: Mail,
     "credit-card": CreditCard,
     "life-buoy": LifeBuoy,
 };
