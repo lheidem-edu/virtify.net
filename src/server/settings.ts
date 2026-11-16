@@ -87,6 +87,32 @@ export const defaultSettings: Settings = {
     },
 };
 
+/**
+ * Whether a failed read may fall back to the built-in defaults.
+ *
+ * **For a page, yes; for the worker, never.** A storefront should still
+ * render while the database is briefly unreachable, and the built-in details
+ * are correct, just not editable. The worker is the other way round: what it
+ * does with these settings is bill, collect and climb the dunning ladder, and
+ * "carry on with the defaults" there means dunning days, fees and the
+ * operator's own name that nobody configured — applied to real customers.
+ *
+ * It is how a worker that came up against a database nine migrations behind
+ * logged `column "operator_tax_number" does not exist` and then ran its mail
+ * pass anyway. The worker calls `refuseSettingsFallback()` once at startup,
+ * and from then on a read that fails throws, so the job fails and pg-boss
+ * says so, rather than succeeding with somebody else's numbers.
+ *
+ * A *missing row* is still the defaults everywhere: that is a fresh
+ * installation whose operator has not opened the settings page yet, not an
+ * error.
+ */
+let fallbackRefused = false;
+
+export function refuseSettingsFallback(): void {
+    fallbackRefused = true;
+}
+
 export const loadSettings = cache(async (): Promise<Settings> => {
     let row: typeof schema.siteSetting.$inferSelect | undefined;
 
@@ -96,6 +122,10 @@ export const loadSettings = cache(async (): Promise<Settings> => {
             .from(schema.siteSetting)
             .where(eq(schema.siteSetting.id, SETTINGS_ID));
     } catch (error) {
+        if (fallbackRefused) {
+            throw error;
+        }
+
         // A page must still render when the database is briefly unreachable;
         // the built-in details are correct, just not editable.
         console.error("[settings] falling back to the defaults:", error);

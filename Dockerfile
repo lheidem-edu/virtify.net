@@ -112,9 +112,21 @@ COPY --from=deps --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node package.json tsconfig.json ./
 COPY --chown=node:node src ./src
 COPY --chown=node:node scripts ./scripts
+# The migrations, for the same reason the web image carries them: see CMD.
+COPY --chown=node:node drizzle ./drizzle
 
 USER node
 
 # No HEALTHCHECK: the worker serves nothing. Whether it is alive is visible
 # in the admin area under Aufträge, which reads pg-boss's own tables.
-CMD ["node", "--env-file-if-exists=.env.local", "--conditions=react-server", "--import", "tsx", "scripts/worker.mts"]
+# **The worker migrates before it starts, exactly as the web container does.**
+# It used to rely on the web container having done it, and nothing made that
+# true: deployed together, the worker's every-minute crons fire before the
+# web container has finished; deployed alone, or pointed at a database the
+# web app never reaches, it runs against whatever schema it finds. The
+# billing pass, dunning and the mail outbox then query columns that are not
+# there. `scripts/migrate.mjs` takes a Postgres advisory lock, so two
+# containers running it at once is safe — the second waits and finds nothing
+# left to do — and a failure exits non-zero, so the container is restarted
+# rather than left polling against the wrong schema.
+CMD ["sh", "-c", "node scripts/migrate.mjs && exec node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/worker.mts"]

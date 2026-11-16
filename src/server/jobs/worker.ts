@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { runBilling } from "@/server/billing/run";
 import { passDidSomething, runMailPass } from "@/server/mail/run";
 import { runProvisioningPass } from "@/server/provisioning/run";
+import { refuseSettingsFallback } from "@/server/settings";
 import { runSubscriptionSync, runTicketSweep } from "@/server/tickets/run";
 import {
     BILLING_RUN_CRON,
@@ -82,6 +83,14 @@ export function createBoss(): PgBoss {
 }
 
 export async function startWorker(): Promise<Worker> {
+    /**
+     * Before anything is scheduled: a settings read that fails throws here,
+     * rather than falling back to defaults the way a page may. See
+     * `refuseSettingsFallback` — the worker is the process whose every pass
+     * acts on customers with whatever those settings say.
+     */
+    refuseSettingsFallback();
+
     const boss = createBoss();
 
     boss.on("error", (error) => {
